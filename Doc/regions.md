@@ -299,9 +299,9 @@ To efficiently support regions, we impose the following invariants that the runt
 New objects are always created as a local object.
 If Pyrona features are not used, then all the objects in the system will be local objects and the runtime will behave as normal.
 
-### Explicit regions
+### Regions
 
-Explicit regions are used to pass mutable state between concurrent units of execution (behaviours).
+Regions are used to pass mutable state between concurrent units of execution (behaviours).
 For usability, we need local references into the region, that are not part of the region itself.
 This is precisely what local objects are for as they can refer into the region.
 
@@ -440,6 +440,9 @@ This must have been run to start the concurrency runtime and enable region creat
 This cannot be immediately done as we need some time to allow for the set-up of the types and any monkey-patching.
 As types are globals, you would not be able to have any fields on Types (for example default values) if they are immutable from the start.
 
+We do not expect the `make_globals_immutable()` operation to be exposed to the programmer directly, but to be called as needed by the runtime.
+Exposing it in the prototype is useful for testing and debugging.
+
 ## Project plan
 
 We need to break the development in to several phases and their completion requirements.
@@ -455,7 +458,7 @@ We need to break the development in to several phases and their completion requi
 
 A function that makes all global objects deeply immutable.
 
-### Phase 3: Explicit regions
+### Phase 3: Regions
 
 * Adding a field to the object header to represent the region.
 * A new object type to represent regions.
