@@ -1,4 +1,4 @@
-# DRAFT: Pyrona Regions
+# DRAFT: Veronapy Regions
 
 This document discusses the design of adding regions to Python 3.12 by modifying the runtime.
 
@@ -272,7 +272,7 @@ Ultimately, a frame object should never escape the thread that it was created in
 
 
 
-## Regions in Pyrona.
+## Regions in Veronapy.
 
 The previous section illustrates the many temporary objects that Python creates to handle variables.
 To support this, we need our region object model to support complex local structures for indexing into regions.
@@ -299,7 +299,7 @@ To efficiently support regions, we impose the following invariants that the runt
 * Regions track the number of incoming references from local objects.
 
 New objects are always created as a local object.
-If Pyrona features are not used, then all the objects in the system will be local objects and the runtime will behave as normal.
+If Veronapy features are not used, then all the objects in the system will be local objects and the runtime will behave as normal.
 
 ### Regions
 
