@@ -33,7 +33,7 @@ This is captured by reference.
 That is the update, `x = 2`, is visible to inner, and the value returned is `2`.
 
 Captures are not allowed to be modified unless it is explicitly declared as `nonlocal`.
-This allows us to write code the encapsulates state
+This allows us to write code that encapsulates state
 ```python
 def closure2():
   x = 1
@@ -197,7 +197,7 @@ This can involve potentially stack traces, or the local variables at the time of
 The frame object contains a reference to the code object that is being executed.
 It also contains a reference to the global and local variables.
 Python programs can use this object to access the local and global variables.
-This object is update in sync with the underlying variables:
+This object is updated in sync with the underlying variables:
 
 ```python
 def frame_example1():
@@ -228,11 +228,11 @@ Here we present the idea as a reverse polish evaluator.
 ```python
 >>> x = 1
 >>> y = 2
->>> eval("4 x y + *")
+>>> calc("4 x y + *")
 ```
 The idea is to interpolate the `x` and `y` into the string while evaluating it.
 ```
-def eval(str):
+def calc(str):
   ctxt = sys._getframe().f_back
   ops = str.split()
   stack = []
@@ -252,14 +252,14 @@ This is a simple example, but it shows how the frame object can be used to acces
 ```
 >>> x = 1
 >>> y = 2
->>> eval("4 x y + *")
+>>> calc("4 x y + *")
 12
 ```
 
 The numpy library is pretty popular, so this is a good example of how to use the frame object in a way that is not debugging.
 
 
-Note that the frame object is mostly read-only.  But does contain an interesting operation to set the executing line no of a frame.
+Note that the frame object is mostly read-only, but does contain an interesting operation to set the executing line no of a frame.
 ```C
 static int
 frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno, void *Py_UNUSED(ignored))
@@ -278,23 +278,23 @@ To achieve this, we will use three kinds of object ownership:
 
 * Local object 
 * Immutable
-* Explicit regions
+* Regions
 
 The "local objects" are used to represent the many local structures that Python creates such as function objects, frame objects and cells.
 These objects are typically not shared between threads, so normally should not require any region tracking.
 However, as it is possible for them to become shared, we need to be able to make them "immutable".
 
-To pass mutable states between threads, we need to use "explicit regions".
-An explicit region can be accessed by at most one thread at a time.
-This removes the need to for locks to protect the data structure.
-The explicit region can be passed between threads, and the receiving thread can access the data structure.
+To pass mutable states between threads, we need to introduce a new construct to Python: "regions".
+A region can be accessed by at most one thread at a time.
+This removes the need for locks to protect the data structure.
+The region can be passed between threads, and the receiving thread can access the data structure.
 
 To efficiently support regions, we impose the following invariants that the runtime is responsible for maintaining:
 
 * Local objects can reach anything
 * Immutable objects can only reach other immutable objects.
-* Explicit objects can only reach explicit objects in the same region, immutable objects, or linear region entry points.
-* Explicit regions track the number of incoming references from local objects.
+* Objects in a region can only reach other objects in the same region, immutable objects, or linear region entry points.
+* Regions track the number of incoming references from local objects.
 
 New objects are always created as a local object.
 If Pyrona features are not used, then all the objects in the system will be local objects and the runtime will behave as normal.
@@ -305,15 +305,16 @@ Explicit regions are used to pass mutable state between concurrent units of exec
 For usability, we need local references into the region, that are not part of the region itself.
 This is precisely what local objects are for as they can refer into the region.
 
-The core challenge is allowing local objects to refer into an explicit region,
-while allowing the explicit region to be sent to another thread.
-To do this, we need to track the number of references from local objects to an explicit region, the "local reference count" (LRC).
+The core challenge is allowing local objects to refer into a region,
+while allowing the region to be sent to another thread.
+To do this, we need to track the number of references from local objects to a region, the "local reference count" (LRC).
 
-When we send an explicit region to another behaviour we need to ensure that the LRC is zero.
+When we send a region to another behaviour we need to ensure that the LRC is zero.
 To make this more usable, if the LRC is not zero, we can scan the current frame to find all references to the region, and remove them.
-If there are still references, then we can scan all objects (from the cycle detector DLL) to find a reference, and report that as an error.
+If there are still references, then we can scan all objects (from the existing doubly-linked list in the Python cycle detector) to find a reference,
+and report that as an error.
 
-When a local object is promoted to an explicit region, we need to ensure that the LRC is correctly maintained.
+When a local object is promoted to a region, we need to ensure that the LRC is correctly maintained.
 This involves adding new counts for reference to the newly added objects, and removing counts for edges that have become internal to the region.
 Consider the following example:
 
@@ -330,17 +331,17 @@ x.f = y
 
 # Create a fresh region
 r = Region()
-# r is an explicit region
+# r is an region
 r.f = y
-# r.f is a field of the region object, which is explicit.
-# y was local, so we need to promote y to the explicit region.
+# r.f is a field of the region object, which is in that region.
+# y was local, so we need to promote y to the region, r.
 # Before the assignment y has an RC of 2: One from the frame object, one from the object pointed to be x.
-# This adds two local RCs to the explicit region.
+# This adds two local RCs to the region.
 y = None
 # This reduces the localRC on r, by one. 
 x = None
 # This causes the old value of x to be collected
-# This in turn reduces the localRC on r by one as it clears the f field that points into the explicit region.
+# This in turn reduces the localRC on r by one as it clears the f field that points into the region.
 
 # We can now send the region r. It only has a single local RC r, and the operation will cause the 
 # local frame to clear that reference.
@@ -348,16 +349,73 @@ send(r)
 # r is None at this point
 ```
 
+> [Note that `send` is a placeholder operation that will be turned into proper concurrency support later.
+ It represents any operation that should prevent the region from being accessed by the current thread.]
+
+
 To re-establish the correct local reference count, we calculate the updates to LRC as follows.
-First we calculate the set of local objects, L, that are being made reachable from this explicit region.
+First we calculate the set of local objects, L, that are being made reachable from this region.
 As the set L is only reachable by local objects, we know that its reference count is purely from local objects.  
 Thus, we calculate sum of all the rcs in L, called R.
 Some of these references are internal to the set L,
+and one is from the region itself,
 so we calculate the number of references from L to L, called I.
-Thus, we have created R-I additional references into the region.
-However, L can also reach into the explicit region, so we calculate the number of references from L to the explicit region, C.
-Thus, we need to increase the explicit region's local reference count by R - I, and then subtract C from it.
+Thus, we have created R-I-1 additional references into the region.
+However, L can also reach into the region, so we calculate the number of references from L to the region, C.
+Thus, we need to increase the region's local reference count by R - I - 1, and then subtract C from it.
 This re-establishes the invariant.
+
+To illustrate this, consider the following object graph:
+```mermaid
+graph
+    frame -->|z| obj1
+    frame -->|r| region
+    obj3  -->|f| obj2
+    obj3  -->|g| obj4
+    region-->|f| obj1
+    frame -->|x| obj2
+    frame -->|y| obj3
+    obj2  -->|f| obj1
+    obj2  -->|f| obj4
+    subgraph " "
+        region
+        obj1
+    end
+```
+Now consider executing the following code:
+```python
+z.f = x
+```
+This creates a link from `obj1` to `obj2`.
+The updated object graph is below:
+```mermaid
+graph
+    frame -->|z| obj1
+    frame -->|r| region
+    obj3  -->|f| obj2
+    obj3  -->|g| obj4
+    region-->|f| obj1
+    frame -->|x| obj2
+    frame -->|y| obj3
+    obj1  -->|f| obj2
+    obj2  -->|f| obj1
+    obj2  -->|f| obj4
+    subgraph " "
+        region
+        obj1
+        obj2
+        obj4
+    end
+```
+
+The local reference count for the `region` is modified in the following way.
+* The reference count for `obj2` is increased by 1 to represent the new reference from `obj1`.
+* The objects `obj2` and `obj4` are added to the region, they have a combined reference count of 5.
+* The edge from `obj2` to `obj4` is considered internal, so we reduce the LRC by one.
+* The edge from `obj2` to `obj1` is considered internal, so we reduce the LRC by one.
+* The edge from `obj1` to `obj2` is considered internal, so we reduce the LRC by one.
+
+Thus, the resulting change is to increase the LRC by 5, and then reduce it by 3. 
 
 
 ### Immutable objects
@@ -368,26 +426,25 @@ This means that the object and all objects reachable from it are also immutable.
 
 The types in Python are mutable, but are typically only mutated at the start of the program.
 To support this, we need an operation to turn initially mutable objects into immutable objects.
-We add to the programming model a `freeze` operation that makes an object and its reachable graph of objects immutable.
+We extend the programming model with a `freeze` operation that makes an object and its reachable graph of objects immutable.
 
 The fields of an immutable object may not be modified.
 Its reference count can be modified and it can be collected if it is no longer referenced.
 This reference count may be concurrently modified.
 
-To allow globals to be used in a concurrent setting, we have an explicit operation to promote make the globals immutable.
+To allow globals to be used in a concurrent setting, we add an explicit operation to make the globals immutable.
 ```
 make_globals_immutable()
 ```
-This must have been run to start the concurrency runtime and enable explicit region creation.
-
+This must have been run to start the concurrency runtime and enable region creation.
+This cannot be immediately done as we need some time to allow for the set-up of the types and any monkey-patching.
+As types are globals, you would not be able to have any fields on Types (for example default values) if they are immutable from the start.
 
 ## Project plan
 
-We need to break the development in to several phases.
+We need to break the development in to several phases and their completion requirements.
 
 ### Phase 1: Deeply immutable objects
-
-This requires
 
 *  A flag to represent if an object is deeply immutable.
 *  If the flag is set, then the object cannot be mutated.  (This needs to be enforced in the runtime.)
@@ -396,26 +453,25 @@ This requires
 
 ### Phase 2: `make_globals_immutable`
 
-This requires a function that makes all global objects deeply immutable.
+A function that makes all global objects deeply immutable.
 
 ### Phase 3: Explicit regions
 
-This requires
-
 * Adding a field to the object header to represent the region.
 * A new object type to represent regions.
-* An operation to promote an object into an explicit region.
-* This requires tracking the number of references from local objects to an explicit region (as described above) called the "local reference count", LRC.
+* An operation to promote an object into a region.
+* This requires tracking the number of references from local objects to a region (as described above) called the "local reference count", LRC.
 
 ### Phase 4: Write barrier
 
-This requires a write-barrier that ensures the explicit region is maintained.
+A write-barrier that ensures the region's local reference count is maintained.
 
-There are N cases to consider (that may overlap):
+The following cases (that may overlap) need to be handled:
 
-* Changing a reference from a "local object" from an "explicit region", then we need to remove a reference from the LRC.
-* Changing a reference from a "local object" to an "explicit region", then we need to add a reference to the LRC.
-* Creating a reference from an "explicit region" to a "local object", then we need to promote the local object to the explicit region.  This may fail if the local object can reach a different explicit region. 
+* Changing a reference from a "local object" from into a "region", then we need to remove a reference from the LRC.
+* Changing a reference from a "local object" to point into a "region", then we need to add a reference to the LRC.
+* Creating a reference from an object in a "region" to a "local object", then we need to promote the local object to also be in that region.
+  This may fail if the local object can reach a different region. 
 
 ### Phase 5: Send/consume
 
@@ -448,6 +504,6 @@ to
 
 * 1 pointer for region index
 * 1 reverse pointer from region to object
-* 1/N pointer for region meta-data (where N is likely to be 32 or 64).
+* 1/N pointer for region meta-data shared between many objects (where N is likely to be 32 or 64). 
 
 Design to be worked out.
