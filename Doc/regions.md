@@ -13,6 +13,8 @@ However, there are a few subtleties to how Python handles variables that we need
 * [`locals()`]
 * [Frame objects]
 
+If you are familiar with Python's variable handling, you can skip this section.
+
 ### Closures
 
 In Python, the `def` keyword creates a function object.
@@ -453,6 +455,7 @@ We need to break the development in to several phases and their completion requi
 *  If the flag is set, then the object cannot be mutated.  (This needs to be enforced in the runtime.)
 *  Any object reachable from a deeply immutable object is also deeply immutable.
 *  A `freeze` operation that makes an object and its reachable graph of objects deeply immutable. 
+*  Reference counts on immutable objects should be atomic instructions.
 
 ### Phase 2: `make_globals_immutable`
 
@@ -510,3 +513,5 @@ to
 * 1/N pointer for region meta-data shared between many objects (where N is likely to be 32 or 64). 
 
 Design to be worked out.
+
+
