@@ -2,6 +2,8 @@
 
 This document discusses the design of adding regions to Python 3.12 by modifying the runtime.
 
+
+
 ## Understanding Python's variables
 
 Before we can discuss regions, we need to understand how Python handles variables.
@@ -14,6 +16,7 @@ However, there are a few subtleties to how Python handles variables that we need
 * [Frame objects]
 
 If you are familiar with Python's variable handling, you can skip this section.
+
 
 ### Closures
 
@@ -94,6 +97,7 @@ Here we can see that the two function objects have closed over the same `cell` o
 The Python interpreter conducts a free variable analysis and decides if a variable is used in a function object,
 and if such it creates a `Cell` object to store the value of the variable.
 
+
 ### `locals()`
 
 In Python, it is possible to create an object that contains all the local variables in the current scope.
@@ -156,7 +160,7 @@ def locals_example4():
   return inner()
 ```
 Here the dictionary returned `locals` contains the function object `inner_inner` and `x`.
-Althought, `inner` does not directly use `x`, it is captured by `inner_inner` and thus is included in the dictionary.
+Although, `inner` does not directly use `x`, it is captured by `inner_inner` and thus is included in the dictionary.
 The `t` used in `inner_inner` is not captured as it is in an inner scope.
 ```python
 >>> locals_example4()
@@ -186,6 +190,7 @@ The original value of the variable `x` is stored in the dictionary.
 >>> d["x"]
 1
 ```
+
 
 ### Frame objects
 
@@ -267,9 +272,9 @@ Note that the frame object is mostly read-only, but does contain an interesting 
 static int
 frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno, void *Py_UNUSED(ignored))
 ```
-This seems very bad to call from another thread.
+This seems very bad to call from another thread/interpreter.
 
-Ultimately, a frame object should never escape the thread that it was created in.
+Ultimately, a frame object should never escape the thread/interpreter that it was created in.
 
 
 
@@ -302,6 +307,7 @@ To efficiently support regions, we impose the following invariants that the runt
 
 New objects are always created as a local object.
 If Veronapy features are not used, then all the objects in the system will be local objects and the runtime will behave as normal.
+
 
 ### Regions
 
@@ -438,7 +444,7 @@ We extend the programming model with a `freeze` operation that makes an object a
 > Initially, we will be flexible to see how the programming model works.
 
 The fields of an immutable object may not be modified.
-Its reference count can be modified and it can be collected if it is no longer referenced.
+Its reference count can be modified, and it can be collected if it is no longer referenced.
 This reference count may be concurrently modified.
 
 To allow globals to be used in a concurrent setting, we add an explicit operation to make the globals immutable for synchronous access (We will add asynchronously accessible globals in another document.).
@@ -452,9 +458,12 @@ As types are globals, you would not be able to have any fields on Types (for exa
 We do not expect the `make_globals_immutable()` operation to be exposed to the programmer directly, but to be called as needed by the runtime.
 Exposing it in the prototype is useful for testing and debugging.
 
+
+
 ## Project plan
 
 We need to break the development in to several phases and their completion requirements.
+
 
 ### Phase 1: Deeply immutable objects
 
@@ -462,11 +471,12 @@ We need to break the development in to several phases and their completion requi
 *  If the flag is set, then the object cannot be mutated.  (This needs to be enforced in the runtime.)
 *  Any object reachable from a deeply immutable object is also deeply immutable.
 *  A `freeze` operation that makes an object and its reachable graph of objects deeply immutable. 
-*  Reference counts on immutable objects should be atomic instructions.
+
 
 ### Phase 2: `make_globals_immutable`
 
 A function that makes all global objects deeply immutable.
+
 
 ### Phase 3: Regions
 
@@ -474,6 +484,7 @@ A function that makes all global objects deeply immutable.
 * A new object type to represent regions.
 * An operation to promote an object into a region.
 * This requires tracking the number of references from local objects to a region (as described above) called the "local reference count", LRC.
+
 
 ### Phase 4: Maintaining region invariants
 
@@ -487,6 +498,7 @@ The following cases (that may overlap) need to be handled:
 * Creating a reference from an object in a "region" to a "local object", then we need to promote the local object to also be in that region.
   This may fail if the local object can reach a different region. 
 
+
 ### Phase 5: Send/consume
 
 Add an operation that represents sending a region to another thread.
@@ -496,6 +508,7 @@ If the region still has a non-zero LRC, then we need to
 
 * scan the current frame to find all references to the region, and remove them.
 * If there are still references, then scan all objects (from the cycle detector DLL) to find a reference, and report that as an error.
+
 
 ### Phase 6: Memory management
 
@@ -513,10 +526,15 @@ For immutable objects need to be shared between threads, but that precludes the 
 We have developed a new algorithm for reference counting immutable state using strongly connected components and union-find.
 We need to implement this algorithm inside the Python runtime, and then perform reference counting for immutable objects at the level of the SCC.
 This is fully documented and the code is available in the main Verona runtime repository: [https://github.com/microsoft/verona-rt/blob/main/src/rt/region/freeze.h](freeze.h).
+The reference counts of immutable object need to be modified in a concurrency safe way with atomic instructions.
+
 
 ### Phase 7: Concurrency
 
 Expose `when` and integrate with multiple interpreters.
+
+Expose shared regions that can be contained in immutable state.
+
 
 ### Phase 8: More efficient region representation.
 
