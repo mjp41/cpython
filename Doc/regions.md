@@ -518,7 +518,7 @@ This is fully documented and the code is available in the main Verona runtime re
 
 Expose `when` and integrate with multiple interpreters.
 
-### Phase 9: More efficient region representation.
+### Phase 8: More efficient region representation.
 
 The doubly linked list and the additional region pointer is too much state.
 We can represent the region pointer as a reference into a region object, and use that to find the region efficiently.  This should reduce the memory overhead of the region system from 
