@@ -128,7 +128,7 @@ Calling this function the returned dictionary does not account for the update to
 ```python
 >>> locals_example2()
 {'x': 1}
-````
+```
 
 The `locals()` function also captures the local variables in the enclosing scope.
 ```python
@@ -267,7 +267,7 @@ This is a simple example, but it shows how the frame object can be used to acces
 The numpy library is pretty popular, so this is a good example of how to use the frame object in a way that is not debugging.
 
 
-Note that the frame object is mostly read-only, but does contain an interesting operation to set the executing line no of a frame.
+Note that the frame object is mostly read-only, but does contain an interesting operation to set the executing line number of a frame.
 ```C
 static int
 frame_setlineno(PyFrameObject *f, PyObject* p_new_lineno, void *Py_UNUSED(ignored))
@@ -294,9 +294,9 @@ However, as it is possible for them to become shared, we need to be able to make
 
 To pass mutable states between threads, we need to introduce a new construct to Python: "regions".
 A region is a group of objects that can move together across threads
-and can be accessed by at most one thread at a time.
+and can be accessed by at most one interpreter at a time.
 This removes the need for locks to protect the objects in the region.
-The region can be passed between threads, and the receiving thread can access the objects in the region.
+The region can be passed between threads, and the receiving interpreter can access the objects in the region.
 
 To efficiently support regions, we impose the following invariants that the runtime is responsible for maintaining:
 
@@ -317,7 +317,7 @@ These might be from the objects such as the frame, from closures or from functio
 This is precisely what local objects are for as they can refer into the region.
 
 The core challenge is allowing local objects to refer into a region,
-while allowing the region to be sent to another thread.
+while allowing the region to be sent to another interpreter.
 To do this, we need to track the number of references from local objects to a region, the "local reference count" (LRC).
 
 When we send a region to another behaviour we need to ensure that the LRC is zero.
@@ -325,8 +325,8 @@ To make this more usable, if the LRC is not zero, we can scan the current frame 
 If there are still references, then we can scan all objects (from the existing doubly-linked list in the Python cycle detector) to find a reference,
 and report that as an error.
 
-When a local object becomes reachable from a region, we need to promote it and anything it can reach be part of that region.
-Promotion requires we correctly maintained the LRC.
+When a local object becomes reachable from a region, we need to promote it and anything it can reach to be part of that region.
+When we promote the local object we need to modify the LRC of the region.
 This involves adding new counts for reference to the newly added objects, and removing counts for edges that have become internal to the region.
 Consider the following example:
 
@@ -362,7 +362,7 @@ send(r)
 ```
 
 > [Note that `send` is a placeholder operation that will be turned into proper concurrency support later.
- It represents any operation that should prevent the region from being accessed by the current thread.]
+ It represents any operation that should prevent the region from being accessed by the current interpreter.]
 
 
 To re-establish the correct local reference count, we calculate the updates to LRC as follows.
@@ -436,7 +436,6 @@ To share objects between behaviours, we need to ensure that the object is not mu
 This is achieved by making the object "deeply immutable".
 This means that the object and all objects reachable from it are also immutable.
 
-The types in Python are mutable, but are typically only mutated at the start of the program.
 To support this, we need an operation to turn initially mutable objects into immutable objects.
 We extend the programming model with a `freeze` operation that makes an object and its reachable graph of objects immutable.
 
@@ -480,7 +479,9 @@ A function that makes all global objects deeply immutable.
 
 ### Phase 3: Regions
 
-* Adding a field to the object header to represent the region.
+* Adding a field to the object header to represent the region. 
+  (Optimisations of this representation will be added in Phase 8, and the object size will be reduced.
+  Using a single field initially keeps the prototype simple and easy to understand.)
 * A new object type to represent regions.
 * An operation to promote an object into a region.
 * This requires tracking the number of references from local objects to a region (as described above) called the "local reference count", LRC.
@@ -501,13 +502,13 @@ The following cases (that may overlap) need to be handled:
 
 ### Phase 5: Send/consume
 
-Add an operation that represents sending a region to another thread.
+Add an operation that represents sending a region to another interpreter.
 This is a placeholder operation that will be turned into proper concurrency support later in Phase 7.
 
 If the region still has a non-zero LRC, then we need to 
 
 * scan the current frame to find all references to the region, and remove them.
-* If there are still references, then scan all objects (from the cycle detector DLL) to find a reference, and report that as an error.
+* If there are still references, then scan all objects (from the cycle detector doubly linked list) to find a reference, and report that as an error.
 
 
 ### Phase 6: Memory management
@@ -519,10 +520,10 @@ There are two cases to consider:
 * Immutable objects, and 
 * Regions.
 
-For regions, we need to make each region contain its own DLL, and then we can scan the DLL for cycle detection.
-When an object is promoted to a region, it can be moved from the interpreter's DLL to the region's DLL.
+For regions, we need to make each region contain its own doubly linked list, and then we can scan the doubly linked list for cycle detection.
+When an object is promoted to a region, it can be moved from the interpreter's doubly linked list to the region's doubly linked list.
 
-For immutable objects need to be shared between threads, but that precludes the use of the DLL without incurring locks.
+Immutable objects need to be shared between threads, but that precludes the use of the doubly linked list without incurring locks.
 We have developed a new algorithm for reference counting immutable state using strongly connected components and union-find.
 We need to implement this algorithm inside the Python runtime, and then perform reference counting for immutable objects at the level of the SCC.
 This is fully documented and the code is available in the main Verona runtime repository: [https://github.com/microsoft/verona-rt/blob/main/src/rt/region/freeze.h](freeze.h).
@@ -535,21 +536,32 @@ Expose `when` and integrate with multiple interpreters.
 
 Expose shared regions that can be contained in immutable state and accessed asynchronously with `when`.
 
+Implement concurrency using multiple interpreters, one per hardware thread.
+
 
 ### Phase 8: More efficient region representation.
 
-The doubly linked list and the additional region pointer is too much state.
-We can represent the region pointer as a reference into a region object, and use that to find the region efficiently.  This should reduce the memory overhead of the region system from 
+The changes so far have increased the memory overhead from 2 pointers per object for the doubly-linked-list to 3 pointers for the doubly-linked-list and region.
+The final change is to reduce the memory overhead of the region system from 3 pointers to 1 pointer in the object header.
 
-* 2 pointers for DLL
-* 1 pointer for region
+To achieve this, we will represent a region as a collection of blocks that each contain 
+* a reference to the region object,
+* a next and prev pointer to the next and previous block in the region, and
+* a vector of N reverse pointer from the region to the objects in the region.
 
-to 
+The representation can be used to replace the doubly linked list for tracking the objects contained in a region.
+The representation is fractionally larger that the original two pointers.
+Effectively 3/N pointers per object, where N is the number of objects in a block.
+We can choose N to be large enough to make this neglible.
 
-* 1 pointer for region index
-* 1 reverse pointer from region to object
-* 1/N pointer for region meta-data shared between many objects (where N is likely to be 32 or 64). 
+There are potential issues of fragmentation of a region's metadata, but we can compress the metadata if we detect that case.
+Scanning the blocks should lead to good cache locality for the cycle detector.
 
-Design to be worked out.
+We will need to use this representation for the per interpreter local objects too. 
 
+## Conclusion
 
+This document has outlined the design of adding regions to Python 3.12 by modifying the runtime.
+The runtime will be modified to support deeply immutable objects, regions, and the ability to send regions between interpreters.
+The runtime will also be modified to support concurrency, with multiple interpreters running on multiple threads.
+The changes here are aimed at producing an artifact that can be used to evaluate the design and programming model.
