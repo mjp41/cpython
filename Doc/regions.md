@@ -156,6 +156,7 @@ def locals_example4():
   return inner()
 ```
 Here the dictionary returned `locals` contains the function object `inner_inner` and `x`.
+Althought, `inner` does not directly use `x`, it is captured by `inner_inner` and thus is included in the dictionary.
 The `t` used in `inner_inner` is not captured as it is in an inner scope.
 ```python
 >>> locals_example4()
@@ -287,9 +288,10 @@ These objects are typically not shared between threads, so normally should not r
 However, as it is possible for them to become shared, we need to be able to make them "immutable".
 
 To pass mutable states between threads, we need to introduce a new construct to Python: "regions".
-A region can be accessed by at most one thread at a time.
-This removes the need for locks to protect the data structure.
-The region can be passed between threads, and the receiving thread can access the data structure.
+A region is a group of objects that can move together across threads
+and can be accessed by at most one thread at a time.
+This removes the need for locks to protect the objects in the region.
+The region can be passed between threads, and the receiving thread can access the objects in the region.
 
 To efficiently support regions, we impose the following invariants that the runtime is responsible for maintaining:
 
@@ -304,7 +306,8 @@ If Veronapy features are not used, then all the objects in the system will be lo
 ### Regions
 
 Regions are used to pass mutable state between concurrent units of execution (behaviours).
-For usability, we need local references into the region, that are not part of the region itself.
+For usability, we need references into the region, that are not part of the region itself.
+These might be from the objects such as the frame, from closures or from function objects.
 This is precisely what local objects are for as they can refer into the region.
 
 The core challenge is allowing local objects to refer into a region,
@@ -316,7 +319,8 @@ To make this more usable, if the LRC is not zero, we can scan the current frame 
 If there are still references, then we can scan all objects (from the existing doubly-linked list in the Python cycle detector) to find a reference,
 and report that as an error.
 
-When a local object is promoted to a region, we need to ensure that the LRC is correctly maintained.
+When a local object becomes reachable from a region, we need to promote it and anything it can reach be part of that region.
+Promotion requires we correctly maintained the LRC.
 This involves adding new counts for reference to the newly added objects, and removing counts for edges that have become internal to the region.
 Consider the following example:
 
@@ -430,11 +434,14 @@ The types in Python are mutable, but are typically only mutated at the start of 
 To support this, we need an operation to turn initially mutable objects into immutable objects.
 We extend the programming model with a `freeze` operation that makes an object and its reachable graph of objects immutable.
 
+> Note: we may decide to restrict the usage of `freeze` to regions and types only.
+> Initially, we will be flexible to see how the programming model works.
+
 The fields of an immutable object may not be modified.
 Its reference count can be modified and it can be collected if it is no longer referenced.
 This reference count may be concurrently modified.
 
-To allow globals to be used in a concurrent setting, we add an explicit operation to make the globals immutable.
+To allow globals to be used in a concurrent setting, we add an explicit operation to make the globals immutable for synchronous access (We will add asynchronously accessible globals in another document.).
 ```
 make_globals_immutable()
 ```
@@ -468,9 +475,10 @@ A function that makes all global objects deeply immutable.
 * An operation to promote an object into a region.
 * This requires tracking the number of references from local objects to a region (as described above) called the "local reference count", LRC.
 
-### Phase 4: Write barrier
+### Phase 4: Maintaining region invariants
 
-A write-barrier that ensures the region's local reference count is maintained.
+As the heap evolves, we need to detect changes and update the region status of objects.
+To do this, we use a write-barrier that ensures the region's local reference count is maintained.
 
 The following cases (that may overlap) need to be handled:
 
@@ -491,14 +499,26 @@ If the region still has a non-zero LRC, then we need to
 
 ### Phase 6: Memory management
 
-The existing Python cycle detector in 3.12 uses a doubly linked list effectively per interpreter.
-We need to make each region contain its own DLL, and then we can scan the DLL for cycle detection.
+The existing Python cycle detector in 3.12 uses a doubly linked list of objects effectively per interpreter.
+This is not suitable once we have concurrency.
+There are two cases to consider:
+
+* Immutable objects, and 
+* Regions.
+
+For regions, we need to make each region contain its own DLL, and then we can scan the DLL for cycle detection.
+When an object is promoted to a region, it can be moved from the interpreter's DLL to the region's DLL.
+
+For immutable objects need to be shared between threads, but that precludes the use of the DLL without incurring locks.
+We have developed a new algorithm for reference counting immutable state using strongly connected components and union-find.
+We need to implement this algorithm inside the Python runtime, and then perform reference counting for immutable objects at the level of the SCC.
+This is fully documented and the code is available in the main Verona runtime repository: [https://github.com/microsoft/verona-rt/blob/main/src/rt/region/freeze.h](freeze.h).
 
 ### Phase 7: Concurrency
 
 Expose `when` and integrate with multiple interpreters.
 
-### Phase 8: More efficient region representation.
+### Phase 9: More efficient region representation.
 
 The doubly linked list and the additional region pointer is too much state.
 We can represent the region pointer as a reference into a region object, and use that to find the region efficiently.  This should reduce the memory overhead of the region system from 
