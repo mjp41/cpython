@@ -533,7 +533,7 @@ The reference counts of immutable object need to be modified in a concurrency sa
 
 Expose `when` and integrate with multiple interpreters.
 
-Expose shared regions that can be contained in immutable state.
+Expose shared regions that can be contained in immutable state and accessed asynchronously with `when`.
 
 
 ### Phase 8: More efficient region representation.
