@@ -290,7 +290,7 @@ To achieve this, we will use three kinds of object ownership:
 
 The "local objects" are used to represent the many local structures that Python creates such as function objects, frame objects and cells.
 These objects are typically not shared between threads, so normally should not require any region tracking.
-However, as it is possible for them to become shared, we need to be able to make them "immutable".
+However, we need to support local objects becoming immutable to allow them to be shared, and suppport for groups of objects to be moved between interpreters.
 
 To pass mutable states between threads, we need to introduce a new construct to Python: "regions".
 A region is a group of objects that can move together across threads
@@ -551,13 +551,13 @@ To achieve this, we will represent a region as a collection of blocks that each 
 
 The representation can be used to replace the doubly linked list for tracking the objects contained in a region.
 The representation is fractionally larger that the original two pointers.
-Effectively 3/N pointers per object, where N is the number of objects in a block.
+Effectively 3/Nths of a pointer per object, where N is the number of objects in a block.
 We can choose N to be large enough to make this neglible.
 
 There are potential issues of fragmentation of a region's metadata, but we can compress the metadata if we detect that case.
 Scanning the blocks should lead to good cache locality for the cycle detector.
 
-We will need to use this representation for the per interpreter local objects too. 
+We will need to use this representation for the per interpreter local objects too, that is, this would need to be an always on change.
 
 ## Conclusion
 
