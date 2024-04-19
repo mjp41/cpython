@@ -336,6 +336,7 @@ This is precisely what local objects are for as they can refer into the region.
 The core challenge is allowing local objects to refer into a region,
 while allowing the region to be sent to another interpreter.
 To do this, we need to track the number of references from local objects to a region, the "local reference count" (LRC).
+There is a single LRC for each region, and it is updated as objects are promoted into the region or references are removed.
 
 When we send a region to another behaviour we need to ensure that the LRC is zero.
 To make this more usable, if the LRC is not zero, we can scan the current frame to find all references to the region, and remove them.
