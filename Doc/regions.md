@@ -221,7 +221,6 @@ This behaves differently to `locals` and captures the update to `x`.
 {'x': 2, 'l': <frame at 0x7ea265e76f60, file '<stdin>', line 5, code frame_example1>}
 ```
 Interesting, it also contains `l` which is the frame object itself.
-This is not the case for `locals()`, which does not capture the dictionary it creates.
 
 Storing the frame object in a variable will cause a reference cycle:
 ```python
@@ -230,6 +229,17 @@ Storing the frame object in a variable will cause a reference cycle:
 >>> f["l"].f_locals["l"].f_locals
 {'x': 2, 'l': <frame at 0x7ea265e76f60, file '<stdin>', line 5, code frame_example1>}
 ```
+
+This is not the case for `locals()`, which does not capture the dictionary it creates:
+```python
+def frame_example2():
+  x = 1
+  l = locals()
+  x = 2
+  return l
+```
+This is because the assignment to `l` occurs after the call to `locals()`,
+and hence the dictionary does not contain the variable `l`.
 
 There was an interesting example in [numpy](https://github.com/numpy/numpy/blob/e1bf1d635016a0118f7d77bf8931071a2c74ad20/numpy/matrixlib/defmatrix.py#L1095) that uses the context to affect the evaluation of an expression.
 Here we present the idea as a reverse polish evaluator.
