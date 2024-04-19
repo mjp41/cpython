@@ -515,15 +515,24 @@ A function that makes all global objects deeply immutable.
 ### Phase 4: Maintaining region invariants
 
 As the heap evolves, we need to detect changes and update the region status of objects.
-To do this, we use a write-barrier that ensures the region's local reference count is maintained.
+To do this, we need to intercept write that change the object topology.
+In the GC literature this is called a write-barrier.
+For Python, this will involve intercepting various writes to attributes, dictionary entries, and many more.
+We will call the function that handles these updates: `update_notification`
+The operation will need to know three things
 
-The following cases (that may overlap) need to be handled:
+* the object being written to,
+* the previously referenced object, and
+* the newly referenced object.
 
-* Changing a reference from a "local object" from into a "region", then we need to remove a reference from the LRC.
-* Changing a reference from a "local object" to point into a "region", then we need to add a reference to the LRC.
-* Creating a reference from an object in a "region" to a "local object", then we need to promote the local object to also be in that region.
-  This may fail if the local object can reach a different region. 
+We will refer to these as `ref`, `old` and `new` in the following text.
+For an `update(ref,old,new)`, we must do the following:
+* If `ref` is a local object, `old` is in a region, then we decrease the LRC of `old`'s region.
+* If `ref` is a local object, `new` is in a region, then we increase the LRC of `new`'s region.
+* If `ref` is in a region, `new` is a local object, then we need to promote the local object and all the other local objects it can reach to be in that region.
+* If `ref` is in a region, `new` is in a different region, then we raise an error.
 
+> TODO Handle region entry point objects.
 
 ### Phase 5: Send/consume
 
