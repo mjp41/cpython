@@ -417,6 +417,7 @@ graph
         obj1
     end
 ```
+Here the region has an LRC of 3, as there are three references from local objects into the region.
 Now consider executing the following code:
 ```python
 z["f"] = x
