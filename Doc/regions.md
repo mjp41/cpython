@@ -284,19 +284,25 @@ The previous section illustrates the many temporary objects that Python creates 
 To support this, we need our region object model to support complex local structures for indexing into regions.
 To achieve this, we will use three kinds of object ownership:
 
-* Local object 
-* Immutable
+* Interpreter Local object 
 * Regions
+* Immutable
 
-The "local objects" are used to represent the many local structures that Python creates such as function objects, frame objects and cells.
-These objects are typically not shared between threads, so normally should not require any region tracking.
-However, we need to support local objects becoming immutable to allow them to be shared, and suppport for groups of objects to be moved between interpreters.
+The "local objects" are used to represent the many local structures that Python creates that are mutable and not shared between interpreters.
+Examples of "local objects" are
+the frame objects and cells that represent the local variables;
+the function objects while they are still mutable;
+and any object that does not need to be used by another interpreter.
 
-To pass mutable states between threads, we need to introduce a new construct to Python: "regions".
-A region is a group of objects that can move together across threads
+If an object needs to be accessed by another interpreter then there are two options: "regions" or "immutable".
+Immutable objects can be freely shared between interpreters, but they cannot be modified.
+In Veronapy, immutable is deep, that is anything reachable from an immutable object is also immutable.
+
+To pass mutable states between interpreters, we need to introduce a new construct to Python: "regions".
+A region is a group of objects that can move together across interpreters
 and can be accessed by at most one interpreter at a time.
 This removes the need for locks to protect the objects in the region.
-The region can be passed between threads, and the receiving interpreter can access the objects in the region.
+The region can be passed between interpreters, and the receiving interpreter can access the objects in the region.
 
 To efficiently support regions, we impose the following invariants that the runtime is responsible for maintaining:
 
@@ -305,7 +311,8 @@ To efficiently support regions, we impose the following invariants that the runt
 * Objects in a region can only reach other objects in the same region, immutable objects, or linear region entry points.
 * Regions track the number of incoming references from local objects.
 
-New objects are always created as a local object.
+New objects are always created as a local object,
+and can be transition to regions or immutable objects after creation.
 If Veronapy features are not used, then all the objects in the system will be local objects and the runtime will behave as normal.
 
 
