@@ -360,14 +360,14 @@ x = {}
 y = {}
 #  y is a field of the frame object, which is local. 
 #  it points at a fresh dictionary object, which is also local.
-x.f = y
-# x.f is a field of the dictionary object, which is local.
+x["f"] = y
+# x["f"] is a field of the dictionary object, which is local.
 # y is also local so no need to do anything in the write barrier.
 
 # Create a fresh region
 r = Region()
 # r is an region
-r.f = y
+r["f"] = y
 # r.f is a field of the region object, which is in that region.
 # y was local, so we need to promote y to the region, r.
 # Before the assignment y has an RC of 2: One from the frame object, one from the object pointed to be x.
@@ -419,7 +419,7 @@ graph
 ```
 Now consider executing the following code:
 ```python
-z.f = x
+z["f"] = x
 ```
 This creates a link from `obj1` to `obj2`.
 The updated object graph is below:
