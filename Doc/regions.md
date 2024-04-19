@@ -340,8 +340,13 @@ There is a single LRC for each region, and it is updated as objects are promoted
 
 When we send a region to another behaviour we need to ensure that the LRC is zero.
 To make this more usable, if the LRC is not zero, we can scan the current frame to find all references to the region, and remove them.
+This removal could involve a special type `Dangle` that is used to represent a reference that is no longer valid.
+Debugging information could be collected to help identify when the reference was `Dangle`d.
 If there are still references, then we can scan all objects (from the existing doubly-linked list in the Python cycle detector) to find a reference,
 and report that as an error.
+
+If a reference occurs from a Python immutable type like tuple, then this will lead to an error.
+We cannot mutate the tuple, so we must fail the operation, or make the tuple go away.
 
 When a local object becomes reachable from a region, we need to promote it and anything it can reach to be part of that region.
 When we promote the local object we need to modify the LRC of the region.
