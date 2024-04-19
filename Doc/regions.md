@@ -495,6 +495,7 @@ We need to break the development in to several phases and their completion requi
 *  Any object reachable from a deeply immutable object is also deeply immutable.
 *  A `freeze` operation that makes an object and its reachable graph of objects deeply immutable. 
 
+To simplify this and some subsequent phases, we will make all immutable objects also immortal. 
 
 ### Phase 2: `make_globals_immutable`
 
@@ -541,13 +542,26 @@ The existing Python cycle detector in 3.12 uses a doubly linked list of objects 
 This is not suitable once we have concurrency.
 There are two cases to consider:
 
-* Immutable objects, and 
-* Regions.
+* Regions, and
+* Immutable objects.
+
+The Python 3.12 runtime has a heap per interpreter.
+This might not be suitable for our usage as we would expect cross interpreter frees.
+We can leverage the work on using `mimalloc` as the underlying interpreter heap
+to allow for cross interpreter frees.
+Or we could build on our work on `snmalloc` similarly.
+
+
+#### Phase 6a: Region memory management
 
 For regions, we need to make each region contain its own doubly linked list, and then we can scan the doubly linked list for cycle detection.
 When an object is promoted to a region, it can be moved from the interpreter's doubly linked list to the region's doubly linked list.
 
-Immutable objects need to be shared between threads, but that precludes the use of the doubly linked list without incurring locks.
+#### Phase 6b: Immutable memory management
+
+Initially, we will make immutable objects also immortal to simplify any memory cross interpreter memory management.
+As such 6b will be optional for the prototype.
+
 We have developed a new algorithm for reference counting immutable state using strongly connected components and union-find.
 We need to implement this algorithm inside the Python runtime, and then perform reference counting for immutable objects at the level of the SCC.
 This is fully documented and the code is available in the main Verona runtime repository: [https://github.com/microsoft/verona-rt/blob/main/src/rt/region/freeze.h](freeze.h).
