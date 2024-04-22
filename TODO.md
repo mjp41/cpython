@@ -39,7 +39,7 @@
     - [ ] [INPLACE_BINOP Macro](Objects/abstract.c#L1233) (`nb_inplace_or`, `nb_inplace_xor`, `nb_inplace_and`, `nb_inplace_lshift`, `nb_inplace_rshift`, `nb_inplace_subtract`, `nb_inplace_matrix_multiply`, `nb_inplace_floor_divide`, `nb_inplace_true_divide`, `nb_inplace_remainder`)
     - [ ] [PyObject_SetAttr](Objects/object.c#L1162) (`tp_setattro`, `tp_setattr`)
     - [ ] [PyObject_GenericSetAttr](Objects/object.c#L1619)
-    - [ ] [PyObject_GenericSetDict] (Objects/object.c#L1625)
+    - [ ] [PyObject_GenericSetDict](Objects/object.c#L1625)
     - [ ] [PyObject_GetBuffer](Objects/abstract.c#L382) (`tp_as_buffer`, need to set `readonly` flag)
     - [ ] [PyObject_AsWriteBuffer](Objects/abstract.c#L355) (see above)
     - [ ] [PyDict_SetItem](Objects/dictobject.c#L1877)
