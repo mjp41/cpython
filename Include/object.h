@@ -188,6 +188,9 @@ struct _object {
 #endif
 
     PyTypeObject *ob_type;
+    // VeronaPy: Field used for tracking which region this objects is stored in.
+    // Bottom bits stolen for distinguishing types of region ptr. 
+    Py_uintptr_t ob_region;
 };
 
 /* Cast argument to PyObject* type. */
