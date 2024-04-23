@@ -780,8 +780,9 @@ def python_is_optimized():
             final_opt = opt
     return final_opt not in ('', '-O0', '-Og')
 
-
-_header = 'nP'
+# VeronaPy: Added the extra region pointer here.
+# The getobjects pointers will be removed later.
+_header = 'nPP'
 _align = '0n'
 if hasattr(sys, "getobjects"):
     _header = '2P' + _header
