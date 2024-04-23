@@ -58,3 +58,4 @@
     - [ ] [PyException_SetCause](Objects/exceptions.c#L401)
     - [ ] [PyException_SetContext](Objects/exceptions.c#L417)
     - [ ] [PyException_SetArgs](Objects/exceptions.c#L430)
+    - [ ] [PyCell_Set](Objects/cellobject.c#L63)
