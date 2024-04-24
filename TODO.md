@@ -1,5 +1,8 @@
 # TODO
 
+> [!IMPORTANT]
+> - The bytecode interpreter is a source of potential problems for us. Once the first few phases are in we need to really understand what it does and to what extent we need to enlighten it.
+
 # Phase 1
 
 ## Notes
@@ -15,6 +18,7 @@
   * We need to intercept all setattr calls and check the flag
   * Slice types in numpy will need to know about the underlying objects immutability
 - Exceptions can be raised as late as possible.  *i.e.,* to the actual point of mutation.
+
 
 
 ## Questions
