@@ -24,6 +24,11 @@
 ## Milestones 
 - [ ] Add field
 - [ ] DFS to set flag and immortal
+    - [ ] [PyObject_Type]
+    - [ ] [PyObject_Dir/PyObject_GetAttr]
+    - [ ] [PySequence_Check/PySequence_GetItem]
+    - [ ] [PySequence_Fast/PySequence_Fast_ITEMS] (where appropriate)
+    - [ ] [PyMapping_Check/PyMapping_Items]
 - [ ] Checking flag on anything that could mutate.
     - [ ] [PyObject_SetItem](Objects/abstract.c#L212) (`mp_ass_subscript`, `sq_ass_item`)
     - [ ] [PySequence_SetItem](Objects/abstract.c#1913) (`sq_ass_item`)
