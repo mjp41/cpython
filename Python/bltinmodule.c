@@ -2803,9 +2803,7 @@ PyObject* stack_pop(stack* s){
 
 void stack_free(stack* s){
     while(s->head != NULL){
-        node* n = s->head;
-        s->head = n->next;
-        free(n);
+        stack_pop(s);
     }
 
     free(s);
