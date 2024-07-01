@@ -1,11 +1,12 @@
 import unittest
 
+
 class BaseObjectTest(unittest.TestCase):
     obj = None
 
     def setUp(self):
         makeimmutable(self.obj)
-    
+
     def test_immutable(self):
         self.assertTrue(isimmutable(self.obj))
 
@@ -13,89 +14,94 @@ class BaseObjectTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.obj.new_attribute = 'value'
 
-class BasicObject:
+
+class VPYObject:
     pass
 
+
 class TestBasicObject(BaseObjectTest):
-    obj = BasicObject()
+    obj = VPYObject()
+
 
 class TestList(BaseObjectTest):
-    obj = [BasicObject(), BasicObject(), 1, "two", None]
+    obj = [VPYObject(), VPYObject(), 1, "two", None]
 
     def test_set_item(self):
         with self.assertRaises(TypeError):
             self.obj[0] = None
-    
+
     def test_set_slice(self):
         with self.assertRaises(TypeError):
             self.obj[1:3] = [None, None]
-    
+
     def test_append(self):
         with self.assertRaises(TypeError):
-            self.obj.append(BasicObject())
-    
+            self.obj.append(VPYObject())
+
     def test_extend(self):
         with self.assertRaises(TypeError):
-            self.obj.extend([BasicObject()])
-    
+            self.obj.extend([VPYObject()])
+
     def test_insert(self):
         with self.assertRaises(TypeError):
-            self.obj.insert(0, BasicObject())
-    
+            self.obj.insert(0, VPYObject())
+
     def test_pop(self):
         with self.assertRaises(TypeError):
             self.obj.pop()
-    
+
     def test_remove(self):
         with self.assertRaises(TypeError):
             self.obj.remove(1)
-    
+
     def test_reverse(self):
         with self.assertRaises(TypeError):
             self.obj.reverse()
-    
+
     def test_clear(self):
         with self.assertRaises(TypeError):
             self.obj.clear()
-        
+
     def test_sort(self):
         with self.assertRaises(TypeError):
             self.obj.sort()
 
+
 class TestDict(BaseObjectTest):
-    obj = {1: BasicObject(), "two": BasicObject()}
+    obj = {1: VPYObject(), "two": VPYObject()}
 
     def test_set_item_exists(self):
         with self.assertRaises(TypeError):
             self.obj[1] = None
-    
+
     def test_set_item_new(self):
         with self.assertRaises(TypeError):
-            self.obj["three"] = BasicObject()
-    
+            self.obj["three"] = VPYObject()
+
     def test_del_item(self):
         with self.assertRaises(TypeError):
             del self.obj[1]
-    
+
     def test_clear(self):
         with self.assertRaises(TypeError):
             self.obj.clear()
-    
+
     def test_pop(self):
         with self.assertRaises(TypeError):
             self.obj.pop(1)
-    
+
     def test_popitem(self):
         with self.assertRaises(TypeError):
             self.obj.popitem()
-    
+
     def test_setdefault(self):
         with self.assertRaises(TypeError):
-            self.obj.setdefault("three", BasicObject())
-    
+            self.obj.setdefault("three", VPYObject())
+
     def test_update(self):
         with self.assertRaises(TypeError):
             self.obj.update({1: None})
+
 
 class TestSet(BaseObjectTest):
     obj = {1, "two", None, True}
@@ -107,33 +113,34 @@ class TestSet(BaseObjectTest):
     def test_clear(self):
         with self.assertRaises(TypeError):
             self.obj.clear()
-    
+
     def test_discard(self):
         with self.assertRaises(TypeError):
             self.obj.discard(1)
-    
+
     def test_pop(self):
         with self.assertRaises(TypeError):
             self.obj.pop()
-    
+
     def test_remove(self):
         with self.assertRaises(TypeError):
             self.obj.remove(1)
-    
+
     def test_update(self):
         with self.assertRaises(TypeError):
             self.obj.update([1, 2])
 
+
 class TestMultiLevel(unittest.TestCase):
-    obj = BasicObject()
+    obj = VPYObject()
 
     def setUp(self):
-        self.obj.a = BasicObject()
+        self.obj.a = VPYObject()
         self.obj.a.b = "c"
-        self.obj.d = [BasicObject(), None]
+        self.obj.d = [VPYObject(), None]
         self.obj.d[0].e = "f"
         self.obj
-        self.obj.g = {1: BasicObject(), "two": BasicObject()}
+        self.obj.g = {1: VPYObject(), "two": VPYObject()}
         self.obj.g[1].h = True
         self.obj.g["two"].i = False
         makeimmutable(self.obj)
