@@ -2834,21 +2834,16 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
 
     stack* frontier = stack_new();
     if(frontier == NULL){
-        // TODO raise memory error
-        return NULL;
+        return PyErr_NoMemory();
     }
 
     if(stack_push(frontier, obj)){
-        // TODO raise memory error
         stack_free(frontier);
-        return NULL;
+        return PyErr_NoMemory();
     }
 
     while(!stack_empty(frontier)){
         PyObject* item = stack_pop(frontier);
-        printf("item: "); 
-        PyObject_Print(item, stdout, 0);
-        printf("\n");
 
         if(_Py_IsImmutable(item)){
             continue;
@@ -2867,9 +2862,6 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         _Py_SetImmutable(item);
 
         PyObject* type = PyObject_Type(item);
-        printf(" of type ");
-        PyObject_Print(PyObject_Type(item), stdout, 0);
-        printf("\n");
         if(!PyType_Check(type)){
             // TypeObjects also have a type, which is a special value that
             // does not operate normally and exists to avoid infinite Type recursion.
@@ -2880,27 +2872,23 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         Py_ssize_t size;
         if(PyList_Check(item) || PyTuple_Check(item)){
             size = PySequence_Fast_GET_SIZE(item);
-            printf("Is a tuple or list of size %ld\n", size);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* element = PySequence_Fast_GET_ITEM(item, i);
                 if(!_Py_IsImmutable(element)){
                     if(stack_push(frontier, element)){
-                        // TODO raise memory error
                         stack_free(frontier);
-                        return NULL;
+                        return PyErr_NoMemory();
                     }
                 }
             }
         }else if(PySequence_Check(item)){
             size = PySequence_Size(item);
-            printf("Implements the sequence interface, reports a size of %ld\n", size);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* element = PySequence_GetItem(item, i);
                 if(!_Py_IsImmutable(element)){
                     if(stack_push(frontier, element)){
-                        // TODO raise memory error
                         stack_free(frontier);
-                        return NULL;
+                        return PyErr_NoMemory();
                     }
                 }
             }
@@ -2908,19 +2896,17 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
             PyObject* keys = PyMapping_Keys(item);
             if(keys == NULL){
                 stack_free(frontier);
-                return NULL;
+                return PyErr_NoMemory();
             }
 
             size = PyList_Size(keys);
-            printf("Implements the mapping interface, reports a size of %ld\n", size);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* key = PyList_GET_ITEM(keys, i);
                 PyObject* value = PyObject_GetItem(item, key);
                 if(!_Py_IsImmutable(value)){
                     if(stack_push(frontier, value)){
-                        // TODO raise memory error
                         stack_free(frontier);
-                        return NULL;
+                        return PyErr_NoMemory();
                     }
                 }
             }
@@ -2931,17 +2917,16 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         PyObject* attrs = PyObject_Dir(item);
         if(attrs == NULL){
             stack_free(frontier);
-            return NULL;
+            return PyErr_NoMemory();
         }
 
         size = PyList_Size(attrs);
-        printf("Probing %ld attributes\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* attr = PyList_GET_ITEM(attrs, i);
             PyObject* value = PyObject_GetAttr(item, attr);
             if(value == NULL){
                 stack_free(frontier);
-                return NULL;
+                return PyErr_NoMemory();
             }
 
             if(_Py_IsImmutable(value) || PyCFunction_Check(value) || Py_IS_TYPE(value, &_PyMethodWrapper_Type)){
@@ -2950,16 +2935,10 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                 Py_DECREF(value);
                 continue;
             }
-
-            PyObject_Print(attr, stdout, 0);
-            printf(" : ");
-            PyObject_Print(value, stdout, 0);
-            printf("\n");
-
+            
             if(stack_push(frontier, value)){
-                // TODO raise memory error
                 stack_free(frontier);
-                return NULL;
+                return PyErr_NoMemory();
             }
         }
 
