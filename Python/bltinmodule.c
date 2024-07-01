@@ -11,6 +11,7 @@
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
 #include "pycore_ceval.h"         // _PyEval_Vector()
+#include "pycore_veronapy.h"      // _Py_IMMUTABLE
 
 #include "clinic/bltinmodule.c.h"
 
@@ -2737,6 +2738,240 @@ builtin_issubclass_impl(PyObject *module, PyObject *cls,
     return PyBool_FromLong(retval);
 }
 
+/*[clinic input]
+isimmutable as builtin_isimmutable
+
+    obj: object
+    /
+
+Return whether 'obj' is immutable.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_isimmutable(PyObject *module, PyObject *obj)
+/*[clinic end generated code: output=80c746a3bd7adb46 input=15c0c9d2da47bc15]*/
+{
+    return PyBool_FromLong(_Py_IsImmutable(obj));
+}
+
+typedef struct node_s {
+    PyObject* object;
+    struct node_s* next;
+} node;
+
+typedef struct stack_s {
+    node* head;
+} stack;
+
+stack* stack_new(void){
+    stack* s = (stack*)malloc(sizeof(stack));
+    if(s == NULL){
+        return NULL;
+    }
+
+    s->head = NULL;
+
+    return s;
+}
+
+bool stack_push(stack* s, PyObject* object){
+    node* n = (node*)malloc(sizeof(node));
+    if(n == NULL){
+        return true;
+    }
+
+    n->object = object;
+    Py_INCREF(object);
+    n->next = s->head;
+    s->head = n;
+    return false;
+}
+
+PyObject* stack_pop(stack* s){
+    if(s->head == NULL){
+        return NULL;
+    }
+
+    node* n = s->head;
+    PyObject* object = n->object;
+    s->head = n->next;
+    free(n);
+    Py_DECREF(object);
+
+    return object;
+}
+
+void stack_free(stack* s){
+    while(s->head != NULL){
+        node* n = s->head;
+        s->head = n->next;
+        free(n);
+    }
+
+    free(s);
+}
+
+bool stack_empty(stack* s){
+    return s->head == NULL;
+}
+
+/*[clinic input]
+makeimmutable as builtin_makeimmutable
+
+    obj: object
+    /
+
+Make 'obj' and its entire graph immutable.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_makeimmutable(PyObject *module, PyObject *obj)
+/*[clinic end generated code: output=4e665122542dfd24 input=21a50256fa4fb099]*/
+{
+    if(_Py_IsImmutable(obj)){
+        return obj;
+    }
+
+    stack* frontier = stack_new();
+    if(frontier == NULL){
+        // TODO raise memory error
+        return NULL;
+    }
+
+    if(stack_push(frontier, obj)){
+        // TODO raise memory error
+        stack_free(frontier);
+        return NULL;
+    }
+
+    while(!stack_empty(frontier)){
+        PyObject* item = stack_pop(frontier);
+        printf("item: "); 
+        PyObject_Print(item, stdout, 0);
+        printf("\n");
+
+        if(_Py_IsImmutable(item)){
+            continue;
+        }
+
+        if(_Py_IsImmortal(item)){
+            _Py_SetImmutable(item);
+            continue;
+        }
+
+        if(PyCFunction_Check(item)){
+            // C functions are not mutable, so we can skip them.
+            continue;
+        }
+
+        _Py_SetImmutable(item);
+
+        PyObject* type = PyObject_Type(item);
+        printf(" of type ");
+        PyObject_Print(PyObject_Type(item), stdout, 0);
+        printf("\n");
+        if(!PyType_Check(type)){
+            // TypeObjects also have a type, which is a special value that
+            // does not operate normally and exists to avoid infinite Type recursion.
+            // This check ensures we have a normal TypeObject.
+            _Py_SetImmutable(type);
+        }
+
+        Py_ssize_t size;
+        if(PyList_Check(item) || PyTuple_Check(item)){
+            size = PySequence_Fast_GET_SIZE(item);
+            printf("Is a tuple or list of size %ld\n", size);
+            for(Py_ssize_t i = 0; i < size; i++){
+                PyObject* element = PySequence_Fast_GET_ITEM(item, i);
+                if(!_Py_IsImmutable(element)){
+                    if(stack_push(frontier, element)){
+                        // TODO raise memory error
+                        stack_free(frontier);
+                        return NULL;
+                    }
+                }
+            }
+        }else if(PySequence_Check(item)){
+            size = PySequence_Size(item);
+            printf("Implements the sequence interface, reports a size of %ld\n", size);
+            for(Py_ssize_t i = 0; i < size; i++){
+                PyObject* element = PySequence_GetItem(item, i);
+                if(!_Py_IsImmutable(element)){
+                    if(stack_push(frontier, element)){
+                        // TODO raise memory error
+                        stack_free(frontier);
+                        return NULL;
+                    }
+                }
+            }
+        }else if(PyMapping_Check(item)){
+            PyObject* keys = PyMapping_Keys(item);
+            if(keys == NULL){
+                stack_free(frontier);
+                return NULL;
+            }
+
+            size = PyList_Size(keys);
+            printf("Implements the mapping interface, reports a size of %ld\n", size);
+            for(Py_ssize_t i = 0; i < size; i++){
+                PyObject* key = PyList_GET_ITEM(keys, i);
+                PyObject* value = PyObject_GetItem(item, key);
+                if(!_Py_IsImmutable(value)){
+                    if(stack_push(frontier, value)){
+                        // TODO raise memory error
+                        stack_free(frontier);
+                        return NULL;
+                    }
+                }
+            }
+
+            Py_DECREF(keys);
+        }
+
+        PyObject* attrs = PyObject_Dir(item);
+        if(attrs == NULL){
+            stack_free(frontier);
+            return NULL;
+        }
+
+        size = PyList_Size(attrs);
+        printf("Probing %ld attributes\n", size);
+        for(Py_ssize_t i = 0; i < size; i++){
+            PyObject* attr = PyList_GET_ITEM(attrs, i);
+            PyObject* value = PyObject_GetAttr(item, attr);
+            if(value == NULL){
+                stack_free(frontier);
+                return NULL;
+            }
+
+            if(_Py_IsImmutable(value) || PyCFunction_Check(value) || Py_IS_TYPE(value, &_PyMethodWrapper_Type)){
+                // C functions are not mutable by construction, so we can skip them.
+                // Wrappers are ephemeral (created on request)
+                Py_DECREF(value);
+                continue;
+            }
+
+            PyObject_Print(attr, stdout, 0);
+            printf(" : ");
+            PyObject_Print(value, stdout, 0);
+            printf("\n");
+
+            if(stack_push(frontier, value)){
+                // TODO raise memory error
+                stack_free(frontier);
+                return NULL;
+            }
+        }
+
+        Py_DECREF(attrs);
+
+        // no need to decref on item, as it is immortal
+    }
+
+    stack_free(frontier);
+    return obj;
+}
+
 typedef struct {
     PyObject_HEAD
     Py_ssize_t tuplesize;
@@ -3035,6 +3270,8 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_INPUT_METHODDEF
     BUILTIN_ISINSTANCE_METHODDEF
     BUILTIN_ISSUBCLASS_METHODDEF
+    BUILTIN_ISIMMUTABLE_METHODDEF    
+    BUILTIN_MAKEIMMUTABLE_METHODDEF
     BUILTIN_ITER_METHODDEF
     BUILTIN_AITER_METHODDEF
     BUILTIN_LEN_METHODDEF

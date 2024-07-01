@@ -2,6 +2,7 @@
 
 #include "Python.h"
 #include "pycore_object.h"
+#include "pycore_veronapy.h"
 
 PyObject *
 PyCell_New(PyObject *obj)
@@ -66,6 +67,12 @@ PyCell_Set(PyObject *op, PyObject *value)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     PyObject *old_value = PyCell_GET(op);
     PyCell_SET(op, Py_XNewRef(value));
     Py_XDECREF(old_value);

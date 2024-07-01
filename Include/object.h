@@ -125,6 +125,8 @@ check by comparing the reference count field to the immortality reference count.
 #define _Py_IMMORTAL_REFCNT (UINT_MAX >> 2)
 #endif
 
+#define _Py_IMMUTABLE 1
+
 // Make all internal uses of PyObject_HEAD_INIT immortal while preserving the
 // C-API expectation that the refcnt will be set to 1.
 #ifdef Py_BUILD_CORE
@@ -226,6 +228,13 @@ static inline PyTypeObject* Py_TYPE(PyObject *ob) {
 #  define Py_TYPE(ob) Py_TYPE(_PyObject_CAST(ob))
 #endif
 
+static inline Py_uintptr_t Py_REGION(PyObject *ob) {
+    return ob->ob_region;
+}
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_REGION(ob) Py_REGION(_PyObject_CAST(ob))
+#endif
+
 PyAPI_DATA(PyTypeObject) PyLong_Type;
 PyAPI_DATA(PyTypeObject) PyBool_Type;
 
@@ -257,6 +266,12 @@ static inline int Py_IS_TYPE(PyObject *ob, PyTypeObject *type) {
 #  define Py_IS_TYPE(ob, type) Py_IS_TYPE(_PyObject_CAST(ob), (type))
 #endif
 
+static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
+{
+    return op->ob_region == _Py_IMMUTABLE;
+}
+#define _Py_IsImmutable(op) _Py_IsImmutable(_PyObject_CAST(op))
+
 
 static inline void Py_SET_REFCNT(PyObject *ob, Py_ssize_t refcnt) {
     // This immortal check is for code that is unaware of immortal objects.
@@ -287,6 +302,13 @@ static inline void Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_SET_SIZE(ob, size) Py_SET_SIZE(_PyVarObject_CAST(ob), (size))
+#endif
+
+static inline void Py_SET_REGION(PyObject *ob, Py_uintptr_t region) {
+    ob->ob_region = region;
+}
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), (region))
 #endif
 
 

@@ -7,6 +7,7 @@
 #include "pycore_long.h"          // _PyLong_DigitCount
 #include "pycore_object.h"        // _PyObject_GC_TRACK()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
+#include "pycore_veronapy.h"      // Py_CHECKWRITE
 #include <stddef.h>
 
 /*[clinic input]
@@ -265,6 +266,13 @@ PyList_SetItem(PyObject *op, Py_ssize_t i,
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if(!Py_CHECKWRITE(op)){
+        Py_XDECREF(newitem);
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     if (!valid_index(i, Py_SIZE(op))) {
         Py_XDECREF(newitem);
         PyErr_SetString(PyExc_IndexError,
@@ -311,6 +319,12 @@ PyList_Insert(PyObject *op, Py_ssize_t where, PyObject *newitem)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     return ins1((PyListObject *)op, where, newitem);
 }
 
@@ -331,6 +345,11 @@ _PyList_AppendTakeRefListResize(PyListObject *self, PyObject *newitem)
 int
 PyList_Append(PyObject *op, PyObject *newitem)
 {
+    if (!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     if (PyList_Check(op) && (newitem != NULL)) {
         return _PyList_AppendTakeRef((PyListObject *)op, Py_NewRef(newitem));
     }
@@ -731,6 +750,12 @@ PyList_SetSlice(PyObject *a, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject *v)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if(!Py_CHECKWRITE(a)){
+        PyErr_WriteToImmutable(a);
+        return -1;
+    }
+
     return list_ass_slice((PyListObject *)a, ilow, ihigh, v);
 }
 
@@ -793,6 +818,10 @@ static PyObject *
 list_insert_impl(PyListObject *self, Py_ssize_t index, PyObject *object)
 /*[clinic end generated code: output=7f35e32f60c8cb78 input=858514cf894c7eab]*/
 {
+    if (!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     if (ins1(self, index, object) == 0)
         Py_RETURN_NONE;
     return NULL;
@@ -808,6 +837,10 @@ static PyObject *
 list_clear_impl(PyListObject *self)
 /*[clinic end generated code: output=67a1896c01f74362 input=ca3c1646856742f6]*/
 {
+    if (!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     _list_clear(self);
     Py_RETURN_NONE;
 }
@@ -838,6 +871,11 @@ static PyObject *
 list_append(PyListObject *self, PyObject *object)
 /*[clinic end generated code: output=7c096003a29c0eae input=43a3fe48a7066e91]*/
 {
+    if (!Py_CHECKWRITE(self)){
+        PyErr_WriteToImmutable(self);
+        return NULL;
+    }
+
     if (_PyList_AppendTakeRef(self, Py_NewRef(object)) < 0) {
         return NULL;
     }
@@ -862,6 +900,11 @@ list_extend(PyListObject *self, PyObject *iterable)
     Py_ssize_t n;                  /* guess for size of iterable */
     Py_ssize_t i;
     PyObject *(*iternext)(PyObject *);
+
+    if(!Py_CHECKWRITE(self)){
+        PyErr_WriteToImmutable(self);
+        return NULL;
+    }
 
     /* Special cases:
        1) lists and tuples which can use PySequence_Fast ops
@@ -1011,6 +1054,10 @@ list_pop_impl(PyListObject *self, Py_ssize_t index)
 {
     PyObject *v;
     int status;
+
+    if(!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
 
     if (Py_SIZE(self) == 0) {
         /* Special-case most common failure cause */
@@ -2261,6 +2308,10 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
     Py_ssize_t i;
     PyObject **keys;
 
+    if (!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     assert(self != NULL);
     assert(PyList_Check(self));
     if (keyfunc == Py_None)
@@ -2517,6 +2568,7 @@ PyList_Sort(PyObject *v)
         PyErr_BadInternalCall();
         return -1;
     }
+
     v = list_sort_impl((PyListObject *)v, NULL, 0);
     if (v == NULL)
         return -1;
@@ -2534,6 +2586,10 @@ static PyObject *
 list_reverse_impl(PyListObject *self)
 /*[clinic end generated code: output=482544fc451abea9 input=eefd4c3ae1bc9887]*/
 {
+    if (!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     if (Py_SIZE(self) > 1)
         reverse_slice(self->ob_item, self->ob_item + Py_SIZE(self));
     Py_RETURN_NONE;
@@ -2548,6 +2604,12 @@ PyList_Reverse(PyObject *v)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(v)){
+        PyErr_WriteToImmutable(v);
+        return -1;
+    }
+
     if (Py_SIZE(self) > 1)
         reverse_slice(self->ob_item, self->ob_item + Py_SIZE(self));
     return 0;
@@ -2676,6 +2738,10 @@ static PyObject *
 list_remove(PyListObject *self, PyObject *value)
 /*[clinic end generated code: output=f087e1951a5e30d1 input=2dc2ba5bb2fb1f82]*/
 {
+    if (!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     Py_ssize_t i;
 
     for (i = 0; i < Py_SIZE(self); i++) {

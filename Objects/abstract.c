@@ -9,6 +9,7 @@
 #include "pycore_pyerrors.h"      // _PyErr_Occurred()
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_unionobject.h"   // _PyUnion_Check()
+#include "pycore_veronapy.h"      // Py_CHECKWRITE()
 #include <ctype.h>
 #include <stddef.h>               // offsetof()
 
@@ -30,6 +31,17 @@ null_error(void)
     if (!_PyErr_Occurred(tstate)) {
         _PyErr_SetString(tstate, PyExc_SystemError,
                          "null argument to internal routine");
+    }
+    return NULL;
+}
+
+static PyObject *
+immutable_error(void)
+{
+    PyThreadState *tstate = _PyThreadState_GET();
+    if (!_PyErr_Occurred(tstate)) {
+        _PyErr_SetString(tstate, PyExc_TypeError,
+                         "can't modify immutable instance");
     }
     return NULL;
 }
@@ -207,6 +219,11 @@ PyObject_SetItem(PyObject *o, PyObject *key, PyObject *value)
         return -1;
     }
 
+    if(!Py_CHECKWRITE(o)){
+        immutable_error();
+        return -1;
+    }
+
     PyMappingMethods *m = Py_TYPE(o)->tp_as_mapping;
     if (m && m->mp_ass_subscript) {
         int res = m->mp_ass_subscript(o, key, value);
@@ -238,6 +255,11 @@ PyObject_DelItem(PyObject *o, PyObject *key)
 {
     if (o == NULL || key == NULL) {
         null_error();
+        return -1;
+    }
+
+    if(!Py_CHECKWRITE(o)){
+        immutable_error();
         return -1;
     }
 
@@ -359,6 +381,12 @@ int PyObject_AsWriteBuffer(PyObject *obj,
         null_error();
         return -1;
     }
+
+    if(!Py_CHECKWRITE(obj)){
+        immutable_error();
+        return -1;
+    }
+
     pb = Py_TYPE(obj)->tp_as_buffer;
     if (pb == NULL ||
         pb->bf_getbuffer == NULL ||
@@ -387,8 +415,15 @@ PyObject_GetBuffer(PyObject *obj, Py_buffer *view, int flags)
                      Py_TYPE(obj)->tp_name);
         return -1;
     }
+
+    if((flags & PyBUF_WRITABLE) && !Py_CHECKWRITE(obj)){
+        immutable_error();
+        return -1;
+    }
+
     int res = (*pb->bf_getbuffer)(obj, view, flags);
     assert(_Py_CheckSlotResult(obj, "getbuffer", res >= 0));
+
     return res;
 }
 
@@ -1230,6 +1265,9 @@ ternary_iop(PyObject *v, PyObject *w, PyObject *z, const int iop_slot, const int
 #define INPLACE_BINOP(func, iop, op, op_name) \
     PyObject * \
     func(PyObject *v, PyObject *w) { \
+        if(!Py_CHECKWRITE(v)){ \
+            return immutable_error(); \
+        } \
         return binary_iop(v, w, NB_SLOT(iop), NB_SLOT(op), op_name); \
     }
 
@@ -1247,6 +1285,10 @@ INPLACE_BINOP(PyNumber_InPlaceRemainder, nb_inplace_remainder, nb_remainder, "%=
 PyObject *
 PyNumber_InPlaceAdd(PyObject *v, PyObject *w)
 {
+    if(!Py_CHECKWRITE(v)){
+        return immutable_error();
+    }
+
     PyObject *result = BINARY_IOP1(v, w, NB_SLOT(nb_inplace_add),
                                    NB_SLOT(nb_add), "+=");
     if (result == Py_NotImplemented) {
@@ -1270,6 +1312,10 @@ PyNumber_InPlaceAdd(PyObject *v, PyObject *w)
 PyObject *
 PyNumber_InPlaceMultiply(PyObject *v, PyObject *w)
 {
+    if(!Py_CHECKWRITE(v)){
+        return immutable_error();
+    }
+
     PyObject *result = BINARY_IOP1(v, w, NB_SLOT(nb_inplace_multiply),
                                    NB_SLOT(nb_multiply), "*=");
     if (result == Py_NotImplemented) {
@@ -1299,6 +1345,10 @@ PyNumber_InPlaceMultiply(PyObject *v, PyObject *w)
 PyObject *
 PyNumber_InPlacePower(PyObject *v, PyObject *w, PyObject *z)
 {
+    if(!Py_CHECKWRITE(v)){
+        return immutable_error();
+    }
+
     return ternary_iop(v, w, z, NB_SLOT(nb_inplace_power),
                                 NB_SLOT(nb_power), "**=");
 }
@@ -1801,6 +1851,10 @@ PySequence_InPlaceConcat(PyObject *s, PyObject *o)
         return null_error();
     }
 
+    if(!Py_CHECKWRITE(s)){
+        return immutable_error();
+    }
+
     PySequenceMethods *m = Py_TYPE(s)->tp_as_sequence;
     if (m && m->sq_inplace_concat) {
         PyObject *res = m->sq_inplace_concat(s, o);
@@ -1828,6 +1882,10 @@ PySequence_InPlaceRepeat(PyObject *o, Py_ssize_t count)
 {
     if (o == NULL) {
         return null_error();
+    }
+
+    if (!Py_CHECKWRITE(o)){
+        return immutable_error();
     }
 
     PySequenceMethods *m = Py_TYPE(o)->tp_as_sequence;
@@ -1917,6 +1975,11 @@ PySequence_SetItem(PyObject *s, Py_ssize_t i, PyObject *o)
         return -1;
     }
 
+    if (!Py_CHECKWRITE(s)){
+        immutable_error();
+        return -1;
+    }
+
     PySequenceMethods *m = Py_TYPE(s)->tp_as_sequence;
     if (m && m->sq_ass_item) {
         if (i < 0) {
@@ -1947,6 +2010,11 @@ PySequence_DelItem(PyObject *s, Py_ssize_t i)
 {
     if (s == NULL) {
         null_error();
+        return -1;
+    }
+
+    if(!Py_CHECKWRITE(s)){
+        immutable_error();
         return -1;
     }
 
@@ -1983,6 +2051,11 @@ PySequence_SetSlice(PyObject *s, Py_ssize_t i1, Py_ssize_t i2, PyObject *o)
         return -1;
     }
 
+    if (!Py_CHECKWRITE(s)){
+        immutable_error();
+        return -1;
+    }
+
     PyMappingMethods *mp = Py_TYPE(s)->tp_as_mapping;
     if (mp && mp->mp_ass_subscript) {
         PyObject *slice = _PySlice_FromIndices(i1, i2);
@@ -2003,6 +2076,11 @@ PySequence_DelSlice(PyObject *s, Py_ssize_t i1, Py_ssize_t i2)
 {
     if (s == NULL) {
         null_error();
+        return -1;
+    }
+
+    if(!Py_CHECKWRITE(s)){
+        immutable_error();
         return -1;
     }
 

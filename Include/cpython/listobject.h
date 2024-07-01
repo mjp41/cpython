@@ -40,6 +40,7 @@ static inline Py_ssize_t PyList_GET_SIZE(PyObject *op) {
 
 static inline void
 PyList_SET_ITEM(PyObject *op, Py_ssize_t index, PyObject *value) {
+    assert(!_Py_IsImmutable(op));
     PyListObject *list = _PyList_CAST(op);
     list->ob_item[index] = value;
 }

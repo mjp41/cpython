@@ -1878,6 +1878,12 @@ PyDict_SetItem(PyObject *op, PyObject *key, PyObject *value)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     assert(key);
     assert(value);
     return _PyDict_SetItem_Take2((PyDictObject *)op,
@@ -1969,6 +1975,11 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
 int
 PyDict_DelItem(PyObject *op, PyObject *key)
 {
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     Py_hash_t hash;
     assert(key);
     if (!PyUnicode_CheckExact(key) || (hash = unicode_get_hash(key)) == -1) {
@@ -2064,6 +2075,11 @@ PyDict_Clear(PyObject *op)
     PyDictKeysObject *oldkeys;
     PyDictValues *oldvalues;
     Py_ssize_t i, n;
+
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return;
+    }
 
     if (!PyDict_Check(op))
         return;
@@ -2703,6 +2719,10 @@ dict_update_common(PyObject *self, PyObject *args, PyObject *kwds,
 static PyObject *
 dict_update(PyObject *self, PyObject *args, PyObject *kwds)
 {
+    if(!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     if (dict_update_common(self, args, kwds, "update") != -1)
         Py_RETURN_NONE;
     return NULL;
@@ -3299,6 +3319,10 @@ PyDict_SetDefault(PyObject *d, PyObject *key, PyObject *defaultobj)
         return NULL;
     }
 
+    if(!Py_CHECKWRITE(d)){
+        return PyErr_WriteToImmutable(d);
+    }
+
     if (!PyUnicode_CheckExact(key) || (hash = unicode_get_hash(key)) == -1) {
         hash = PyObject_Hash(key);
         if (hash == -1)
@@ -3406,6 +3430,10 @@ dict_setdefault_impl(PyDictObject *self, PyObject *key,
 static PyObject *
 dict_clear(PyDictObject *mp, PyObject *Py_UNUSED(ignored))
 {
+    if(!Py_CHECKWRITE(mp)){
+        return PyErr_WriteToImmutable(mp);
+    }
+
     PyDict_Clear((PyObject *)mp);
     Py_RETURN_NONE;
 }
@@ -3427,6 +3455,10 @@ static PyObject *
 dict_pop_impl(PyDictObject *self, PyObject *key, PyObject *default_value)
 /*[clinic end generated code: output=3abb47b89f24c21c input=e221baa01044c44c]*/
 {
+    if(!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     return _PyDict_Pop((PyObject*)self, key, default_value);
 }
 
@@ -3447,6 +3479,10 @@ dict_popitem_impl(PyDictObject *self)
     PyObject *res;
     uint64_t new_version;
     PyInterpreterState *interp = _PyInterpreterState_GET();
+
+    if(!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
 
     /* Allocate the result tuple before checking the size.  Believe it
      * or not, this allocation could trigger a garbage collection which

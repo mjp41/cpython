@@ -17,6 +17,7 @@
 #include "pycore_typevarobject.h" // _PyTypeAlias_Type, _Py_initialize_generic
 #include "pycore_typeobject.h"    // _PyBufferWrapper_Type
 #include "pycore_unionobject.h"   // _PyUnion_Type
+#include "pycore_veronapy.h"      // Py_CHECKWRITE
 #include "interpreteridobject.h"  // _PyInterpreterID_Type
 
 #ifdef Py_LIMITED_API
@@ -287,7 +288,6 @@ _Py_DecRef(PyObject *o)
 {
     Py_DECREF(o);
 }
-
 
 /**************************************/
 
@@ -1159,6 +1159,11 @@ PyObject_HasAttr(PyObject *v, PyObject *name)
 int
 PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
 {
+    if(!Py_CHECKWRITE(v)){
+        PyErr_WriteToImmutable(v);
+        return -1;
+    }
+
     PyTypeObject *tp = Py_TYPE(v);
     int err;
 
@@ -1616,12 +1621,22 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
 int
 PyObject_GenericSetAttr(PyObject *obj, PyObject *name, PyObject *value)
 {
+    if(!Py_CHECKWRITE(obj)){
+        PyErr_WriteToImmutable(obj);
+        return -1;
+    }
+
     return _PyObject_GenericSetAttrWithDict(obj, name, value, NULL);
 }
 
 int
 PyObject_GenericSetDict(PyObject *obj, PyObject *value, void *context)
 {
+    if(!Py_CHECKWRITE(obj)){
+        PyErr_WriteToImmutable(obj);
+        return -1;
+    }
+
     PyObject **dictptr = _PyObject_GetDictPtr(obj);
     if (dictptr == NULL) {
         if (_PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MANAGED_DICT) &&
