@@ -128,6 +128,11 @@ cell_traverse(PyCellObject *op, visitproc visit, void *arg)
 static int
 cell_clear(PyCellObject *op)
 {
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     Py_CLEAR(op->ob_ref);
     return 0;
 }
@@ -146,6 +151,11 @@ cell_get_contents(PyCellObject *op, void *closure)
 static int
 cell_set_contents(PyCellObject *op, PyObject *obj, void *Py_UNUSED(ignored))
 {
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     Py_XSETREF(op->ob_ref, Py_XNewRef(obj));
     return 0;
 }
