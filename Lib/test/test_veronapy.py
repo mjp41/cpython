@@ -109,7 +109,7 @@ class TestSet(BaseObjectTest):
     def test_add(self):
         with self.assertRaises(TypeError):
             self.obj.add(1)
-    
+
     def test_clear(self):
         with self.assertRaises(TypeError):
             self.obj.clear()

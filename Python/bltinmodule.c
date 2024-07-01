@@ -2935,7 +2935,7 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                 Py_DECREF(value);
                 continue;
             }
-            
+
             if(stack_push(frontier, value)){
                 stack_free(frontier);
                 return PyErr_NoMemory();
