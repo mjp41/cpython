@@ -2813,6 +2813,18 @@ bool stack_empty(stack* s){
     return s->head == NULL;
 }
 
+bool is_leaf(PyObject* obj){
+    return Py_IsNone(obj) || Py_IsTrue(obj) || Py_IsFalse(obj) || PyUnicode_Check(obj) || PyLong_Check(obj) || PyBytes_Check(obj) || PyFrozenSet_Check(obj);
+}
+
+bool is_c_wrapper(PyObject* obj){
+    return PyCFunction_Check(obj) || Py_IS_TYPE(obj, &_PyMethodWrapper_Type) || Py_IS_TYPE(obj, &PyWrapperDescr_Type);
+}
+
+bool is_leaf_type(PyTypeObject* obj){
+    return PyType_HasFeature(obj, Py_TPFLAGS_IMMUTABLETYPE) || !PyType_HasFeature(obj, Py_TPFLAGS_HEAPTYPE);
+}
+
 /*[clinic input]
 makeimmutable as builtin_makeimmutable
 
@@ -2844,31 +2856,42 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         PyObject* item = stack_pop(frontier);
 
         if(_Py_IsImmutable(item)){
-            continue;
+            goto next;
         }
 
-        if(_Py_IsImmortal(item)){
-            _Py_SetImmutable(item);
-            continue;
-        }
-
-        if(PyCFunction_Check(item)){
+        if(is_c_wrapper(item)) {
             // C functions are not mutable, so we can skip them.
-            continue;
+            goto next;
         }
 
         _Py_SetImmutable(item);
 
+        _Py_VERONAPYDBG("item: ");
+        _Py_VERONAPYDBGPRINT(item);
+        _Py_VERONAPYDBG("\n");
+
+        // TypeObjects also have a type, which is a special value that
+        // does not operate normally and exists to avoid infinite Type recursion.
+        // This check ensures we have a normal TypeObject.
         PyObject* type = PyObject_Type(item);
-        if(!PyType_Check(type)){
-            // TypeObjects also have a type, which is a special value that
-            // does not operate normally and exists to avoid infinite Type recursion.
-            // This check ensures we have a normal TypeObject.
+        if(is_leaf_type((PyTypeObject*)type)){
             _Py_SetImmutable(type);
+        }else{
+            if(stack_push(frontier, type)){
+                stack_free(frontier);
+                return PyErr_NoMemory();
+            }
+        }
+
+        Py_DECREF(type);
+
+        if(is_leaf(item)){
+            goto next;
         }
 
         Py_ssize_t size;
         if(PyList_Check(item) || PyTuple_Check(item)){
+            _Py_VERONAPYDBG("list/tuple: pushing elements\n");
             size = PySequence_Fast_GET_SIZE(item);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* element = PySequence_Fast_GET_ITEM(item, i);
@@ -2880,6 +2903,7 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                 }
             }
         }else if(PySequence_Check(item)){
+            _Py_VERONAPYDBG("sequence: pushing elements\n");
             size = PySequence_Size(item);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* element = PySequence_GetItem(item, i);
@@ -2890,16 +2914,21 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                     }
                 }
             }
-        }else if(PyMapping_Check(item)){
-            PyObject* keys = PyMapping_Keys(item);
-            if(keys == NULL){
-                stack_free(frontier);
-                return PyErr_NoMemory();
-            }
+        }
 
+        if(PyMapping_Check(item) && (PyDict_CheckExact(item) || PyObject_HasAttrString(item, "keys"))){
+            _Py_VERONAPYDBG("mapping: pushing keys and values\n");
+            PyObject* keys = PyMapping_Keys(item);
             size = PyList_Size(keys);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* key = PyList_GET_ITEM(keys, i);
+                if(!_Py_IsImmutable(key)){
+                    if(stack_push(frontier, key)){
+                        stack_free(frontier);
+                        return PyErr_NoMemory();
+                    }
+                }
+
                 PyObject* value = PyObject_GetItem(item, key);
                 if(!_Py_IsImmutable(value)){
                     if(stack_push(frontier, value)){
@@ -2912,11 +2941,14 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
             Py_DECREF(keys);
         }
 
-        PyObject* attrs = PyObject_Dir(item);
-        if(attrs == NULL){
-            stack_free(frontier);
-            return PyErr_NoMemory();
+        if(!PyObject_HasAttrString(item, "__dir__")){
+            // object does not provide __dir__
+            goto next;
         }
+
+        _Py_VERONAPYDBG("object: pushing attrs\n");
+
+        PyObject* attrs = PyObject_Dir(item);
 
         size = PyList_Size(attrs);
         for(Py_ssize_t i = 0; i < size; i++){
@@ -2924,10 +2956,10 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
             PyObject* value = PyObject_GetAttr(item, attr);
             if(value == NULL){
                 stack_free(frontier);
-                return PyErr_NoMemory();
+                return NULL;
             }
 
-            if(_Py_IsImmutable(value) || PyCFunction_Check(value) || Py_IS_TYPE(value, &_PyMethodWrapper_Type)){
+            if(_Py_IsImmutable(value) || is_c_wrapper(value)){
                 // C functions are not mutable by construction, so we can skip them.
                 // Wrappers are ephemeral (created on request)
                 Py_DECREF(value);
@@ -2942,7 +2974,8 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
 
         Py_DECREF(attrs);
 
-        // no need to decref on item, as it is immortal
+next:
+        Py_DECREF(item);
     }
 
     stack_free(frontier);

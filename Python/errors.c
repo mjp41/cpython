@@ -1956,11 +1956,7 @@ _PyErr_WriteToImmutable(const char* filename, int lineno, PyObject* obj)
     PyObject* string;
     PyThreadState *tstate = _PyThreadState_GET();
     if (!_PyErr_Occurred(tstate)) {
-#if __WORDSIZE == 64
-        string = PyUnicode_FromFormat("object is immutable (in region %lu) at %s:%d", obj->ob_region, filename, lineno);
-#else
-        string = PyUnicode_FromFormat("object is immutable (in region %u) at %s:%d", obj->ob_region, filename, lineno);
-#endif
+        string = PyUnicode_FromFormat("object is immutable (in region %" PRIuPTR ") at %s:%d", obj->ob_region, filename, lineno);
         if (string != NULL) {
             _PyErr_SetObject(tstate, PyExc_TypeError, string);
             Py_DECREF(string);

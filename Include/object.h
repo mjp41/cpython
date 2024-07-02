@@ -125,7 +125,7 @@ check by comparing the reference count field to the immortality reference count.
 #define _Py_IMMORTAL_REFCNT (UINT_MAX >> 2)
 #endif
 
-#define _Py_IMMUTABLE 1
+#define _Py_IMMUTABLE ((Py_uintptr_t)1)
 
 // Make all internal uses of PyObject_HEAD_INIT immortal while preserving the
 // C-API expectation that the refcnt will be set to 1.

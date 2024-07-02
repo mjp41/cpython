@@ -97,6 +97,8 @@ static inline void _Py_SetImmutable(PyObject *op)
 {
     if(op) {
         op->ob_region = _Py_IMMUTABLE;
+        // TODO once reference counting across regions is fully working
+        // we no longer need to do this
         op->ob_refcnt = _Py_IMMORTAL_REFCNT;
     }
 }

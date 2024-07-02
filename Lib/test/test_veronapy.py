@@ -14,17 +14,22 @@ class BaseObjectTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.obj.new_attribute = 'value'
 
-
-class VPYObject:
-    pass
+    def test_type_immutable(self):
+        self.assertTrue(isimmutable(type(self.obj)))
 
 
 class TestBasicObject(BaseObjectTest):
-    obj = VPYObject()
+    class C:
+        pass
+
+    obj = C()
 
 
 class TestList(BaseObjectTest):
-    obj = [VPYObject(), VPYObject(), 1, "two", None]
+    class C:
+        pass
+
+    obj = [C(), C(), 1, "two", None]
 
     def test_set_item(self):
         with self.assertRaises(TypeError):
@@ -36,15 +41,15 @@ class TestList(BaseObjectTest):
 
     def test_append(self):
         with self.assertRaises(TypeError):
-            self.obj.append(VPYObject())
+            self.obj.append(TestList.C())
 
     def test_extend(self):
         with self.assertRaises(TypeError):
-            self.obj.extend([VPYObject()])
+            self.obj.extend([TestList.C()])
 
     def test_insert(self):
         with self.assertRaises(TypeError):
-            self.obj.insert(0, VPYObject())
+            self.obj.insert(0, TestList.C())
 
     def test_pop(self):
         with self.assertRaises(TypeError):
@@ -68,7 +73,10 @@ class TestList(BaseObjectTest):
 
 
 class TestDict(BaseObjectTest):
-    obj = {1: VPYObject(), "two": VPYObject()}
+    class C:
+        pass
+
+    obj = {1: C(), "two": C()}
 
     def test_set_item_exists(self):
         with self.assertRaises(TypeError):
@@ -76,7 +84,7 @@ class TestDict(BaseObjectTest):
 
     def test_set_item_new(self):
         with self.assertRaises(TypeError):
-            self.obj["three"] = VPYObject()
+            self.obj["three"] = TestDict.C()
 
     def test_del_item(self):
         with self.assertRaises(TypeError):
@@ -96,7 +104,7 @@ class TestDict(BaseObjectTest):
 
     def test_setdefault(self):
         with self.assertRaises(TypeError):
-            self.obj.setdefault("three", VPYObject())
+            self.obj.setdefault("three", TestDict.C())
 
     def test_update(self):
         with self.assertRaises(TypeError):
@@ -132,15 +140,16 @@ class TestSet(BaseObjectTest):
 
 
 class TestMultiLevel(unittest.TestCase):
-    obj = VPYObject()
-
     def setUp(self):
-        self.obj.a = VPYObject()
+        class C:
+            const = 1
+
+        self.obj = C()
+        self.obj.a = C()
         self.obj.a.b = "c"
-        self.obj.d = [VPYObject(), None]
+        self.obj.d = [C(), None]
         self.obj.d[0].e = "f"
-        self.obj
-        self.obj.g = {1: VPYObject(), "two": VPYObject()}
+        self.obj.g = {1: C(), "two": C()}
         self.obj.g[1].h = True
         self.obj.g["two"].i = False
         makeimmutable(self.obj)
@@ -157,6 +166,14 @@ class TestMultiLevel(unittest.TestCase):
         self.assertTrue(isimmutable(self.obj.g[1].h))
         self.assertTrue(isimmutable(self.obj.g["two"]))
         self.assertTrue(isimmutable(self.obj.g["two"].i))
+
+    def test_set_const(self):
+        with self.assertRaises(TypeError):
+            self.obj.const = 1
+
+    def test_type_immutable(self):
+        self.assertTrue(isimmutable(type(self.obj)))
+        self.assertTrue(isimmutable(type(self.obj).const))
 
 
 if __name__ == '__main__':

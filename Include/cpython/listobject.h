@@ -40,7 +40,12 @@ static inline Py_ssize_t PyList_GET_SIZE(PyObject *op) {
 
 static inline void
 PyList_SET_ITEM(PyObject *op, Py_ssize_t index, PyObject *value) {
-    assert(!_Py_IsImmutable(op));
+    if(_Py_IsImmutable(op)){
+        // TODO this should be replaced with a _PyObject_ASSERT_MSG
+        // when veronpy implementation is complete
+        _PyObject_ASSERT_FAILED_MSG(op, "cannot modify immutable object");
+    }
+
     PyListObject *list = _PyList_CAST(op);
     list->ob_item[index] = value;
 }
