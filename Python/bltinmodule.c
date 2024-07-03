@@ -2751,9 +2751,9 @@ static PyObject *
 builtin_isimmutable(PyObject *module, PyObject *obj)
 /*[clinic end generated code: output=80c746a3bd7adb46 input=15c0c9d2da47bc15]*/
 {
-    _Py_VERONAPYDBG("isimmutable(");
-    _Py_VERONAPYDBGPRINT(obj);
-    _Py_VERONAPYDBG(") region: %lu\n", Py_REGION(obj));
+    _Py_VPYDBG("isimmutable(");
+    _Py_VPYDBGPRINT(obj);
+    _Py_VPYDBG(") region: %lu\n", Py_REGION(obj));
     return PyBool_FromLong(_Py_IsImmutable(obj));
 }
 
@@ -2816,6 +2816,16 @@ bool stack_empty(stack* s){
     return s->head == NULL;
 }
 
+void stack_print(stack* s){
+    _Py_VPYDBG("stack: ");
+    node* n = s->head;
+    while(n != NULL){
+        _Py_VPYDBGPRINT(n->object);
+        _Py_VPYDBG("[rc=%ld]\n", n->object->ob_refcnt);
+        n = n->next;
+    }
+}
+
 bool is_leaf(PyObject* obj){
     return Py_IsNone(obj) || Py_IsTrue(obj) || Py_IsFalse(obj) || PyUnicode_Check(obj) || PyLong_Check(obj) || PyBytes_Check(obj) || PyFrozenSet_Check(obj);
 }
@@ -2827,6 +2837,317 @@ bool is_c_wrapper(PyObject* obj){
 bool is_leaf_type(PyTypeObject* obj){
     return PyType_HasFeature(obj, Py_TPFLAGS_IMMUTABLETYPE) || !PyType_HasFeature(obj, Py_TPFLAGS_HEAPTYPE);
 }
+
+PyObject* add_elements_fast(PyObject* seq, stack* frontier) {
+    Py_ssize_t size;
+    _PyObject_ASSERT(seq, PyList_Check(seq) || PyTuple_Check(seq));
+    size = PySequence_Fast_GET_SIZE(seq);
+    _Py_VPYDBG("list/tuple: pushing %ld [i: element] elements\n", size);
+    for(Py_ssize_t i = 0; i < size; i++){
+        PyObject* element = PySequence_Fast_GET_ITEM(seq, i); // element.rc = x
+        _Py_VPYDBG("[%ld: ", i);
+        _Py_VPYDBGPRINT(element);
+        _Py_VPYDBG("]\n");
+        if(!_Py_IsImmutable(element)){
+            Py_INCREF(element); // element.rc = x + 1
+            if(stack_push(frontier, element)){
+                Py_DECREF(element);
+                return PyErr_NoMemory();
+            }
+        }
+    }
+    _Py_VPYDBG("\n");
+    Py_RETURN_NONE;
+}
+
+PyObject* add_elements(PyObject* seq, stack* frontier) {
+    Py_ssize_t size;
+    _PyObject_ASSERT(seq, PySequence_Check(seq));
+    size = PySequence_Size(seq);
+    _Py_VPYDBG("list/tuple: pushing %ld [i: element] elements\n", size);
+    for(Py_ssize_t i = 0; i < size; i++){
+        PyObject* element = PySequence_GetItem(seq, i); // element.rc = x + 1
+        _Py_VPYDBG("[%ld: ", i);
+        _Py_VPYDBGPRINT(element);
+        _Py_VPYDBG("]\n");
+        if(!_Py_IsImmutable(element)){
+            if(stack_push(frontier, element)){
+                Py_DECREF(element); // element.rc = x
+                return PyErr_NoMemory();
+            }
+        }else{
+            Py_DECREF(element); // element.rc = x
+        }
+    }
+    _Py_VPYDBG("\n");
+    Py_RETURN_NONE;
+}
+
+PyObject* walk_sequence(PyObject* seq, stack* frontier) {
+    if(PyList_Check(seq) || PyTuple_Check(seq)){
+        return add_elements_fast(seq, frontier);
+    }else if(PySequence_Check(seq)){
+        return add_elements(seq, frontier);
+    }
+    
+    Py_RETURN_NONE;
+}
+
+PyObject* walk_mapping(PyObject* map, stack* frontier) {
+    if(PyMapping_Check(map) && (PyDict_CheckExact(map) || PyObject_HasAttrString(map, "keys"))){
+        PyObject* keys = PyMapping_Keys(map);
+        Py_ssize_t size = PyList_Size(keys);
+        _Py_VPYDBG("mapping: pushing %ld <key: value> pairs\n", size);
+        for(Py_ssize_t i = 0; i < size; i++){
+            PyObject* key = PyList_GET_ITEM(keys, i); // key.rc = x
+            _Py_VPYDBG("<");
+            _Py_VPYDBGPRINT(key);
+            if(!_Py_IsImmutable(key)){
+                Py_INCREF(key); // key.rc = x + 1
+                if(stack_push(frontier, key)){
+                    Py_DECREF(key); // key.rc = x
+                    return PyErr_NoMemory();
+                }
+            }
+
+            PyObject* value = PyObject_GetItem(map, key); // value.rc = x + 1
+            _Py_VPYDBG(": ");
+            _Py_VPYDBGPRINT(value);
+            if(!_Py_IsImmutable(value)){
+                if(stack_push(frontier, value)){
+                    Py_DECREF(value); // value.rc = x
+                    return PyErr_NoMemory();
+                }
+            }
+
+            _Py_VPYDBG(">\n");
+        }
+
+        _Py_VPYDBG("\n");
+        Py_DECREF(keys);
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyObject* walk_object(PyObject* obj, stack* frontier)
+{
+    PyObject* attrs;
+    Py_ssize_t size;
+
+    if(!PyObject_HasAttrString(obj, "__dir__")){
+        // object does not provide __dir__
+        Py_RETURN_NONE;
+    }
+
+    _Py_VPYDBG("object: pushing (attr: value)\n");
+
+    attrs = PyObject_Dir(obj);
+    size = PyList_Size(attrs);
+    for(Py_ssize_t i = 0; i < size; i++){
+        PyObject* attr = PyList_GET_ITEM(attrs, i); // attr.rc = x
+        PyObject* value = PyObject_GetAttr(obj, attr); // value.rc = x + 1
+        if(value == NULL){
+            // attribute error
+            return NULL;
+        }
+
+        if(_Py_IsImmutable(value) || is_c_wrapper(value)){
+            // C functions are not mutable by construction, so we can skip them.
+            // Wrappers are ephemeral (created on request)
+            Py_DECREF(value); // value.rc = x
+            continue;
+        }
+
+        _Py_VPYDBG("(");
+        _Py_VPYDBGPRINT(attr);
+        _Py_VPYDBG(": ");
+        _Py_VPYDBGPRINT(value);
+        _Py_VPYDBG(")\n");
+
+        if(stack_push(frontier, value)){
+            Py_DECREF(value); // value.rc = x
+            return PyErr_NoMemory();
+        }
+    }
+
+    Py_DECREF(attrs);
+    _Py_VPYDBG("\n");
+    Py_RETURN_NONE;
+}
+
+PyObject* walk_function(PyObject* op, stack* frontier)
+{
+    PyObject* builtins;
+    PyObject* globals;
+    PyFunctionObject* f;
+    PyObject* f_ptr;
+    PyCodeObject* f_code;
+    stack* f_stack;
+    _PyObject_ASSERT(op, PyFunction_Check(op));
+
+    _Py_VPYDBG("function: ");
+    _Py_VPYDBGPRINT(op);
+    _Py_VPYDBG("[rc=%ld]\n", Py_REFCNT(op));
+
+    _Py_SetImmutable(op);    
+
+    f = (PyFunctionObject*)op;
+    builtins = f->func_builtins;
+    globals = f->func_globals;
+
+    f_stack = stack_new();
+    if(f_stack == NULL){
+        return PyErr_NoMemory();
+    }
+
+    f_ptr = f->func_code;
+    if(stack_push(f_stack, f_ptr)){
+        stack_free(f_stack);
+        return PyErr_NoMemory();
+    }
+
+    Py_INCREF(f_ptr); // fp.rc = x + 1
+    _Py_VPYDBG("function: adding captured vars/funcs/builtins\n");
+    while(!stack_empty(f_stack)){
+        PyObject* cellvars;
+        Py_ssize_t size;
+        f_ptr = stack_pop(f_stack); // fp.rc = x + 1
+        _PyObject_ASSERT(f_ptr, PyCode_Check(f_ptr));
+        f_code = (PyCodeObject*)f_ptr;
+
+        _Py_VPYDBG("analysing code: ");
+        _Py_VPYDBGPRINT(f_code->co_name);
+        _Py_VPYDBG("\n");
+
+        size = PySequence_Fast_GET_SIZE(f_code->co_names);
+        _Py_VPYDBG("Enumerating %ld names\n", size);
+        for(Py_ssize_t i = 0; i < size; i++){
+            PyObject* name = PySequence_Fast_GET_ITEM(f_code->co_names, i); // name.rc = x
+
+            if(PyDict_Contains(globals, name)){
+                _Py_VPYDBG("global ");
+                _Py_VPYDBGPRINT(name);
+                _Py_VPYDBG("\n");
+                PyObject* value = PyDict_GetItem(globals, name); // value.rc = x + 1
+                if(!_Py_IsImmutable(value)){
+                    if(PyFunction_Check(value)){
+                        _Py_VPYDBG("calls ");
+                        _Py_VPYDBGPRINT(name);
+                        _Py_VPYDBG("\n");
+
+                        _Py_SetImmutable(value);
+                        if(stack_push(f_stack, ((PyFunctionObject*)value)->func_code)){
+                            Py_DECREF(value); // value.rc = x
+                            stack_free(f_stack);
+                            // frontier freed by the caller
+                            return PyErr_NoMemory();
+                        }
+                    }else{
+                        _Py_VPYDBG("references ");
+                        _Py_VPYDBGPRINT(name);
+                        _Py_VPYDBG("\n");
+
+                        if(stack_push(frontier, value)){
+                            Py_DECREF(value);  // value.rc = x
+                            stack_free(f_stack);
+                            // frontier freed by the caller
+                            return PyErr_NoMemory();
+                        }
+                    }
+                }else{
+                    Py_DECREF(value); // value.rc = x
+                }
+            }else if(PyDict_Contains(builtins, name)){
+                _Py_VPYDBG("builtin ");
+                _Py_VPYDBGPRINT(name);
+                _Py_VPYDBG("\n");
+
+                PyObject* value = PyDict_GetItem(builtins, name); // value.rc = x + 1
+                if(!_Py_IsImmutable(value)){
+                    _Py_SetImmutable(value);
+                }
+
+                Py_DECREF(value); // value.rc = x
+            }else{
+                _Py_VPYDBG("unrecognized name ");
+                _Py_VPYDBGPRINT(name);
+                _Py_VPYDBG("\n");
+                stack_free(f_stack);
+                // frontier freed by the caller
+                return PyErr_Format(PyExc_SystemError, "unrecognized name %R", name);
+            }
+        }
+
+        size = PySequence_Fast_GET_SIZE(f_code->co_consts);
+        _Py_VPYDBG("Enumerating %ld consts\n", size);
+        for(Py_ssize_t i = 0; i < size; i++){
+            PyObject* value = PySequence_Fast_GET_ITEM(f_code->co_consts, i); // value.rc = x
+            if(!_Py_IsImmutable(value)){
+                Py_INCREF(value); // value.rc = x + 1
+                if(PyCode_Check(value)){
+                    _Py_VPYDBG("nested ");
+                    _Py_VPYDBGPRINT(value);
+                    _Py_VPYDBG("\n");
+
+                    if(stack_push(f_stack, value)){
+                        Py_DECREF(value); // value.rc = x
+                        stack_free(f_stack);
+                        // frontier freed by the caller
+                        return PyErr_NoMemory();
+                    }
+                }else{
+                    _Py_VPYDBG("const ");
+                    _Py_VPYDBGPRINT(value);
+                    _Py_VPYDBG("\n");
+
+                    if(stack_push(frontier, value)){
+                        Py_DECREF(value); // value.rc = x
+                        stack_free(f_stack);
+                        // frontier freed by the caller
+                        return PyErr_NoMemory();
+                    }
+                }
+            }
+        }
+
+        cellvars = PyCode_GetCellvars(f_code);
+        size = PySequence_Fast_GET_SIZE(cellvars);
+        _Py_VPYDBG("Enumerating %ld cellvars\n", size);
+        for(Py_ssize_t i = 0; i < size; i++){
+            PyObject* value = PySequence_Fast_GET_ITEM(cellvars, i); // value.rc = x
+            if(!_Py_IsImmutable(value)){
+                Py_INCREF(value); // value.rc = x + 1
+
+                _Py_VPYDBG("cellvar ");
+                _Py_VPYDBGPRINT(value);
+                _Py_VPYDBG("\n");
+
+                if(stack_push(frontier, value)){
+                    Py_DECREF(value); // value.rc = x
+                    stack_free(f_stack);
+                    // frontier freed by the caller
+                    return PyErr_NoMemory();
+                }
+            }
+        }
+
+        Py_DECREF(f_ptr); // fp.rc = x
+    }
+
+    stack_free(f_stack);
+
+    Py_RETURN_NONE;
+}
+
+#define _Py_MAKEIMMUTABLE_CALL(f, item, frontier) do { \
+    PyObject* err = f((item), (frontier));             \
+    if(!Py_IsNone(err)){                               \
+        Py_DECREF(item);                               \
+        stack_free((frontier));                        \
+        return err;                                    \
+    }                                                  \
+} while(0)
 
 /*[clinic input]
 makeimmutable as builtin_makeimmutable
@@ -2841,6 +3162,9 @@ static PyObject *
 builtin_makeimmutable(PyObject *module, PyObject *obj)
 /*[clinic end generated code: output=4e665122542dfd24 input=21a50256fa4fb099]*/
 {
+    _Py_VPYDBG(">> makeimmutable(");
+    _Py_VPYDBGPRINT(obj);
+    _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));
     if(_Py_IsImmutable(obj) && _Py_IsImmutable(Py_TYPE(obj))){
         return obj;
     }
@@ -2855,8 +3179,13 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         return PyErr_NoMemory();
     }
 
+    Py_INCREF(obj); // obj.rc = x + 1
     while(!stack_empty(frontier)){
-        PyObject* item = stack_pop(frontier);
+        PyObject* item = stack_pop(frontier); // item.rc = x + 1
+
+        _Py_VPYDBG("item: ");
+        _Py_VPYDBGPRINT(item);
+        _Py_VPYDBG("\n");
 
         if(_Py_IsImmutable(item)){
             goto type;
@@ -2867,143 +3196,47 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
             goto next;
         }
 
-        _Py_SetImmutable(item);
+        if(PyFunction_Check(item)){
+            _Py_MAKEIMMUTABLE_CALL(walk_function, item, frontier);
+            goto next;
+        }
 
-        _Py_VERONAPYDBG("item: ");
-        _Py_VERONAPYDBGPRINT(item);
-        _Py_VERONAPYDBG("\n");
+        _Py_SetImmutable(item);
 
         if(is_leaf(item)){
             goto type;
         }
 
-        Py_ssize_t size;
-        if(PyList_Check(item) || PyTuple_Check(item)){
-            size = PySequence_Fast_GET_SIZE(item);
-            _Py_VERONAPYDBG("list/tuple: pushing %ld [i: element] elements\n", size);
-            for(Py_ssize_t i = 0; i < size; i++){
-                PyObject* element = PySequence_Fast_GET_ITEM(item, i);
-                _Py_VERONAPYDBG("[%ld: ", i);
-                _Py_VERONAPYDBGPRINT(element);
-                _Py_VERONAPYDBG("]\n");
-                if(!_Py_IsImmutable(element)){
-                    if(stack_push(frontier, element)){
-                        stack_free(frontier);
-                        return PyErr_NoMemory();
-                    }
-                }
-            }
-            _Py_VERONAPYDBG("\n");
-        }else if(PySequence_Check(item)){
-            size = PySequence_Size(item);
-            _Py_VERONAPYDBG("list/tuple: pushing %ld [i: element] elements\n", size);
-            for(Py_ssize_t i = 0; i < size; i++){
-                PyObject* element = PySequence_GetItem(item, i);
-                _Py_VERONAPYDBG("[%ld: ", i);
-                _Py_VERONAPYDBGPRINT(element);
-                _Py_VERONAPYDBG("]\n");
-                if(!_Py_IsImmutable(element)){
-                    if(stack_push(frontier, element)){
-                        stack_free(frontier);
-                        return PyErr_NoMemory();
-                    }
-                }
-            }
-            _Py_VERONAPYDBG("\n");
-        }
-
-        if(PyMapping_Check(item) && (PyDict_CheckExact(item) || PyObject_HasAttrString(item, "keys"))){
-            PyObject* keys = PyMapping_Keys(item);
-            size = PyList_Size(keys);
-            _Py_VERONAPYDBG("mapping: pushing %ld <key: value> pairs\n", size);
-            for(Py_ssize_t i = 0; i < size; i++){
-                _Py_VERONAPYDBG("<");
-                PyObject* key = PyList_GET_ITEM(keys, i);
-                _Py_VERONAPYDBGPRINT(key);
-                if(!_Py_IsImmutable(key)){
-                    if(stack_push(frontier, key)){
-                        stack_free(frontier);
-                        return PyErr_NoMemory();
-                    }
-                }
-
-                PyObject* value = PyObject_GetItem(item, key);
-                _Py_VERONAPYDBG(": ");
-                _Py_VERONAPYDBGPRINT(value);
-                if(!_Py_IsImmutable(value)){
-                    if(stack_push(frontier, value)){
-                        stack_free(frontier);
-                        return PyErr_NoMemory();
-                    }
-                }
-
-                _Py_VERONAPYDBG(">\n");
-            }
-
-            _Py_VERONAPYDBG("\n");
-            Py_DECREF(keys);
-        }
-
-        if(!PyObject_HasAttrString(item, "__dir__")){
-            // object does not provide __dir__
-            goto next;
-        }
-
-        _Py_VERONAPYDBG("object: pushing (attr: value)\n");
-
-        PyObject* attrs = PyObject_Dir(item);
-
-        size = PyList_Size(attrs);
-        for(Py_ssize_t i = 0; i < size; i++){
-            PyObject* attr = PyList_GET_ITEM(attrs, i);
-            PyObject* value = PyObject_GetAttr(item, attr);
-            if(value == NULL){
-                stack_free(frontier);
-                return NULL;
-            }
-
-            if(_Py_IsImmutable(value) || is_c_wrapper(value)){
-                // C functions are not mutable by construction, so we can skip them.
-                // Wrappers are ephemeral (created on request)
-                Py_DECREF(value);
-                continue;
-            }
-
-            _Py_VERONAPYDBG("(");
-            _Py_VERONAPYDBGPRINT(attr);
-            _Py_VERONAPYDBG(": ");
-            _Py_VERONAPYDBGPRINT(value);
-            _Py_VERONAPYDBG(")\n");
-
-            if(stack_push(frontier, value)){
-                stack_free(frontier);
-                return PyErr_NoMemory();
-            }
-        }
-
-        Py_DECREF(attrs);
-        _Py_VERONAPYDBG("\n");
+        _Py_MAKEIMMUTABLE_CALL(walk_sequence, item, frontier);
+        _Py_MAKEIMMUTABLE_CALL(walk_mapping, item, frontier);
+        _Py_MAKEIMMUTABLE_CALL(walk_object, item, frontier);
 
 type:
-        PyObject* type = PyObject_Type(item);
+        PyObject* type = PyObject_Type(item); // type.rc = x + 1
         if(!_Py_IsImmutable(type)){
             if(is_leaf_type((PyTypeObject*)type)){
                 _Py_SetImmutable(type);
             }else{
                 if(stack_push(frontier, type)){
+                    Py_DECREF(item);
                     stack_free(frontier);
                     return PyErr_NoMemory();
                 }
             }
         }
 
-        Py_DECREF(type);
+        Py_DECREF(type); // type.rc = x
 
 next:
-        Py_DECREF(item);
+        Py_DECREF(item); // item.rc = x
     }
 
     stack_free(frontier);
+
+    _Py_VPYDBGPRINT(obj);
+    _Py_VPYDBG(" region: %lu rc: %ld \n", Py_REGION(obj), Py_REFCNT(obj));
+    _Py_VPYDBG("<< makeimmutable complete\n\n");
+
     return obj;
 }
 

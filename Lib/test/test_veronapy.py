@@ -178,17 +178,32 @@ class TestMultiLevel(unittest.TestCase):
 
 class TestFunctions(unittest.TestCase):
     def setUp(self):
-        def foo():
+        def a():
             return 1
 
-        self.obj = foo
+        self.obj = a
         makeimmutable(self.obj)
 
-    def testNewFunction(self):
-        def bar():
+    def test_new_function(self):
+        def b():
             return 1
 
-        self.assertEqual(bar(), 1)
+        self.assertEqual(b(), 1)
+
+    def test_nonlocal(self):
+        def c():
+            v = 0
+
+            def inc():
+                nonlocal v
+                v += 1
+                return v
+
+            return inc()
+
+        self.assertEqual(c(), 1)
+        makeimmutable(c)
+        self.assertRaises(TypeError, c())
 
 
 if __name__ == '__main__':
