@@ -176,5 +176,20 @@ class TestMultiLevel(unittest.TestCase):
         self.assertTrue(isimmutable(type(self.obj).const))
 
 
+class TestFunctions(unittest.TestCase):
+    def setUp(self):
+        def foo():
+            return 1
+
+        self.obj = foo
+        makeimmutable(self.obj)
+
+    def testNewFunction(self):
+        def bar():
+            return 1
+
+        self.assertEqual(bar(), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

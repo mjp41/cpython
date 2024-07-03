@@ -11,8 +11,6 @@ extern "C" {
 
 #include "object.h"
 
-#define _Py_DEFAULT_REGION 0
-
 #define Py_CHECKWRITE(op) ((op) && _PyObject_CAST(op)->ob_region != _Py_IMMUTABLE)
 
 #ifdef NDEBUG

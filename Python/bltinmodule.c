@@ -2751,6 +2751,9 @@ static PyObject *
 builtin_isimmutable(PyObject *module, PyObject *obj)
 /*[clinic end generated code: output=80c746a3bd7adb46 input=15c0c9d2da47bc15]*/
 {
+    _Py_VERONAPYDBG("isimmutable(");
+    _Py_VERONAPYDBGPRINT(obj);
+    _Py_VERONAPYDBG(") region: %lu\n", Py_REGION(obj));
     return PyBool_FromLong(_Py_IsImmutable(obj));
 }
 
@@ -2838,7 +2841,7 @@ static PyObject *
 builtin_makeimmutable(PyObject *module, PyObject *obj)
 /*[clinic end generated code: output=4e665122542dfd24 input=21a50256fa4fb099]*/
 {
-    if(_Py_IsImmutable(obj)){
+    if(_Py_IsImmutable(obj) && _Py_IsImmutable(Py_TYPE(obj))){
         return obj;
     }
 
@@ -2856,7 +2859,7 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         PyObject* item = stack_pop(frontier);
 
         if(_Py_IsImmutable(item)){
-            goto next;
+            goto type;
         }
 
         if(is_c_wrapper(item)) {
@@ -2870,31 +2873,19 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         _Py_VERONAPYDBGPRINT(item);
         _Py_VERONAPYDBG("\n");
 
-        // TypeObjects also have a type, which is a special value that
-        // does not operate normally and exists to avoid infinite Type recursion.
-        // This check ensures we have a normal TypeObject.
-        PyObject* type = PyObject_Type(item);
-        if(is_leaf_type((PyTypeObject*)type)){
-            _Py_SetImmutable(type);
-        }else{
-            if(stack_push(frontier, type)){
-                stack_free(frontier);
-                return PyErr_NoMemory();
-            }
-        }
-
-        Py_DECREF(type);
-
         if(is_leaf(item)){
-            goto next;
+            goto type;
         }
 
         Py_ssize_t size;
         if(PyList_Check(item) || PyTuple_Check(item)){
-            _Py_VERONAPYDBG("list/tuple: pushing elements\n");
             size = PySequence_Fast_GET_SIZE(item);
+            _Py_VERONAPYDBG("list/tuple: pushing %ld [i: element] elements\n", size);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* element = PySequence_Fast_GET_ITEM(item, i);
+                _Py_VERONAPYDBG("[%ld: ", i);
+                _Py_VERONAPYDBGPRINT(element);
+                _Py_VERONAPYDBG("]\n");
                 if(!_Py_IsImmutable(element)){
                     if(stack_push(frontier, element)){
                         stack_free(frontier);
@@ -2902,11 +2893,15 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                     }
                 }
             }
+            _Py_VERONAPYDBG("\n");
         }else if(PySequence_Check(item)){
-            _Py_VERONAPYDBG("sequence: pushing elements\n");
             size = PySequence_Size(item);
+            _Py_VERONAPYDBG("list/tuple: pushing %ld [i: element] elements\n", size);
             for(Py_ssize_t i = 0; i < size; i++){
                 PyObject* element = PySequence_GetItem(item, i);
+                _Py_VERONAPYDBG("[%ld: ", i);
+                _Py_VERONAPYDBGPRINT(element);
+                _Py_VERONAPYDBG("]\n");
                 if(!_Py_IsImmutable(element)){
                     if(stack_push(frontier, element)){
                         stack_free(frontier);
@@ -2914,14 +2909,17 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                     }
                 }
             }
+            _Py_VERONAPYDBG("\n");
         }
 
         if(PyMapping_Check(item) && (PyDict_CheckExact(item) || PyObject_HasAttrString(item, "keys"))){
-            _Py_VERONAPYDBG("mapping: pushing keys and values\n");
             PyObject* keys = PyMapping_Keys(item);
             size = PyList_Size(keys);
+            _Py_VERONAPYDBG("mapping: pushing %ld <key: value> pairs\n", size);
             for(Py_ssize_t i = 0; i < size; i++){
+                _Py_VERONAPYDBG("<");
                 PyObject* key = PyList_GET_ITEM(keys, i);
+                _Py_VERONAPYDBGPRINT(key);
                 if(!_Py_IsImmutable(key)){
                     if(stack_push(frontier, key)){
                         stack_free(frontier);
@@ -2930,14 +2928,19 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                 }
 
                 PyObject* value = PyObject_GetItem(item, key);
+                _Py_VERONAPYDBG(": ");
+                _Py_VERONAPYDBGPRINT(value);
                 if(!_Py_IsImmutable(value)){
                     if(stack_push(frontier, value)){
                         stack_free(frontier);
                         return PyErr_NoMemory();
                     }
                 }
+
+                _Py_VERONAPYDBG(">\n");
             }
 
+            _Py_VERONAPYDBG("\n");
             Py_DECREF(keys);
         }
 
@@ -2946,7 +2949,7 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
             goto next;
         }
 
-        _Py_VERONAPYDBG("object: pushing attrs\n");
+        _Py_VERONAPYDBG("object: pushing (attr: value)\n");
 
         PyObject* attrs = PyObject_Dir(item);
 
@@ -2966,6 +2969,12 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
                 continue;
             }
 
+            _Py_VERONAPYDBG("(");
+            _Py_VERONAPYDBGPRINT(attr);
+            _Py_VERONAPYDBG(": ");
+            _Py_VERONAPYDBGPRINT(value);
+            _Py_VERONAPYDBG(")\n");
+
             if(stack_push(frontier, value)){
                 stack_free(frontier);
                 return PyErr_NoMemory();
@@ -2973,6 +2982,22 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
         }
 
         Py_DECREF(attrs);
+        _Py_VERONAPYDBG("\n");
+
+type:
+        PyObject* type = PyObject_Type(item);
+        if(!_Py_IsImmutable(type)){
+            if(is_leaf_type((PyTypeObject*)type)){
+                _Py_SetImmutable(type);
+            }else{
+                if(stack_push(frontier, type)){
+                    stack_free(frontier);
+                    return PyErr_NoMemory();
+                }
+            }
+        }
+
+        Py_DECREF(type);
 
 next:
         Py_DECREF(item);

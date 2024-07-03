@@ -1211,6 +1211,11 @@ binary_iop1(PyObject *v, PyObject *w, const int iop_slot, const int op_slot
     if (mv != NULL) {
         binaryfunc slot = NB_BINOP(mv, iop_slot);
         if (slot) {
+            if(!Py_CHECKWRITE(v)){
+                immutable_error();
+                return NULL;
+            }
+
             PyObject *x = (slot)(v, w);
             assert(_Py_CheckSlotResult(v, op_name, x != NULL));
             if (x != Py_NotImplemented) {
@@ -1241,6 +1246,7 @@ binary_iop(PyObject *v, PyObject *w, const int iop_slot, const int op_slot,
         Py_DECREF(result);
         return binop_type_error(v, w, op_name);
     }
+
     return result;
 }
 
@@ -1252,6 +1258,11 @@ ternary_iop(PyObject *v, PyObject *w, PyObject *z, const int iop_slot, const int
     if (mv != NULL) {
         ternaryfunc slot = NB_TERNOP(mv, iop_slot);
         if (slot) {
+            if(!Py_CHECKWRITE(v)){
+                immutable_error();
+                return NULL;
+            }
+
             PyObject *x = (slot)(v, w, z);
             if (x != Py_NotImplemented) {
                 return x;
@@ -1265,9 +1276,6 @@ ternary_iop(PyObject *v, PyObject *w, PyObject *z, const int iop_slot, const int
 #define INPLACE_BINOP(func, iop, op, op_name) \
     PyObject * \
     func(PyObject *v, PyObject *w) { \
-        if(!Py_CHECKWRITE(v)){ \
-            return immutable_error(); \
-        } \
         return binary_iop(v, w, NB_SLOT(iop), NB_SLOT(op), op_name); \
     }
 
@@ -1285,10 +1293,6 @@ INPLACE_BINOP(PyNumber_InPlaceRemainder, nb_inplace_remainder, nb_remainder, "%=
 PyObject *
 PyNumber_InPlaceAdd(PyObject *v, PyObject *w)
 {
-    if(!Py_CHECKWRITE(v)){
-        return immutable_error();
-    }
-
     PyObject *result = BINARY_IOP1(v, w, NB_SLOT(nb_inplace_add),
                                    NB_SLOT(nb_add), "+=");
     if (result == Py_NotImplemented) {
@@ -1312,10 +1316,6 @@ PyNumber_InPlaceAdd(PyObject *v, PyObject *w)
 PyObject *
 PyNumber_InPlaceMultiply(PyObject *v, PyObject *w)
 {
-    if(!Py_CHECKWRITE(v)){
-        return immutable_error();
-    }
-
     PyObject *result = BINARY_IOP1(v, w, NB_SLOT(nb_inplace_multiply),
                                    NB_SLOT(nb_multiply), "*=");
     if (result == Py_NotImplemented) {
@@ -1345,10 +1345,6 @@ PyNumber_InPlaceMultiply(PyObject *v, PyObject *w)
 PyObject *
 PyNumber_InPlacePower(PyObject *v, PyObject *w, PyObject *z)
 {
-    if(!Py_CHECKWRITE(v)){
-        return immutable_error();
-    }
-
     return ternary_iop(v, w, z, NB_SLOT(nb_inplace_power),
                                 NB_SLOT(nb_power), "**=");
 }

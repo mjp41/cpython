@@ -1238,6 +1238,11 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
 {
     PyObject *old_value;
 
+    if (!Py_CHECKWRITE(mp)){
+        PyErr_WriteToImmutable(mp);
+        goto Fail;
+    }
+
     if (DK_IS_UNICODE(mp->ma_keys) && !PyUnicode_CheckExact(key)) {
         if (insertion_resize(interp, mp, 0) < 0)
             goto Fail;
@@ -1334,6 +1339,13 @@ insert_to_emptydict(PyInterpreterState *interp, PyDictObject *mp,
                     PyObject *key, Py_hash_t hash, PyObject *value)
 {
     assert(mp->ma_keys == Py_EMPTY_KEYS);
+
+    if (!Py_CHECKWRITE(mp)){
+        PyErr_WriteToImmutable(mp);
+        Py_DECREF(key);
+        Py_DECREF(value);
+        return -1;
+    }
 
     uint64_t new_version = _PyDict_NotifyEvent(
             interp, PyDict_EVENT_ADDED, mp, key, value);
@@ -1879,11 +1891,6 @@ PyDict_SetItem(PyObject *op, PyObject *key, PyObject *value)
         return -1;
     }
 
-    if (!Py_CHECKWRITE(op)){
-        PyErr_WriteToImmutable(op);
-        return -1;
-    }
-
     assert(key);
     assert(value);
     return _PyDict_SetItem_Take2((PyDictObject *)op,
@@ -1975,11 +1982,6 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
 int
 PyDict_DelItem(PyObject *op, PyObject *key)
 {
-    if(!Py_CHECKWRITE(op)){
-        PyErr_WriteToImmutable(op);
-        return -1;
-    }
-
     Py_hash_t hash;
     assert(key);
     if (!PyUnicode_CheckExact(key) || (hash = unicode_get_hash(key)) == -1) {
@@ -2010,6 +2012,11 @@ _PyDict_DelItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
         return -1;
     if (ix == DKIX_EMPTY || old_value == NULL) {
         _PyErr_SetKeyError(key);
+        return -1;
+    }
+
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
         return -1;
     }
 
@@ -5464,6 +5471,12 @@ _PyObject_StoreInstanceAttribute(PyObject *obj, PyDictValues *values,
     assert(keys != NULL);
     assert(values != NULL);
     assert(Py_TYPE(obj)->tp_flags & Py_TPFLAGS_MANAGED_DICT);
+
+    if(!Py_CHECKWRITE(obj)){
+        PyErr_WriteToImmutable(obj);
+        return -1;
+    }
+
     Py_ssize_t ix = DKIX_EMPTY;
     if (PyUnicode_CheckExact(name)) {
         ix = insert_into_dictkeys(keys, name);

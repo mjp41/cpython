@@ -125,6 +125,7 @@ check by comparing the reference count field to the immortality reference count.
 #define _Py_IMMORTAL_REFCNT (UINT_MAX >> 2)
 #endif
 
+#define _Py_DEFAULT_REGION ((Py_uintptr_t)0)
 #define _Py_IMMUTABLE ((Py_uintptr_t)1)
 
 // Make all internal uses of PyObject_HEAD_INIT immortal while preserving the
@@ -134,14 +135,16 @@ check by comparing the reference count field to the immortality reference count.
     {                               \
         _PyObject_EXTRA_INIT        \
         { _Py_IMMORTAL_REFCNT },    \
-        (type)                      \
+        (type),                     \
+        _Py_DEFAULT_REGION          \
     },
 #else
 #define PyObject_HEAD_INIT(type) \
     {                            \
         _PyObject_EXTRA_INIT     \
         { 1 },                   \
-        (type)                   \
+        (type),                  \
+        _Py_DEFAULT_REGION       \
     },
 #endif /* Py_BUILD_CORE */
 

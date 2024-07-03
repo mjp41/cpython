@@ -1159,11 +1159,6 @@ PyObject_HasAttr(PyObject *v, PyObject *name)
 int
 PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
 {
-    if(!Py_CHECKWRITE(v)){
-        PyErr_WriteToImmutable(v);
-        return -1;
-    }
-
     PyTypeObject *tp = Py_TYPE(v);
     int err;
 
@@ -1177,7 +1172,13 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
 
     PyUnicode_InternInPlace(&name);
     if (tp->tp_setattro != NULL) {
-        err = (*tp->tp_setattro)(v, name, value);
+        if(Py_CHECKWRITE(v)){
+            err = (*tp->tp_setattro)(v, name, value);
+        }else{
+            PyErr_WriteToImmutable(v);
+            err = -1;
+        }
+
         Py_DECREF(name);
         return err;
     }
@@ -1187,7 +1188,14 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
             Py_DECREF(name);
             return -1;
         }
-        err = (*tp->tp_setattr)(v, (char *)name_str, value);
+
+        if(Py_CHECKWRITE(v)){
+            err = (*tp->tp_setattr)(v, (char *)name_str, value);
+        }else{
+            PyErr_WriteToImmutable(v);
+            err = -1;
+        }
+
         Py_DECREF(name);
         return err;
     }
@@ -1621,11 +1629,6 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
 int
 PyObject_GenericSetAttr(PyObject *obj, PyObject *name, PyObject *value)
 {
-    if(!Py_CHECKWRITE(obj)){
-        PyErr_WriteToImmutable(obj);
-        return -1;
-    }
-
     return _PyObject_GenericSetAttrWithDict(obj, name, value, NULL);
 }
 
@@ -1913,7 +1916,8 @@ PyTypeObject _PyNone_Type = {
 PyObject _Py_NoneStruct = {
     _PyObject_EXTRA_INIT
     { _Py_IMMORTAL_REFCNT },
-    &_PyNone_Type
+    &_PyNone_Type,
+    _Py_IMMUTABLE
 };
 
 /* NotImplemented is an object that can be used to signal that an

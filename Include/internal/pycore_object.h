@@ -23,17 +23,17 @@ extern "C" {
    Furthermore, we can't use designated initializers in Extensions since these
    are not supported pre-C++20. Thus, keeping an internal copy here is the most
    backwards compatible solution */
-#define _PyObject_HEAD_INIT(type)         \
+#define _PyObject_HEAD_INIT(type, region) \
     {                                     \
         _PyObject_EXTRA_INIT              \
         .ob_refcnt = _Py_IMMORTAL_REFCNT, \
         .ob_type = (type),                \
-        .ob_region = _Py_DEFAULT_REGION   \
+        .ob_region = region               \
     },
-#define _PyVarObject_HEAD_INIT(type, size)    \
-    {                                         \
-        .ob_base = _PyObject_HEAD_INIT(type)  \
-        .ob_size = size                       \
+#define _PyVarObject_HEAD_INIT(type, size)                        \
+    {                                                             \
+        .ob_base = _PyObject_HEAD_INIT(type, _Py_DEFAULT_REGION)  \
+        .ob_size = size                                           \
     },
 
 PyAPI_FUNC(void) _Py_NO_RETURN _Py_FatalRefcountErrorFunc(
@@ -98,7 +98,7 @@ static inline void _Py_SetImmutable(PyObject *op)
     if(op) {
         op->ob_region = _Py_IMMUTABLE;
         // TODO once reference counting across regions is fully working
-        // we no longer need to do this
+        // we no longer need to make all immutable objects immortal
         op->ob_refcnt = _Py_IMMORTAL_REFCNT;
     }
 }
