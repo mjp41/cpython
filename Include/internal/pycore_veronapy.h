@@ -18,7 +18,7 @@ extern "C" {
 #define _Py_VPYDBGPRINT(fmt, ...)
 #else
 #define _Py_VPYDBG(fmt, ...) printf(fmt, ##__VA_ARGS__)
-#define _Py_VPYDBGPRINT(op) PyObject_Print(op, stdout, 0)
+#define _Py_VPYDBGPRINT(op) PyObject_Print(_PyObject_CAST(op), stdout, 0)
 #endif
 
 #ifdef __cplusplus

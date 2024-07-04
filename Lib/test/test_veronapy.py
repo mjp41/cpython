@@ -1,5 +1,6 @@
 import unittest
 
+global0 = 0
 
 class BaseObjectTest(unittest.TestCase):
     obj = None
@@ -203,8 +204,43 @@ class TestFunctions(unittest.TestCase):
 
         self.assertEqual(c(), 1)
         makeimmutable(c)
-        self.assertRaises(TypeError, c())
+        self.assertRaises(TypeError, c)
+
+    def test_global(self):
+        def d():
+            global global0
+            global0 += 1
+            return global0
+
+        self.assertEqual(d(), 1)
+        makeimmutable(d)
+        self.assertTrue(isimmutable(global0))
+        self.assertRaises(TypeError, d)
+
+    def test_builtins(self):
+        def e():
+            test = list(range(5))
+            return sum(test)
+
+        makeimmutable(e)
+        self.assertTrue(isimmutable(list))
+        self.assertTrue(isimmutable(range))
+        self.assertTrue(isimmutable(sum))
+
+    def test_builtins_nested(self):
+        def g():
+            def nested_test():
+                test = list(range(10))
+                return sum(test)
+
+            return nested_test()
+
+        makeimmutable(g)
+        self.assertTrue(isimmutable(list))
+        self.assertTrue(isimmutable(range))
+        self.assertTrue(isimmutable(sum))
 
 
 if __name__ == '__main__':
     unittest.main()
+

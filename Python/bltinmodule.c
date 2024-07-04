@@ -3024,17 +3024,18 @@ PyObject* walk_function(PyObject* op, stack* frontier)
         _Py_VPYDBG("Enumerating %ld names\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* name = PySequence_Fast_GET_ITEM(f_code->co_names, i); // name.rc = x
+            _Py_VPYDBG("name ");
+            _Py_VPYDBGPRINT(name);
+            _Py_VPYDBG(": ");
 
             if(PyDict_Contains(globals, name)){
-                _Py_VPYDBG("global ");
-                _Py_VPYDBGPRINT(name);
-                _Py_VPYDBG("\n");
                 PyObject* value = PyDict_GetItem(globals, name); // value.rc = x + 1
+                _Py_VPYDBG("global(");
+                _Py_VPYDBGPRINT(value);
+                _Py_VPYDBG(") -> ");
                 if(!_Py_IsImmutable(value)){
                     if(PyFunction_Check(value)){
-                        _Py_VPYDBG("calls ");
-                        _Py_VPYDBGPRINT(name);
-                        _Py_VPYDBG("\n");
+                        _Py_VPYDBG("function\n");
 
                         _Py_SetImmutable(value);
                         if(stack_push(f_stack, ((PyFunctionObject*)value)->func_code)){
@@ -3044,9 +3045,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                             return PyErr_NoMemory();
                         }
                     }else{
-                        _Py_VPYDBG("references ");
-                        _Py_VPYDBGPRINT(name);
-                        _Py_VPYDBG("\n");
+                        _Py_VPYDBG("pushed\n");
 
                         if(stack_push(frontier, value)){
                             Py_DECREF(value);  // value.rc = x
@@ -3056,12 +3055,11 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         }
                     }
                 }else{
+                    _Py_VPYDBG("immutable\n");
                     Py_DECREF(value); // value.rc = x
                 }
             }else if(PyDict_Contains(builtins, name)){
-                _Py_VPYDBG("builtin ");
-                _Py_VPYDBGPRINT(name);
-                _Py_VPYDBG("\n");
+                _Py_VPYDBG("builtin\n");
 
                 PyObject* value = PyDict_GetItem(builtins, name); // value.rc = x + 1
                 if(!_Py_IsImmutable(value)){
@@ -3070,9 +3068,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
 
                 Py_DECREF(value); // value.rc = x
             }else{
-                _Py_VPYDBG("unrecognized name ");
-                _Py_VPYDBGPRINT(name);
-                _Py_VPYDBG("\n");
+                _Py_VPYDBG("unrecognized!\n");
                 stack_free(f_stack);
                 // frontier freed by the caller
                 return PyErr_Format(PyExc_SystemError, "unrecognized name %R", name);
@@ -3083,12 +3079,13 @@ PyObject* walk_function(PyObject* op, stack* frontier)
         _Py_VPYDBG("Enumerating %ld consts\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* value = PySequence_Fast_GET_ITEM(f_code->co_consts, i); // value.rc = x
+            _Py_VPYDBG("const ");
+            _Py_VPYDBGPRINT(value);
+            _Py_VPYDBG(": ");
             if(!_Py_IsImmutable(value)){
                 Py_INCREF(value); // value.rc = x + 1
                 if(PyCode_Check(value)){
-                    _Py_VPYDBG("nested ");
-                    _Py_VPYDBGPRINT(value);
-                    _Py_VPYDBG("\n");
+                    _Py_VPYDBG("nested_func\n");
 
                     if(stack_push(f_stack, value)){
                         Py_DECREF(value); // value.rc = x
@@ -3097,9 +3094,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         return PyErr_NoMemory();
                     }
                 }else{
-                    _Py_VPYDBG("const ");
-                    _Py_VPYDBGPRINT(value);
-                    _Py_VPYDBG("\n");
+                    _Py_VPYDBG("pushed\n");
 
                     if(stack_push(frontier, value)){
                         Py_DECREF(value); // value.rc = x
@@ -3108,6 +3103,8 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         return PyErr_NoMemory();
                     }
                 }
+            }else{
+                _Py_VPYDBG("immutable\n");
             }
         }
 
@@ -3115,21 +3112,31 @@ PyObject* walk_function(PyObject* op, stack* frontier)
         size = PySequence_Fast_GET_SIZE(cellvars);
         _Py_VPYDBG("Enumerating %ld cellvars\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
-            PyObject* value = PySequence_Fast_GET_ITEM(cellvars, i); // value.rc = x
+            PyObject* name = PySequence_Fast_GET_ITEM(cellvars, i); // value.rc = x
+            //PyObject* value;
+            _Py_VPYDBG("name ");
+            _Py_VPYDBGPRINT(name);
+            _Py_VPYDBG(" ");
+            _Py_VPYDBGPRINT(Py_TYPE(name));
+            _Py_VPYDBG(": TODO");
+
+            /*
+            TODO how do we get the actual cellvar object?
+            We essentially need to access the frame associated with this function
+            And alter the local itself
             if(!_Py_IsImmutable(value)){
-                Py_INCREF(value); // value.rc = x + 1
-
-                _Py_VPYDBG("cellvar ");
-                _Py_VPYDBGPRINT(value);
-                _Py_VPYDBG("\n");
-
-                if(stack_push(frontier, value)){
-                    Py_DECREF(value); // value.rc = x
+                Py_INCREF(name); // value.rc = x + 1
+                _Py_VPYDBG("pushed\n");
+                if(stack_push(frontier, name)){
+                    Py_DECREF(name); // value.rc = x
                     stack_free(f_stack);
                     // frontier freed by the caller
                     return PyErr_NoMemory();
                 }
+            }else{
+                _Py_VPYDBG("immutable\n");
             }
+            */
         }
 
         Py_DECREF(f_ptr); // fp.rc = x
