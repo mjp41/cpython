@@ -2889,7 +2889,7 @@ PyObject* walk_sequence(PyObject* seq, stack* frontier) {
     }else if(PySequence_Check(seq)){
         return add_elements(seq, frontier);
     }
-    
+
     Py_RETURN_NONE;
 }
 
@@ -2992,7 +2992,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     _Py_VPYDBGPRINT(op);
     _Py_VPYDBG("[rc=%ld]\n", Py_REFCNT(op));
 
-    _Py_SetImmutable(op);    
+    _Py_SetImmutable(op);
 
     f = (PyFunctionObject*)op;
     builtins = f->func_builtins;
