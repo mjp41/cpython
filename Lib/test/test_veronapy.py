@@ -243,5 +243,32 @@ class TestFunctions(unittest.TestCase):
         self.assertTrue(isimmutable(sum))
 
 
+class TestMethods(unittest.TestCase):
+    class C:
+        def __init__(self):
+            self.val = -1
+
+        def a(self):
+            return abs(self.val)
+
+        def b(self, x):
+            self.val = self.val + x
+
+    def test_method(self):
+        obj = TestMethods.C()
+        makeimmutable(obj)
+        self.assertEqual(obj.a(), 1)
+        self.assertTrue(isimmutable(abs))
+        self.assertRaises(NotWriteableError, obj.b, 1)
+
+    def test_lambda(self):
+        obj = TestMethods.C()
+        obj.c = lambda x: pow(x, 2)
+        makeimmutable(obj)
+        self.assertTrue(isimmutable(pow))
+        self.assertRaises(NotWriteableError, obj.b, 1)
+        self.assertEqual(obj.b(2), 4)
+
+
 if __name__ == '__main__':
     unittest.main()
