@@ -40,7 +40,7 @@ immutable_error(void)
 {
     PyThreadState *tstate = _PyThreadState_GET();
     if (!_PyErr_Occurred(tstate)) {
-        _PyErr_SetString(tstate, PyExc_TypeError,
+        _PyErr_SetString(tstate, PyExc_NotWriteableError,
                          "can't modify immutable instance");
     }
     return NULL;
@@ -219,13 +219,13 @@ PyObject_SetItem(PyObject *o, PyObject *key, PyObject *value)
         return -1;
     }
 
-    if(!Py_CHECKWRITE(o)){
-        immutable_error();
-        return -1;
-    }
-
     PyMappingMethods *m = Py_TYPE(o)->tp_as_mapping;
     if (m && m->mp_ass_subscript) {
+        if(!Py_CHECKWRITE(o)){
+            immutable_error();
+            return -1;
+        }
+
         int res = m->mp_ass_subscript(o, key, value);
         assert(_Py_CheckSlotResult(o, "__setitem__", res >= 0));
         return res;
@@ -233,6 +233,11 @@ PyObject_SetItem(PyObject *o, PyObject *key, PyObject *value)
 
     if (Py_TYPE(o)->tp_as_sequence) {
         if (_PyIndex_Check(key)) {
+            if(!Py_CHECKWRITE(o)){
+                immutable_error();
+                return -1;
+            }
+
             Py_ssize_t key_value;
             key_value = PyNumber_AsSsize_t(key, PyExc_IndexError);
             if (key_value == -1 && PyErr_Occurred())
@@ -258,13 +263,13 @@ PyObject_DelItem(PyObject *o, PyObject *key)
         return -1;
     }
 
-    if(!Py_CHECKWRITE(o)){
-        immutable_error();
-        return -1;
-    }
-
     PyMappingMethods *m = Py_TYPE(o)->tp_as_mapping;
     if (m && m->mp_ass_subscript) {
+        if(!Py_CHECKWRITE(o)){
+            immutable_error();
+            return -1;
+        }
+
         int res = m->mp_ass_subscript(o, key, (PyObject*)NULL);
         assert(_Py_CheckSlotResult(o, "__delitem__", res >= 0));
         return res;
@@ -272,6 +277,11 @@ PyObject_DelItem(PyObject *o, PyObject *key)
 
     if (Py_TYPE(o)->tp_as_sequence) {
         if (_PyIndex_Check(key)) {
+            if(!Py_CHECKWRITE(o)){
+                immutable_error();
+                return -1;
+            }
+
             Py_ssize_t key_value;
             key_value = PyNumber_AsSsize_t(key, PyExc_IndexError);
             if (key_value == -1 && PyErr_Occurred())
@@ -1847,12 +1857,12 @@ PySequence_InPlaceConcat(PyObject *s, PyObject *o)
         return null_error();
     }
 
-    if(!Py_CHECKWRITE(s)){
-        return immutable_error();
-    }
-
     PySequenceMethods *m = Py_TYPE(s)->tp_as_sequence;
     if (m && m->sq_inplace_concat) {
+        if(!Py_CHECKWRITE(s)){
+            return immutable_error();
+        }
+
         PyObject *res = m->sq_inplace_concat(s, o);
         assert(_Py_CheckSlotResult(s, "+=", res != NULL));
         return res;
@@ -1880,12 +1890,12 @@ PySequence_InPlaceRepeat(PyObject *o, Py_ssize_t count)
         return null_error();
     }
 
-    if (!Py_CHECKWRITE(o)){
-        return immutable_error();
-    }
-
     PySequenceMethods *m = Py_TYPE(o)->tp_as_sequence;
     if (m && m->sq_inplace_repeat) {
+        if (!Py_CHECKWRITE(o)){
+            return immutable_error();
+        }
+
         PyObject *res = m->sq_inplace_repeat(o, count);
         assert(_Py_CheckSlotResult(o, "*=", res != NULL));
         return res;
@@ -1971,13 +1981,13 @@ PySequence_SetItem(PyObject *s, Py_ssize_t i, PyObject *o)
         return -1;
     }
 
-    if (!Py_CHECKWRITE(s)){
-        immutable_error();
-        return -1;
-    }
-
     PySequenceMethods *m = Py_TYPE(s)->tp_as_sequence;
     if (m && m->sq_ass_item) {
+        if (!Py_CHECKWRITE(s)){
+            immutable_error();
+            return -1;
+        }
+
         if (i < 0) {
             if (m->sq_length) {
                 Py_ssize_t l = (*m->sq_length)(s);
@@ -2009,13 +2019,13 @@ PySequence_DelItem(PyObject *s, Py_ssize_t i)
         return -1;
     }
 
-    if(!Py_CHECKWRITE(s)){
-        immutable_error();
-        return -1;
-    }
-
     PySequenceMethods *m = Py_TYPE(s)->tp_as_sequence;
     if (m && m->sq_ass_item) {
+        if(!Py_CHECKWRITE(s)){
+            immutable_error();
+            return -1;
+        }
+
         if (i < 0) {
             if (m->sq_length) {
                 Py_ssize_t l = (*m->sq_length)(s);
@@ -2047,13 +2057,13 @@ PySequence_SetSlice(PyObject *s, Py_ssize_t i1, Py_ssize_t i2, PyObject *o)
         return -1;
     }
 
-    if (!Py_CHECKWRITE(s)){
-        immutable_error();
-        return -1;
-    }
-
     PyMappingMethods *mp = Py_TYPE(s)->tp_as_mapping;
     if (mp && mp->mp_ass_subscript) {
+        if (!Py_CHECKWRITE(s)){
+            immutable_error();
+            return -1;
+        }
+
         PyObject *slice = _PySlice_FromIndices(i1, i2);
         if (!slice)
             return -1;
@@ -2075,13 +2085,13 @@ PySequence_DelSlice(PyObject *s, Py_ssize_t i1, Py_ssize_t i2)
         return -1;
     }
 
-    if(!Py_CHECKWRITE(s)){
-        immutable_error();
-        return -1;
-    }
-
     PyMappingMethods *mp = Py_TYPE(s)->tp_as_mapping;
     if (mp && mp->mp_ass_subscript) {
+        if(!Py_CHECKWRITE(s)){
+            immutable_error();
+            return -1;
+        }
+
         PyObject *slice = _PySlice_FromIndices(i1, i2);
         if (!slice) {
             return -1;

@@ -1410,6 +1410,12 @@ dummy_func(
                 format_exc_unbound(tstate, frame->f_code, oparg);
                 goto error;
             }
+
+            if (!Py_CHECKWRITE(cell)){
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                goto error;
+            }
+
             PyCell_SET(cell, NULL);
             Py_DECREF(oldobj);
         }
@@ -1464,6 +1470,12 @@ dummy_func(
         inst(STORE_DEREF, (v --)) {
             PyObject *cell = GETLOCAL(oparg);
             PyObject *oldobj = PyCell_GET(cell);
+
+            if(!Py_CHECKWRITE(cell)){
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                goto error;
+            }
+
             PyCell_SET(cell, v);
             Py_XDECREF(oldobj);
         }

@@ -12,7 +12,7 @@ class BaseObjectTest(unittest.TestCase):
         self.assertTrue(isimmutable(self.obj))
 
     def test_add_attribute(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.new_attribute = 'value'
 
     def test_type_immutable(self):
@@ -33,43 +33,43 @@ class TestList(BaseObjectTest):
     obj = [C(), C(), 1, "two", None]
 
     def test_set_item(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj[0] = None
 
     def test_set_slice(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj[1:3] = [None, None]
 
     def test_append(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.append(TestList.C())
 
     def test_extend(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.extend([TestList.C()])
 
     def test_insert(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.insert(0, TestList.C())
 
     def test_pop(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.pop()
 
     def test_remove(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.remove(1)
 
     def test_reverse(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.reverse()
 
     def test_clear(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.clear()
 
     def test_sort(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.sort()
 
 
@@ -80,35 +80,35 @@ class TestDict(BaseObjectTest):
     obj = {1: C(), "two": C()}
 
     def test_set_item_exists(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj[1] = None
 
     def test_set_item_new(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj["three"] = TestDict.C()
 
     def test_del_item(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             del self.obj[1]
 
     def test_clear(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.clear()
 
     def test_pop(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.pop(1)
 
     def test_popitem(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.popitem()
 
     def test_setdefault(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.setdefault("three", TestDict.C())
 
     def test_update(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.update({1: None})
 
 
@@ -116,27 +116,27 @@ class TestSet(BaseObjectTest):
     obj = {1, "two", None, True}
 
     def test_add(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.add(1)
 
     def test_clear(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.clear()
 
     def test_discard(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.discard(1)
 
     def test_pop(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.pop()
 
     def test_remove(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.remove(1)
 
     def test_update(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.update([1, 2])
 
 
@@ -169,7 +169,7 @@ class TestMultiLevel(unittest.TestCase):
         self.assertTrue(isimmutable(self.obj.g["two"].i))
 
     def test_set_const(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             self.obj.const = 1
 
     def test_type_immutable(self):
@@ -200,11 +200,13 @@ class TestFunctions(unittest.TestCase):
                 v += 1
                 return v
 
-            return inc()
+            return inc
 
-        self.assertEqual(c(), 1)
-        makeimmutable(c)
-        self.assertRaises(TypeError, c)
+        test = c()
+        self.assertEqual(test(), 1)
+        self.assertEqual(test(), 2)
+        makeimmutable(test)
+        self.assertRaises(NotWriteableError, test)
 
     def test_global(self):
         def d():
@@ -215,7 +217,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(d(), 1)
         makeimmutable(d)
         self.assertTrue(isimmutable(global0))
-        self.assertRaises(TypeError, d)
+        self.assertRaises(NotWriteableError, d)
 
     def test_builtins(self):
         def e():

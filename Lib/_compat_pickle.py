@@ -137,6 +137,7 @@ PYTHON2_EXCEPTIONS = (
     "UnicodeWarning",
     "UserWarning",
     "ValueError",
+    "NotWriteableError",
     "Warning",
     "ZeroDivisionError",
 )

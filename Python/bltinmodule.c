@@ -2980,9 +2980,11 @@ PyObject* walk_function(PyObject* op, stack* frontier)
 {
     PyObject* builtins;
     PyObject* globals;
+    PyObject* closure;
     PyFunctionObject* f;
     PyObject* f_ptr;
     PyCodeObject* f_code;
+    Py_ssize_t size;
     stack* f_stack;
     _PyObject_ASSERT(op, PyFunction_Check(op));
 
@@ -2995,6 +2997,16 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     f = (PyFunctionObject*)op;
     builtins = f->func_builtins;
     globals = f->func_globals;
+    closure = f->func_closure;
+
+    if(closure != NULL){
+        size = PySequence_Fast_GET_SIZE(closure);
+        _Py_VPYDBG("adding %ld cells from closure\n", size);
+        for(Py_ssize_t i = 0; i < size; i++){
+            PyObject* cell = PySequence_Fast_GET_ITEM(closure, i); // cell.rc = x
+            _Py_SetImmutable(cell);
+        }
+    }
 
     f_stack = stack_new();
     if(f_stack == NULL){
@@ -3010,8 +3022,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     Py_INCREF(f_ptr); // fp.rc = x + 1
     _Py_VPYDBG("function: adding captured vars/funcs/builtins\n");
     while(!stack_empty(f_stack)){
-        PyObject* cellvars;
-        Py_ssize_t size;
         f_ptr = stack_pop(f_stack); // fp.rc = x + 1
         _PyObject_ASSERT(f_ptr, PyCode_Check(f_ptr));
         f_code = (PyCodeObject*)f_ptr;
@@ -3106,37 +3116,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
             }else{
                 _Py_VPYDBG("immutable\n");
             }
-        }
-
-        cellvars = PyCode_GetCellvars(f_code);
-        size = PySequence_Fast_GET_SIZE(cellvars);
-        _Py_VPYDBG("Enumerating %ld cellvars\n", size);
-        for(Py_ssize_t i = 0; i < size; i++){
-            PyObject* name = PySequence_Fast_GET_ITEM(cellvars, i); // value.rc = x
-            //PyObject* value;
-            _Py_VPYDBG("name ");
-            _Py_VPYDBGPRINT(name);
-            _Py_VPYDBG(" ");
-            _Py_VPYDBGPRINT(Py_TYPE(name));
-            _Py_VPYDBG(": TODO");
-
-            /*
-            TODO how do we get the actual cellvar object?
-            We essentially need to access the frame associated with this function
-            And alter the local itself
-            if(!_Py_IsImmutable(value)){
-                Py_INCREF(name); // value.rc = x + 1
-                _Py_VPYDBG("pushed\n");
-                if(stack_push(frontier, name)){
-                    Py_DECREF(name); // value.rc = x
-                    stack_free(f_stack);
-                    // frontier freed by the caller
-                    return PyErr_NoMemory();
-                }
-            }else{
-                _Py_VPYDBG("immutable\n");
-            }
-            */
         }
 
         Py_DECREF(f_ptr); // fp.rc = x
