@@ -38,6 +38,7 @@
     - [x] [PySequence_Check/PySequence_GetItem]
     - [x] [PySequence_Fast/PySequence_Fast_ITEMS] (where appropriate)
     - [x] [PyMapping_Check/PyMapping_Items]
+- [x] Add NotWriteableError
 - [ ] Checking flag on anything that could mutate.
     - [x] [PyObject_SetItem](Objects/abstract.c#L212) (`mp_ass_subscript`, `sq_ass_item`)
     - [x] [PySequence_SetItem](Objects/abstract.c#1913) (`sq_ass_item`)
@@ -87,3 +88,5 @@
     - [ ] [PyException_SetContext](Objects/exceptions.c#L417)
     - [ ] [PyException_SetArgs](Objects/exceptions.c#L430)
     - [x] [PyCell_Set](Objects/cellobject.c#L63)
+    - [x] [DELETE_DEREF](Python/bytecodes.c)
+    - [x] [STORE_DEREF](Python/bytecodes.c)
