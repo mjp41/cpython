@@ -1274,6 +1274,7 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
             PyDictUnicodeEntry *ep;
             ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[mp->ma_keys->dk_nentries];
             ep->me_key = key;
+            ep->me_immutable = false;
             if (mp->ma_values) {
                 Py_ssize_t index = mp->ma_keys->dk_nentries;
                 _PyDictValues_AddToInsertionOrder(mp->ma_values, index);
@@ -1290,6 +1291,7 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
             ep->me_key = key;
             ep->me_hash = hash;
             ep->me_value = value;
+            ep->me_immutable = false;
         }
         mp->ma_used++;
         mp->ma_version_tag = new_version;
@@ -1301,6 +1303,24 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
     }
 
     if (old_value != value) {
+        if(DK_IS_UNICODE(mp->ma_keys)){
+            PyDictUnicodeEntry *ep;
+            ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
+            if(ep->me_immutable){
+                // TODO make this a key error
+                PyErr_WriteToImmutable(mp);
+                goto Fail;
+            }
+        }else{
+            PyDictKeyEntry* ep;
+            ep = &DK_ENTRIES(mp->ma_keys)[ix];
+            if(ep->me_immutable){
+                // TODO make this a key error
+                PyErr_WriteToImmutable(mp);
+                goto Fail;
+            }
+        }
+
         uint64_t new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_MODIFIED, mp, key, value);
         if (_PyDict_HasSplitTable(mp)) {
@@ -1484,6 +1504,7 @@ dictresize(PyInterpreterState *interp, PyDictObject *mp,
                 newentries[i].me_key = Py_NewRef(ep->me_key);
                 newentries[i].me_hash = unicode_get_hash(ep->me_key);
                 newentries[i].me_value = oldvalues->values[index];
+                newentries[i].me_immutable = ep->me_immutable;
             }
             build_indices_generic(mp->ma_keys, newentries, numentries);
         }
@@ -1496,6 +1517,7 @@ dictresize(PyInterpreterState *interp, PyDictObject *mp,
                 assert(oldvalues->values[index] != NULL);
                 newentries[i].me_key = Py_NewRef(ep->me_key);
                 newentries[i].me_value = oldvalues->values[index];
+                newentries[i].me_immutable = ep->me_immutable;
             }
             build_indices_unicode(mp->ma_keys, newentries, numentries);
         }
@@ -1853,6 +1875,37 @@ _PyDict_LoadGlobal(PyDictObject *globals, PyDictObject *builtins, PyObject *key)
     return value;
 }
 
+PyObject *_PyDict_SetGlobalImmutable(PyDictObject* globals, PyObject *key)
+{
+    Py_ssize_t ix;
+    Py_hash_t hash;
+    PyObject *value;
+
+    if (!PyUnicode_CheckExact(key) || (hash = unicode_get_hash(key)) == -1) {
+        hash = PyObject_Hash(key);
+        if (hash == -1)
+            return NULL;
+    }
+
+    /* namespace 1: globals */
+    ix = _Py_dict_lookup(globals, key, hash, &value);
+    if (ix == DKIX_ERROR)
+        return NULL;
+    if(ix == DKIX_EMPTY){
+        // TODO error unknown global
+    }
+
+    if(DK_IS_UNICODE(globals->ma_keys)){
+        PyDictUnicodeEntry *ep = &DK_UNICODE_ENTRIES(globals->ma_keys)[ix];
+        ep->me_immutable = true;
+    }else{
+        PyDictKeyEntry *ep = &DK_ENTRIES(globals->ma_keys)[ix];
+        ep->me_immutable = true;
+    }
+
+    return value;
+}
+
 /* Consumes references to key and value */
 int
 _PyDict_SetItem_Take2(PyDictObject *mp, PyObject *key, PyObject *value)
@@ -1960,12 +2013,24 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
         dictkeys_set_index(mp->ma_keys, hashpos, DKIX_DUMMY);
         if (DK_IS_UNICODE(mp->ma_keys)) {
             PyDictUnicodeEntry *ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
+            if(ep->me_immutable){
+                // TODO make this a key error
+                PyErr_WriteToImmutable(mp);
+                return -1;
+            }
+
             old_key = ep->me_key;
             ep->me_key = NULL;
             ep->me_value = NULL;
         }
         else {
             PyDictKeyEntry *ep = &DK_ENTRIES(mp->ma_keys)[ix];
+            if(ep->me_immutable){
+                // TODO make this a key error
+                PyErr_WriteToImmutable(mp);
+                return -1;
+            }
+
             old_key = ep->me_key;
             ep->me_key = NULL;
             ep->me_value = NULL;
@@ -3528,6 +3593,10 @@ dict_popitem_impl(PyDictObject *self)
         }
         assert(i >= 0);
 
+        if(ep0[i].me_immutable){
+            return PyErr_WriteToImmutable(self);
+        }
+
         key = ep0[i].me_key;
         new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_DELETED, self, key, NULL);
@@ -3543,6 +3612,10 @@ dict_popitem_impl(PyDictObject *self)
             i--;
         }
         assert(i >= 0);
+
+        if(ep0[i].me_immutable){
+            return PyErr_WriteToImmutable(self);
+        }
 
         key = ep0[i].me_key;
         new_version = _PyDict_NotifyEvent(

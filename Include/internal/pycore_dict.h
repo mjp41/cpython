@@ -25,11 +25,13 @@ typedef struct {
     Py_hash_t me_hash;
     PyObject *me_key;
     PyObject *me_value; /* This field is only meaningful for combined tables */
+    bool me_immutable; /* Indicates whether this key/value has been marked as immutable. */
 } PyDictKeyEntry;
 
 typedef struct {
     PyObject *me_key;   /* The key must be Unicode and have hash. */
     PyObject *me_value; /* This field is only meaningful for combined tables */
+    bool me_immutable;  /* Indicates whether this key/value has been marked as immutable. */
 } PyDictUnicodeEntry;
 
 extern PyDictKeysObject *_PyDict_NewKeysForClass(void);
@@ -50,6 +52,7 @@ extern Py_ssize_t _Py_dict_lookup(PyDictObject *mp, PyObject *key, Py_hash_t has
 extern Py_ssize_t _PyDict_LookupIndex(PyDictObject *, PyObject *);
 extern Py_ssize_t _PyDictKeys_StringLookup(PyDictKeysObject* dictkeys, PyObject *key);
 extern PyObject *_PyDict_LoadGlobal(PyDictObject *, PyDictObject *, PyObject *);
+extern PyObject *_PyDict_SetGlobalImmutable(PyObject *mp, PyObject *key);
 
 /* Consumes references to key and value */
 extern int _PyDict_SetItem_Take2(PyDictObject *op, PyObject *key, PyObject *value);
@@ -192,6 +195,8 @@ _PyDictValues_AddToInsertionOrder(PyDictValues *values, Py_ssize_t ix)
     size_ptr[-size] = (uint8_t)ix;
     *size_ptr = size;
 }
+
+extern int _PyDict_SetItem_Take2(PyDictObject *op, PyObject *key, PyObject *value);
 
 #ifdef __cplusplus
 }
