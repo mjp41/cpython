@@ -1966,6 +1966,22 @@ _PyErr_WriteToImmutable(const char* filename, int lineno, PyObject* obj)
     return NULL;
 }
 
+PyObject *
+_PyErr_WriteToImmutableKey(const char* filename, int lineno, PyObject* key)
+{
+    PyObject* string;
+    PyThreadState *tstate = _PyThreadState_GET();
+    if (!_PyErr_Occurred(tstate)) {
+        string = PyUnicode_FromFormat("key %R is marked as immutable at %s:%d",
+                                      key, filename, lineno);
+        if (string != NULL) {
+            _PyErr_SetObject(tstate, PyExc_NotWriteableError, string);
+            Py_DECREF(string);
+        }
+    }
+    return NULL;
+}
+
 #ifdef __cplusplus
 }
 #endif

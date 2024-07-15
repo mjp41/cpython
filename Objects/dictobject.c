@@ -1307,16 +1307,14 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
             PyDictUnicodeEntry *ep;
             ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
             if(ep->me_immutable){
-                // TODO make this a key error
-                PyErr_WriteToImmutable(mp);
+                PyErr_WriteToImmutableKey(ep->me_key);
                 goto Fail;
             }
         }else{
             PyDictKeyEntry* ep;
             ep = &DK_ENTRIES(mp->ma_keys)[ix];
             if(ep->me_immutable){
-                // TODO make this a key error
-                PyErr_WriteToImmutable(mp);
+                PyErr_WriteToImmutableKey(ep->me_key);
                 goto Fail;
             }
         }
@@ -1875,7 +1873,7 @@ _PyDict_LoadGlobal(PyDictObject *globals, PyDictObject *builtins, PyObject *key)
     return value;
 }
 
-PyObject *_PyDict_SetGlobalImmutable(PyDictObject* globals, PyObject *key)
+PyObject *_PyDict_SetKeyImmutable(PyDictObject* dict, PyObject *key)
 {
     Py_ssize_t ix;
     Py_hash_t hash;
@@ -1888,18 +1886,21 @@ PyObject *_PyDict_SetGlobalImmutable(PyDictObject* globals, PyObject *key)
     }
 
     /* namespace 1: globals */
-    ix = _Py_dict_lookup(globals, key, hash, &value);
-    if (ix == DKIX_ERROR)
+    ix = _Py_dict_lookup(dict, key, hash, &value);
+    if (ix == DKIX_ERROR){
         return NULL;
-    if(ix == DKIX_EMPTY){
-        // TODO error unknown global
     }
 
-    if(DK_IS_UNICODE(globals->ma_keys)){
-        PyDictUnicodeEntry *ep = &DK_UNICODE_ENTRIES(globals->ma_keys)[ix];
+    if(ix == DKIX_EMPTY){
+        _PyErr_SetKeyError(key);
+        return NULL;
+    }
+
+    if(DK_IS_UNICODE(dict->ma_keys)){
+        PyDictUnicodeEntry *ep = &DK_UNICODE_ENTRIES(dict->ma_keys)[ix];
         ep->me_immutable = true;
     }else{
-        PyDictKeyEntry *ep = &DK_ENTRIES(globals->ma_keys)[ix];
+        PyDictKeyEntry *ep = &DK_ENTRIES(dict->ma_keys)[ix];
         ep->me_immutable = true;
     }
 
@@ -2014,8 +2015,7 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
         if (DK_IS_UNICODE(mp->ma_keys)) {
             PyDictUnicodeEntry *ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
             if(ep->me_immutable){
-                // TODO make this a key error
-                PyErr_WriteToImmutable(mp);
+                PyErr_WriteToImmutableKey(ep->me_key);
                 return -1;
             }
 
@@ -2026,8 +2026,7 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
         else {
             PyDictKeyEntry *ep = &DK_ENTRIES(mp->ma_keys)[ix];
             if(ep->me_immutable){
-                // TODO make this a key error
-                PyErr_WriteToImmutable(mp);
+                PyErr_WriteToImmutableKey(ep->me_key);
                 return -1;
             }
 
@@ -3594,7 +3593,7 @@ dict_popitem_impl(PyDictObject *self)
         assert(i >= 0);
 
         if(ep0[i].me_immutable){
-            return PyErr_WriteToImmutable(self);
+            return PyErr_WriteToImmutableKey(ep0[i].me_key);
         }
 
         key = ep0[i].me_key;
@@ -3614,7 +3613,7 @@ dict_popitem_impl(PyDictObject *self)
         assert(i >= 0);
 
         if(ep0[i].me_immutable){
-            return PyErr_WriteToImmutable(self);
+            return PyErr_WriteToImmutableKey(ep0[i].me_key);
         }
 
         key = ep0[i].me_key;

@@ -12,6 +12,7 @@
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
 #include "pycore_ceval.h"         // _PyEval_Vector()
 #include "pycore_veronapy.h"      // _Py_IMMUTABLE
+#include "pycore_dict.h"          // _PyDict_SetGlobalImmutable()
 
 #include "clinic/bltinmodule.c.h"
 
@@ -3043,6 +3044,9 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                 _Py_VPYDBG("global(");
                 _Py_VPYDBGPRINT(value);
                 _Py_VPYDBG(") -> ");
+
+                _PyDict_SetKeyImmutable((PyDictObject*)globals, name);
+
                 if(!_Py_IsImmutable(value)){
                     if(PyFunction_Check(value)){
                         _Py_VPYDBG("function\n");
@@ -3071,6 +3075,8 @@ PyObject* walk_function(PyObject* op, stack* frontier)
             }else if(PyDict_Contains(builtins, name)){
                 _Py_VPYDBG("builtin\n");
 
+                _PyDict_SetKeyImmutable((PyDictObject*)builtins, name);
+
                 PyObject* value = PyDict_GetItem(builtins, name); // value.rc = x + 1
                 if(!_Py_IsImmutable(value)){
                     _Py_SetImmutable(value);
@@ -3078,10 +3084,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
 
                 Py_DECREF(value); // value.rc = x
             }else{
-                _Py_VPYDBG("unrecognized!\n");
-                stack_free(f_stack);
-                // frontier freed by the caller
-                return PyErr_Format(PyExc_SystemError, "unrecognized name %R", name);
+                // TODO assert that it is an instance variable
             }
         }
 

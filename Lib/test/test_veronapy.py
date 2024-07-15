@@ -267,7 +267,7 @@ class TestMethods(unittest.TestCase):
         makeimmutable(obj)
         self.assertTrue(isimmutable(pow))
         self.assertRaises(NotWriteableError, obj.b, 1)
-        self.assertEqual(obj.b(2), 4)
+        self.assertEqual(obj.c(2), 4)
 
 
 if __name__ == '__main__':

@@ -52,7 +52,7 @@ extern Py_ssize_t _Py_dict_lookup(PyDictObject *mp, PyObject *key, Py_hash_t has
 extern Py_ssize_t _PyDict_LookupIndex(PyDictObject *, PyObject *);
 extern Py_ssize_t _PyDictKeys_StringLookup(PyDictKeysObject* dictkeys, PyObject *key);
 extern PyObject *_PyDict_LoadGlobal(PyDictObject *, PyDictObject *, PyObject *);
-extern PyObject *_PyDict_SetGlobalImmutable(PyObject *mp, PyObject *key);
+extern PyObject *_PyDict_SetKeyImmutable(PyDictObject *mp, PyObject *key);
 
 /* Consumes references to key and value */
 extern int _PyDict_SetItem_Take2(PyDictObject *op, PyObject *key, PyObject *value);
