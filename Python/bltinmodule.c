@@ -2785,7 +2785,6 @@ bool stack_push(stack* s, PyObject* object){
     }
 
     n->object = object;
-    Py_INCREF(object);
     n->next = s->head;
     s->head = n;
     return false;
@@ -2800,14 +2799,14 @@ PyObject* stack_pop(stack* s){
     PyObject* object = n->object;
     s->head = n->next;
     free(n);
-    Py_DECREF(object);
 
     return object;
 }
 
 void stack_free(stack* s){
     while(s->head != NULL){
-        stack_pop(s);
+        PyObject* op = stack_pop(s);
+        Py_DECREF(op);
     }
 
     free(s);
@@ -3040,7 +3039,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
             _Py_VPYDBG(": ");
 
             if(PyDict_Contains(globals, name)){
-                PyObject* value = PyDict_GetItem(globals, name); // value.rc = x + 1
+                PyObject* value = PyDict_GetItem(globals, name); // value.rc = x
                 _Py_VPYDBG("global(");
                 _Py_VPYDBGPRINT(value);
                 _Py_VPYDBG(") -> ");
@@ -3048,6 +3047,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                 _PyDict_SetKeyImmutable((PyDictObject*)globals, name);
 
                 if(!_Py_IsImmutable(value)){
+                    Py_INCREF(value); // value.rc = x + 1
                     if(PyFunction_Check(value)){
                         _Py_VPYDBG("function\n");
 
@@ -3070,19 +3070,16 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     }
                 }else{
                     _Py_VPYDBG("immutable\n");
-                    Py_DECREF(value); // value.rc = x
                 }
             }else if(PyDict_Contains(builtins, name)){
                 _Py_VPYDBG("builtin\n");
 
                 _PyDict_SetKeyImmutable((PyDictObject*)builtins, name);
 
-                PyObject* value = PyDict_GetItem(builtins, name); // value.rc = x + 1
+                PyObject* value = PyDict_GetItem(builtins, name); // value.rc = x
                 if(!_Py_IsImmutable(value)){
                     _Py_SetImmutable(value);
                 }
-
-                Py_DECREF(value); // value.rc = x
             }else{
                 // TODO assert that it is an instance variable
             }
@@ -3207,6 +3204,7 @@ type:
                 _Py_SetImmutable(type);
             }else{
                 if(stack_push(frontier, type)){
+                    Py_DECREF(type);
                     Py_DECREF(item);
                     stack_free(frontier);
                     return PyErr_NoMemory();

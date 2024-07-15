@@ -782,7 +782,7 @@ class PyDictObjectPtr(PyObjectPtr):
         entries, nentries = self._get_entries(keys)
         for i in safe_range(nentries):
             ep = entries[i]
-            pyop_value = PyObjectPtr.from_pyobject_ptr(ep['me_value'])
+            pyop_value = PyObjectPtr.from_pyobject_ptr((ep['me_value'] >> 1) << 1)
             if not pyop_value.is_null():
                 pyop_key = PyObjectPtr.from_pyobject_ptr(ep['me_key'])
                 yield (pyop_key, pyop_value)

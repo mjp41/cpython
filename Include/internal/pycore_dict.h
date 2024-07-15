@@ -24,15 +24,21 @@ typedef struct {
     /* Cached hash code of me_key. */
     Py_hash_t me_hash;
     PyObject *me_key;
-    PyObject *me_value; /* This field is only meaningful for combined tables */
-    bool me_immutable; /* Indicates whether this key/value has been marked as immutable. */
+    PyObject *_me_value; /* This field is only meaningful for combined tables */
 } PyDictKeyEntry;
 
 typedef struct {
     PyObject *me_key;   /* The key must be Unicode and have hash. */
-    PyObject *me_value; /* This field is only meaningful for combined tables */
-    bool me_immutable;  /* Indicates whether this key/value has been marked as immutable. */
+    PyObject *_me_value; /* This field is only meaningful for combined tables */
 } PyDictUnicodeEntry;
+
+#define _PyDictEntry_IsImmutable(entry) (((uintptr_t)((entry)->_me_value)) & 0x1)
+#define _PyDictEntry_SetImmutable(entry) ((entry)->_me_value = (PyObject*)((uintptr_t)(entry)->_me_value | 0x1))
+#define _PyDictEntry_Hash(entry) ((entry)->me_hash)
+#define _PyDictEntry_Key(entry) ((entry)->me_key)
+#define _PyDictEntry_Value(entry) ((PyObject*)((((uintptr_t)((entry)->_me_value)) >> 1) << 1))
+#define _PyDictEntry_SetValue(entry, value) ((entry)->_me_value = value)
+#define _PyDictEntry_IsEmpty(entry) ((entry)->_me_value == NULL)
 
 extern PyDictKeysObject *_PyDict_NewKeysForClass(void);
 extern PyObject *_PyDict_FromKeys(PyObject *, PyObject *, PyObject *);
