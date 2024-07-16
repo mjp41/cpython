@@ -1951,7 +1951,6 @@ PyDict_SetItem(PyObject *op, PyObject *key, PyObject *value)
         PyErr_BadInternalCall();
         return -1;
     }
-
     assert(key);
     assert(value);
     return _PyDict_SetItem_Take2((PyDictObject *)op,

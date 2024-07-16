@@ -1256,7 +1256,6 @@ binary_iop(PyObject *v, PyObject *w, const int iop_slot, const int op_slot,
         Py_DECREF(result);
         return binop_type_error(v, w, op_name);
     }
-
     return result;
 }
 
