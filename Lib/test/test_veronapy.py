@@ -298,5 +298,28 @@ class TestMethods(unittest.TestCase):
         self.assertRaises(NotWriteableError, obj.b, 1)
 
 
+class TestLocals(unittest.TestCase):
+    class C:
+        def __init__(self):
+            self.val = 0
+        def a(self, locs):
+            self.l = locs
+    def test_locals(self):
+        # Inner scope used to prevent locals() containing self,
+        # and preventing the test updating state.
+        def inner():
+            obj = TestLocals.C()
+            obj2 = TestLocals.C()
+            l = locals()
+            obj.a(l)
+            obj3 = TestLocals.C()
+            makeimmutable(obj)
+            return obj, obj2, obj3
+        obj, obj2, obj3 = inner()
+        self.assertTrue(isimmutable(obj))
+        self.assertTrue(isimmutable(obj2))
+        self.assertFalse(isimmutable(obj3))
+
+
 if __name__ == '__main__':
     unittest.main()
