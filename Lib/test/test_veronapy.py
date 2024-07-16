@@ -1,6 +1,15 @@
 import unittest
 
+# This is a canary to check that global variables are not made immutable
+# when others are made immutable
+global_canary = {}
+
 global0 = 0
+
+class MutableGlobalTest(unittest.TestCase):
+    # Add initial test to confirm that global_canary is mutable
+    def test_global_mutable(self):
+        self.assertTrue(not isimmutable(global_canary))
 
 class BaseObjectTest(unittest.TestCase):
     obj = None
@@ -217,6 +226,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(d(), 1)
         makeimmutable(d)
         self.assertTrue(isimmutable(global0))
+        self.assertFalse(isimmutable(global_canary))
         self.assertRaises(NotWriteableError, d)
 
     def test_builtins(self):
