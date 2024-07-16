@@ -6,6 +6,12 @@ global_canary = {}
 
 global0 = 0
 
+global1 = 2
+def global1_inc():
+    global global1
+    global1 += 1
+    return global1
+
 class MutableGlobalTest(unittest.TestCase):
     # Add initial test to confirm that global_canary is mutable
     def test_global_mutable(self):
@@ -251,6 +257,16 @@ class TestFunctions(unittest.TestCase):
         self.assertTrue(isimmutable(list))
         self.assertTrue(isimmutable(range))
         self.assertTrue(isimmutable(sum))
+
+    def test_global_fun(self):
+        def d():
+            return global1_inc()
+        
+        makeimmutable(d)
+        self.assertTrue(isimmutable(global1))
+        self.assertTrue(isimmutable(global1_inc))
+        self.assertFalse(isimmutable(global_canary))
+        self.assertRaises(NotWriteableError, d)
 
 
 class TestMethods(unittest.TestCase):
