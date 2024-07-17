@@ -40,6 +40,17 @@ class TestBasicObject(BaseObjectTest):
 
     obj = C()
 
+class TestFloat(unittest.TestCase):
+    def test_freeze_float(self):
+        obj = 0.0
+        makeimmutable(obj)
+        self.assertTrue(isimmutable(obj))
+
+class TestFloatType(unittest.TestCase):
+    def test_float_type_immutable(self):
+        obj = 0.0
+        c = obj.__class__
+        self.assertTrue(isimmutable(c))
 
 class TestList(BaseObjectTest):
     class C:
