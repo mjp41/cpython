@@ -320,6 +320,32 @@ class TestLocals(unittest.TestCase):
         self.assertTrue(isimmutable(obj2))
         self.assertFalse(isimmutable(obj3))
 
+class TestWeakRef(unittest.TestCase):
+    class B:
+        pass
+    
+    class C:
+        # Function that takes a object, and stores it in a weakref field.
+        def __init__(self, obj):
+            import weakref
+            self.obj = weakref.ref(obj)
+        def val(self):
+            return self.obj()
+        
+    def test_weakref(self):
+        obj = TestWeakRef.B()
+        c = TestWeakRef.C(obj)
+        makeimmutable(c)
+        self.assertTrue(isimmutable(c))
+        self.assertTrue(c.val() is obj)
+        # Following line is not true in the current implementation
+        # self.assertTrue(isimmutable(c.val()))
+        self.assertFalse(isimmutable(c.val()))
+        obj = None
+        # Following line is not true in the current implementation
+        # this means me can get a race on weak references 
+        # self.assertTrue(c.val() is obj)
+        self.assertIsNone(c.val())
 
 if __name__ == '__main__':
     unittest.main()
