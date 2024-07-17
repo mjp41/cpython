@@ -33,7 +33,7 @@
 
 #include "Python.h"
 #include "pycore_object.h"        // _PyObject_GC_UNTRACK()
-#include "pycore_veronapy.h"      // Py_CHECKWRITE()
+#include "pycore_regions.h"      // Py_CHECKWRITE()
 #include <stddef.h>               // offsetof()
 
 /* Object used as dummy key to fill deleted entries */

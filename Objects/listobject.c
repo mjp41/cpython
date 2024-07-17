@@ -7,7 +7,7 @@
 #include "pycore_long.h"          // _PyLong_DigitCount
 #include "pycore_object.h"        // _PyObject_GC_TRACK()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
-#include "pycore_veronapy.h"      // Py_CHECKWRITE
+#include "pycore_regions.h"      // Py_CHECKWRITE
 #include <stddef.h>
 
 /*[clinic input]

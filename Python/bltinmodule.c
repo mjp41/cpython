@@ -11,7 +11,7 @@
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
 #include "pycore_ceval.h"         // _PyEval_Vector()
-#include "pycore_veronapy.h"      // _Py_IMMUTABLE
+#include "pycore_regions.h"      // _Py_IMMUTABLE
 #include "pycore_dict.h"          // _PyDict_SetGlobalImmutable()
 
 #include "clinic/bltinmodule.c.h"
@@ -2827,7 +2827,7 @@ void stack_print(stack* s){
 }
 
 bool is_leaf(PyObject* obj){
-    return Py_IsNone(obj) || Py_IsTrue(obj) || Py_IsFalse(obj) || PyUnicode_Check(obj) || PyLong_Check(obj) || PyBytes_Check(obj) || PyFrozenSet_Check(obj);
+    return Py_IsNone(obj) || Py_IsTrue(obj) || Py_IsFalse(obj) || PyUnicode_Check(obj) || PyLong_Check(obj) || PyFloat_Check(obj) || PyBytes_Check(obj) || PyFrozenSet_Check(obj);
 }
 
 bool is_c_wrapper(PyObject* obj){
@@ -3141,7 +3141,7 @@ makeimmutable as builtin_makeimmutable
     obj: object
     /
 
-Make 'obj' and its entire graph immutable.
+Make 'obj' and its entire reachable object graph immutable.
 [clinic start generated code]*/
 
 static PyObject *

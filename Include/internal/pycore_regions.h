@@ -1,5 +1,5 @@
-#ifndef Py_INTERNAL_VERONAPY_H
-#define Py_INTERNAL_VERONAPY_H
+#ifndef Py_INTERNAL_REGIONS_H
+#define Py_INTERNAL_REGIONS_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,6 +12,7 @@ extern "C" {
 #include "object.h"
 
 #define Py_CHECKWRITE(op) ((op) && _PyObject_CAST(op)->ob_region != _Py_IMMUTABLE)
+#define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
 
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)

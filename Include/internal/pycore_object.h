@@ -13,7 +13,7 @@ extern "C" {
 #include "pycore_interp.h"        // PyInterpreterState.gc
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 #include "pycore_runtime.h"       // _PyRuntime
-#include "pycore_veronapy.h"      // _Py_DEFAULT_REGION
+#include "pycore_regions.h"      // _Py_DEFAULT_REGION
 
 /* We need to maintain an internal copy of Py{Var}Object_HEAD_INIT to avoid
    designated initializer conflicts in C++20. If we use the deinition in

@@ -2,7 +2,7 @@
 
 #include "Python.h"
 #include "pycore_object.h"
-#include "pycore_veronapy.h"
+#include "pycore_regions.h"
 
 PyObject *
 PyCell_New(PyObject *obj)
