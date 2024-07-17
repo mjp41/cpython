@@ -1305,6 +1305,13 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
             PyDictUnicodeEntry *ep;
             ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
             if(_PyDictEntry_IsImmutable(ep)){
+                _Py_VPYDBG("Attempting to overwrite immutable key: ");
+                _Py_VPYDBGPRINT(ep->me_key);
+                _Py_VPYDBG(":");
+                _Py_VPYDBGPRINT(_PyDictEntry_Value(ep));
+                _Py_VPYDBG(" with ");
+                _Py_VPYDBGPRINT(value);
+                _Py_VPYDBG("\n");
                 PyErr_WriteToImmutableKey(_PyDictEntry_Key(ep));
                 goto Fail;
             }

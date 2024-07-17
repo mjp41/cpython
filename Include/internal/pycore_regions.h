@@ -14,6 +14,9 @@ extern "C" {
 #define Py_CHECKWRITE(op) ((op) && _PyObject_CAST(op)->ob_region != _Py_IMMUTABLE)
 #define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
 
+PyObject* _Py_MakeImmutable(PyObject* obj);
+#define Py_MakeImmutable(op) _Py_MakeImmutable(_PyObject_CAST(op))
+
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
 #define _Py_VPYDBGPRINT(fmt, ...)

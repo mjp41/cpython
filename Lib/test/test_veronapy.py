@@ -254,20 +254,22 @@ class TestMethods(unittest.TestCase):
         def b(self, x):
             self.val = self.val + x
 
+    def test_lambda(self):
+        obj = TestMethods.C()
+        obj.c = lambda x: pow(x, 2)
+        makeimmutable(obj)
+        self.assertTrue(isimmutable(TestMethods.C))
+        self.assertTrue(isimmutable(pow))
+        self.assertRaises(NotWriteableError, obj.b, 1)
+        self.assertEqual(obj.c(2), 4)
+
     def test_method(self):
         obj = TestMethods.C()
         makeimmutable(obj)
         self.assertEqual(obj.a(), 1)
         self.assertTrue(isimmutable(abs))
+        self.assertTrue(isimmutable(obj.val))
         self.assertRaises(NotWriteableError, obj.b, 1)
-
-    def test_lambda(self):
-        obj = TestMethods.C()
-        obj.c = lambda x: pow(x, 2)
-        makeimmutable(obj)
-        self.assertTrue(isimmutable(pow))
-        self.assertRaises(NotWriteableError, obj.b, 1)
-        self.assertEqual(obj.c(2), 4)
 
 
 if __name__ == '__main__':
