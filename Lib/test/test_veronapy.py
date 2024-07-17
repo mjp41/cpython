@@ -358,5 +358,17 @@ class TestWeakRef(unittest.TestCase):
         # self.assertTrue(c.val() is obj)
         self.assertIsNone(c.val())
 
+# This test will make the Python environment unusable.
+# Should perhaps forbid making the frame immutable.
+# class TestStackCapture(unittest.TestCase):
+#     def test_stack_capture(self):
+#         import sys
+#         x = {}
+#         x["frame"] = sys._getframe()
+#         makeimmutable(x)
+#         self.assertTrue(isimmutable(x))
+#         self.assertTrue(isimmutable(x["frame"]))
+
+
 if __name__ == '__main__':
     unittest.main()
