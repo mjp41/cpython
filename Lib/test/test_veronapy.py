@@ -369,6 +369,23 @@ class TestWeakRef(unittest.TestCase):
 #         self.assertTrue(isimmutable(x))
 #         self.assertTrue(isimmutable(x["frame"]))
 
+global_test_dict = 0
+class TestGlobalDictMutation(unittest.TestCase):
+    def g():
+        def f1():
+            globals()["global_test_dict"] += 1
+            return globals()["global_test_dict"]
+        makeimmutable(f1)
+        return f1
+
+    def test_global_dict_mutation(self):
+        f1 = TestGlobalDictMutation.g()
+        self.assertEqual(f1(), 1)
+        self.assertTrue(isimmutable(f1))
+        # The following is not true in the current implementation
+        # The use of "global_test_dict" means that we do not make the global
+        # immutable
+        # self.assertRaises(NotWriteableError, f1)
 
 if __name__ == '__main__':
     unittest.main()
