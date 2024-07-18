@@ -1305,13 +1305,6 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
             PyDictUnicodeEntry *ep;
             ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
             if(_PyDictEntry_IsImmutable(ep)){
-                _Py_VPYDBG("Attempting to overwrite immutable key: ");
-                _Py_VPYDBGPRINT(ep->me_key);
-                _Py_VPYDBG(":");
-                _Py_VPYDBGPRINT(_PyDictEntry_Value(ep));
-                _Py_VPYDBG(" with ");
-                _Py_VPYDBGPRINT(value);
-                _Py_VPYDBG("\n");
                 PyErr_WriteToImmutableKey(_PyDictEntry_Key(ep));
                 goto Fail;
             }
@@ -1912,16 +1905,10 @@ PyObject *_PyDict_SetKeyImmutable(PyDictObject* dict, PyObject *key)
 
     if(DK_IS_UNICODE(dict->ma_keys)){
         PyDictUnicodeEntry *ep = &DK_UNICODE_ENTRIES(dict->ma_keys)[ix];
-        _Py_VPYDBG("Old ptr %p\n", ep->_me_value);
         _PyDictEntry_SetImmutable(ep);
-        _Py_VPYDBG("New ptr %p\n", ep->_me_value);
-        _Py_VPYDBG("Value ptr %p\n", _PyDictEntry_Value(ep));
     }else{
         PyDictKeyEntry *ep = &DK_ENTRIES(dict->ma_keys)[ix];
-        _Py_VPYDBG("Old ptr %p\n", ep->_me_value);
         _PyDictEntry_SetImmutable(ep);
-        _Py_VPYDBG("New ptr %p\n", ep->_me_value);
-        _Py_VPYDBG("Value ptr %p\n", _PyDictEntry_Value(ep));
     }
 
     return value;

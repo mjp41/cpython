@@ -210,6 +210,26 @@ PyObject* walk_object(PyObject* obj, stack* frontier)
     } \
 } while(0)
 
+PyObject* make_global_immutable(PyObject* globals, PyObject* name)
+{
+    PyObject* value = PyDict_GetItem(globals, name); // value.rc = x
+    _Py_VPYDBG("value(");
+    _Py_VPYDBGPRINT(value);
+    _Py_VPYDBG(") -> ");
+
+    _PyDict_SetKeyImmutable((PyDictObject*)globals, name);
+
+    if(!_Py_IsImmutable(value)){
+        _Py_VPYDBG("pushed\n");
+        _Py_SetImmutable(value);
+        Py_INCREF(value);
+        return value;
+    }else{
+        _Py_VPYDBG("immutable\n");
+        Py_RETURN_NONE;
+    }
+}
+
 PyObject* walk_function(PyObject* op, stack* frontier)
 {
     PyObject* builtins;
@@ -221,6 +241,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     PyCodeObject* f_code;
     Py_ssize_t size;
     stack* f_stack;
+    bool check_globals = false;
     _PyObject_ASSERT(op, PyFunction_Check(op));
 
     _Py_VPYDBG("function: ");
@@ -285,38 +306,24 @@ PyObject* walk_function(PyObject* op, stack* frontier)
             _Py_VPYDBGPRINT(name);
             _Py_VPYDBG(": ");
 
+            if(PyUnicode_CompareWithASCIIString(name, "globals") == 0){
+                // if the code calls the globals() builtin, then any
+                // cellvar or const in the function could, potentially, refer to
+                // a global variable. As such, we need to check if the globals
+                // dictionary contains that key and then make it immutable
+                // from this point forwards.
+                check_globals = true;
+            }
+
             if(PyDict_Contains(globals, name)){
-                PyObject* value = PyDict_GetItem(globals, name); // value.rc = x
-                _Py_VPYDBG("global(");
-                _Py_VPYDBGPRINT(value);
-                _Py_VPYDBG(") -> ");
-
-                _PyDict_SetKeyImmutable((PyDictObject*)globals, name);
-
-                if(!_Py_IsImmutable(value)){
-                    Py_INCREF(value); // value.rc = x + 1
-                    if(PyFunction_Check(value)){
-                        _Py_VPYDBG("function\n");
-
-                        _Py_SetImmutable(value);
-                        if(stack_push(f_stack, ((PyFunctionObject*)value)->func_code)){
-                            Py_DECREF(value); // value.rc = x
-                            stack_free(f_stack);
-                            // frontier freed by the caller
-                            return PyErr_NoMemory();
-                        }
-                    }else{
-                        _Py_VPYDBG("pushed\n");
-
-                        if(stack_push(frontier, value)){
-                            Py_DECREF(value);  // value.rc = x
-                            stack_free(f_stack);
-                            // frontier freed by the caller
-                            return PyErr_NoMemory();
-                        }
+                PyObject* value = make_global_immutable(globals, name);
+                if(!Py_IsNone(value)){
+                    if(stack_push(frontier, value)){
+                        Py_DECREF(value); // value.rc = x
+                        stack_free(f_stack);
+                        // frontier freed by the caller
+                        return PyErr_NoMemory();
                     }
-                }else{
-                    _Py_VPYDBG("immutable\n");
                 }
             }else if(PyDict_Contains(builtins, name)){
                 _Py_VPYDBG("builtin\n");
@@ -385,12 +392,66 @@ PyObject* walk_function(PyObject* op, stack* frontier)
             }else{
                 _Py_VPYDBG("immutable\n");
             }
+
+            if(check_globals && PyUnicode_Check(value)){
+                _Py_VPYDBG("checking if");
+                _Py_VPYDBGPRINT(value);
+                _Py_VPYDBG(" is a global: ");
+                PyObject* name = value;
+                if(PyDict_Contains(globals, name)){
+                    _Py_VPYDBG(" true ");
+                    value = make_global_immutable(globals, name);
+                    if(!Py_IsNone(value)){
+                        if(stack_push(frontier, value)){
+                            Py_DECREF(value); // value.rc = x
+                            stack_free(f_stack);
+                            // frontier freed by the caller
+                            return PyErr_NoMemory();
+                        }
+                    }
+                }else{
+                    _Py_VPYDBG("false\n");
+
+                }
+            }
         }
 
         Py_DECREF(f_ptr); // fp.rc = x
     }
 
     stack_free(f_stack);
+
+    if(check_globals){
+        size = PySequence_Fast_GET_SIZE(f->func_closure);
+        _Py_VPYDBG("Enumerating %ld closure vars to check for global names\n", size);
+        for(Py_ssize_t i=0; i < size; ++i){
+            PyObject* cellvar = PySequence_Fast_GET_ITEM(f->func_closure, i); // cellvar.rc = x
+            PyObject* value = PyCell_GET(cellvar); // value.rc = x
+            _Py_VPYDBG("cellvar(");
+            _Py_VPYDBGPRINT(value);
+            _Py_VPYDBG(") is ");
+
+            if(PyUnicode_Check(value)){
+                PyObject* name = value;
+                if(PyDict_Contains(globals, name)){
+                    _Py_VPYDBG("a global ");
+                    value = make_global_immutable(globals, name);
+                    if(!Py_IsNone(value)){
+                        if(stack_push(frontier, value)){
+                            Py_DECREF(value); // value.rc = x
+                            stack_free(f_stack);
+                            // frontier freed by the caller
+                            return PyErr_NoMemory();
+                        }
+                    }
+                }else{
+                    _Py_VPYDBG("not a global\n");
+                }
+            }else{
+                _Py_VPYDBG("not a global\n");
+            }
+        }
+    }
 
     Py_RETURN_NONE;
 }
