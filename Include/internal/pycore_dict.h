@@ -40,6 +40,7 @@ typedef struct {
 #define _PyDictEntry_SetValue(entry, value) ((entry)->_me_value = value)
 #define _PyDictEntry_IsEmpty(entry) ((entry)->_me_value == NULL)
 
+extern bool _PyDict_IsKeyImmutable(PyObject* op, PyObject* key);
 extern PyDictKeysObject *_PyDict_NewKeysForClass(void);
 extern PyObject *_PyDict_FromKeys(PyObject *, PyObject *, PyObject *);
 

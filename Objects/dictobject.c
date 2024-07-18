@@ -5989,3 +5989,75 @@ _PyDict_SendEvent(int watcher_bits,
         watcher_bits >>= 1;
     }
 }
+
+bool
+_PyDict_IsKeyImmutable(PyObject* op, PyObject* key)
+{
+    PyDictKeysObject *dk;
+    DictKeysKind kind;
+    Py_ssize_t ix;
+    PyDictObject* mp;
+    Py_hash_t hash;
+    PyThreadState* tstate;
+    PyObject *exc;
+
+    if (!PyDict_Check(op)) {
+        return NULL;
+    }
+    mp = (PyDictObject *)op;
+
+    if (!PyUnicode_CheckExact(key) || (hash = unicode_get_hash(key)) == -1) {
+        hash = PyObject_Hash(key);
+        if (hash == -1) {
+            PyErr_Clear();
+            return NULL;
+        }
+    }
+
+    tstate = _PyThreadState_GET();
+#ifdef Py_DEBUG
+    // bpo-40839: Before Python 3.10, it was possible to call PyDict_GetItem()
+    // with the GIL released.
+    _Py_EnsureTstateNotNULL(tstate);
+#endif
+
+    /* Preserve the existing exception */
+    exc = _PyErr_GetRaisedException(tstate);
+
+start:
+    dk = mp->ma_keys;
+    kind = dk->dk_kind;
+
+    if (kind != DICT_KEYS_GENERAL) {
+        if (PyUnicode_CheckExact(key)) {
+            ix = unicodekeys_lookup_unicode(dk, key, hash);
+        }
+        else {
+            ix = unicodekeys_lookup_generic(mp, dk, key, hash);
+            if (ix == DKIX_KEY_CHANGED) {
+                goto start;
+            }
+        }
+    }
+    else {
+        ix = dictkeys_generic_lookup(mp, dk, key, hash);
+        if (ix == DKIX_KEY_CHANGED) {
+            goto start;
+        }
+    }
+
+    /* Ignore any exception raised by the lookup */
+    _PyErr_SetRaisedException(tstate, exc);
+
+    if (ix == DKIX_ERROR){
+        return -1;
+    }
+
+    if (DK_IS_UNICODE(mp->ma_keys)) {
+        PyDictUnicodeEntry *ep = DK_UNICODE_ENTRIES(mp->ma_keys) + ix;
+        return _PyDictEntry_IsImmutable(ep);
+    } else {
+        PyDictKeyEntry *ep = DK_ENTRIES(mp->ma_keys) + ix;
+        return _PyDictEntry_IsImmutable(ep);
+    }
+}
