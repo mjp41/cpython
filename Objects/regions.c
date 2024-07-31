@@ -298,7 +298,9 @@ PyObject* walk_function(PyObject* op, stack* frontier)
         _Py_VPYDBGPRINT(f_code->co_name);
         _Py_VPYDBG("\n");
 
-        size = PySequence_Fast_GET_SIZE(f_code->co_names);
+        size = 0;
+        if (f_code->co_names != NULL)
+          size = PySequence_Fast_GET_SIZE(f_code->co_names);
         _Py_VPYDBG("Enumerating %ld names\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* name = PySequence_Fast_GET_ITEM(f_code->co_names, i); // name.rc = x
