@@ -424,7 +424,9 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     stack_free(f_stack);
 
     if(check_globals){
-        size = PySequence_Fast_GET_SIZE(f->func_closure);
+        size = 0;
+        if(f->func_closure != NULL)
+            size = PySequence_Fast_GET_SIZE(f->func_closure);
         _Py_VPYDBG("Enumerating %ld closure vars to check for global names\n", size);
         for(Py_ssize_t i=0; i < size; ++i){
             PyObject* cellvar = PySequence_Fast_GET_ITEM(f->func_closure, i); // cellvar.rc = x
