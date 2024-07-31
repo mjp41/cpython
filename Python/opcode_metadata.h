@@ -795,7 +795,7 @@ _PyOpcode_num_pushed(int opcode, int oparg, bool jump) {
 }
 #endif
 
-enum InstructionFormat { INSTR_FMT_IB, INSTR_FMT_IBC, INSTR_FMT_IBC00, INSTR_FMT_IBC000, INSTR_FMT_IBC00000000, INSTR_FMT_IBIB, INSTR_FMT_IX, INSTR_FMT_IXC, INSTR_FMT_IXC000 };
+enum InstructionFormat { INSTR_FMT_IB, INSTR_FMT_IBC, INSTR_FMT_IBC00, INSTR_FMT_IBC000, INSTR_FMT_IBC00000000, INSTR_FMT_IBIB, INSTR_FMT_IX, INSTR_FMT_IXC };
 struct opcode_metadata {
     bool valid_entry;
     enum InstructionFormat instr_format;
@@ -918,9 +918,9 @@ const struct opcode_metadata _PyOpcode_opcode_metadata[256] = {
     [LOAD_ATTR_CLASS] = { true, INSTR_FMT_IBC00000000 },
     [LOAD_ATTR_PROPERTY] = { true, INSTR_FMT_IBC00000000 },
     [LOAD_ATTR_GETATTRIBUTE_OVERRIDDEN] = { true, INSTR_FMT_IBC00000000 },
-    [STORE_ATTR_INSTANCE_VALUE] = { true, INSTR_FMT_IXC000 },
+    [STORE_ATTR_INSTANCE_VALUE] = { true, INSTR_FMT_IBC000 },
     [STORE_ATTR_WITH_HINT] = { true, INSTR_FMT_IBC000 },
-    [STORE_ATTR_SLOT] = { true, INSTR_FMT_IXC000 },
+    [STORE_ATTR_SLOT] = { true, INSTR_FMT_IBC000 },
     [COMPARE_OP] = { true, INSTR_FMT_IBC },
     [COMPARE_OP_FLOAT] = { true, INSTR_FMT_IBC },
     [COMPARE_OP_INT] = { true, INSTR_FMT_IBC },
