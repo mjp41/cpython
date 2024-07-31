@@ -5227,22 +5227,36 @@ PyDoc_STRVAR(type_doc,
 static int
 type_traverse(PyTypeObject *type, visitproc visit, void *arg)
 {
-    /* Because of type_is_gc(), the collector only calls this
-       for heaptypes. */
-    if (!(type->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
-        char msg[200];
-        sprintf(msg, "type_traverse() called on non-heap type '%.100s'",
-                type->tp_name);
-        _PyObject_ASSERT_FAILED_MSG((PyObject *)type, msg);
-    }
+    //  TODO: Pyrona:
+    //  The following code and comment are not correct with how Pyrona wants to
+    //  use traverse.  It is about finding all the objects that are accessible, not just
+    //  those that can particpate in cycles.
+    //  We have adapted the following code to only visit `ht_module` in heap types.
+    //
+    //  We should consider if other code has optimised for the cycle detector behaviour?
+    // 
+    //  We should check this with the core team.
+
+
+    // /* Because of type_is_gc(), the collector only calls this
+    //    for heaptypes. */
+    // if (!(type->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
+    //     char msg[200];
+    //     sprintf(msg, "type_traverse() called on non-heap type '%.100s'",
+    //             type->tp_name);
+    //     _PyObject_ASSERT_FAILED_MSG((PyObject *)type, msg);
+    // }
 
     Py_VISIT(type->tp_dict);
     Py_VISIT(type->tp_cache);
     Py_VISIT(type->tp_mro);
     Py_VISIT(type->tp_bases);
     Py_VISIT(type->tp_base);
-    Py_VISIT(((PyHeapTypeObject *)type)->ht_module);
-
+    if (type->tp_flags & Py_TPFLAGS_HEAPTYPE) {
+        Py_VISIT(((PyHeapTypeObject *)type)->ht_module);
+    }
+    
+    // TODO: Pyrona: should we visit subclasses here?
     /* There's no need to visit others because they can't be involved
        in cycles:
        type->tp_subclasses is a list of weak references,

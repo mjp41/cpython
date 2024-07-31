@@ -536,7 +536,7 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
         }
 
         traverse = type->tp_traverse;
-        if(traverse != NULL && _PyType_HasFeature(type, Py_TPFLAGS_HAVE_GC) && (!PyType_Check(item) || _PyType_HasFeature(type, Py_TPFLAGS_HEAPTYPE))){
+        if(traverse != NULL){
             _Py_VPYDBG("implements tp_traverse\n");
             if(traverse(item, (visitproc)_makeimmutable_visit, frontier)){
                 Py_DECREF(item);
