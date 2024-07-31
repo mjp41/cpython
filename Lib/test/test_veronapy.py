@@ -304,8 +304,11 @@ class TestMethods(unittest.TestCase):
         obj = TestMethods.C()
         makeimmutable(obj)
         self.assertEqual(obj.a(), 1)
+        self.assertTrue(isimmutable(obj))
         self.assertTrue(isimmutable(abs))
         self.assertTrue(isimmutable(obj.val))
+        self.assertRaises(NotWriteableError, obj.b, 1)
+        # Second test as the byte code can be changed by the first call
         self.assertRaises(NotWriteableError, obj.b, 1)
 
 
@@ -380,12 +383,8 @@ class TestGlobalDictMutation(unittest.TestCase):
 
     def test_global_dict_mutation(self):
         f1 = TestGlobalDictMutation.g()
-        self.assertEqual(f1(), 1)
         self.assertTrue(isimmutable(f1))
-        # The following is not true in the current implementation
-        # The use of "global_test_dict" means that we do not make the global
-        # immutable
-        # self.assertRaises(NotWriteableError, f1)
+        self.assertRaises(NotWriteableError, f1)
 
 if __name__ == '__main__':
     unittest.main()
