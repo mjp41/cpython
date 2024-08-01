@@ -31,6 +31,8 @@ stack* stack_new(void){
 bool stack_push(stack* s, PyObject* object){
     node* n = (node*)malloc(sizeof(node));
     if(n == NULL){
+        Py_DECREF(object);
+        // Should we also free the stack?
         return true;
     }
 
@@ -104,7 +106,6 @@ PyObject* walk_sequence(PyObject* seq, stack* frontier) {
         _Py_VPYDBG("]\n");
         if(!_Py_IsImmutable(element)){
             if(stack_push(frontier, element)){
-                Py_DECREF(element); // element.rc = x
                 return PyErr_NoMemory();
             }
         }else{
@@ -130,7 +131,6 @@ PyObject* walk_mapping(PyObject* map, stack* frontier) {
         if(!_Py_IsImmutable(key)){
             Py_INCREF(key); // key.rc = x + 1
             if(stack_push(frontier, key)){
-                Py_DECREF(key); // key.rc = x
                 return PyErr_NoMemory();
             }
         }
@@ -140,7 +140,6 @@ PyObject* walk_mapping(PyObject* map, stack* frontier) {
         _Py_VPYDBGPRINT(value);
         if(!_Py_IsImmutable(value)){
             if(stack_push(frontier, value)){
-                Py_DECREF(value); // value.rc = x
                 return PyErr_NoMemory();
             }
         }
@@ -190,7 +189,6 @@ PyObject* walk_object(PyObject* obj, stack* frontier)
         _Py_VPYDBG(")\n");
 
         if(stack_push(frontier, value)){
-            Py_DECREF(value); // value.rc = x
             return PyErr_NoMemory();
         }
     }
@@ -204,7 +202,6 @@ PyObject* walk_object(PyObject* obj, stack* frontier)
     if(attr != NULL && !_Py_IsImmutable(attr)){ \
         Py_INCREF(attr); \
         if(stack_push(frontier, attr)){ \
-            Py_DECREF(attr); \
             return PyErr_NoMemory(); \
         } \
     } \
@@ -321,7 +318,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                 PyObject* value = make_global_immutable(globals, name);
                 if(!Py_IsNone(value)){
                     if(stack_push(frontier, value)){
-                        Py_DECREF(value); // value.rc = x
                         stack_free(f_stack);
                         // frontier freed by the caller
                         return PyErr_NoMemory();
@@ -347,7 +343,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                 if(!_Py_IsImmutable(value)){
                     Py_INCREF(value); // value.rc = x + 1
                     if(stack_push(frontier, value)){
-                        Py_DECREF(value); // value.rc = x
                         stack_free(f_stack);
                         // frontier freed by the caller
                         return PyErr_NoMemory();
@@ -376,7 +371,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     _Py_SetImmutable(value);
 
                     if(stack_push(f_stack, value)){
-                        Py_DECREF(value); // value.rc = x
                         stack_free(f_stack);
                         // frontier freed by the caller
                         return PyErr_NoMemory();
@@ -385,7 +379,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     _Py_VPYDBG("pushed\n");
 
                     if(stack_push(frontier, value)){
-                        Py_DECREF(value); // value.rc = x
                         stack_free(f_stack);
                         // frontier freed by the caller
                         return PyErr_NoMemory();
@@ -405,7 +398,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     value = make_global_immutable(globals, name);
                     if(!Py_IsNone(value)){
                         if(stack_push(frontier, value)){
-                            Py_DECREF(value); // value.rc = x
                             stack_free(f_stack);
                             // frontier freed by the caller
                             return PyErr_NoMemory();
@@ -442,7 +434,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     value = make_global_immutable(globals, name);
                     if(!Py_IsNone(value)){
                         if(stack_push(frontier, value)){
-                            Py_DECREF(value); // value.rc = x
                             stack_free(f_stack);
                             // frontier freed by the caller
                             return PyErr_NoMemory();
@@ -476,7 +467,6 @@ int _makeimmutable_visit(PyObject* obj, void* frontier)
     _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));
     if(!_Py_IsImmutable(obj)){
         if(stack_push((stack*)frontier, obj)){
-            Py_DECREF(obj);
             PyErr_NoMemory();
             return -1;
         }
@@ -560,7 +550,6 @@ handle_type:
             // Previously this included a check for is_leaf_type, but 
             if (stack_push(frontier, type_op))
             {
-                Py_DECREF(type_op);
                 Py_DECREF(item);
                 stack_free(frontier);
                 return PyErr_NoMemory();
