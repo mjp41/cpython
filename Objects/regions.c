@@ -555,19 +555,19 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
         }
 
 handle_type:
-        type_op = PyObject_Type(item); // type.rc = x + 1
-        if(!_Py_IsImmutable(type_op)){
-            if(is_leaf_type((PyTypeObject*)type_op)){
-                _Py_SetImmutable(type_op);
+        type_op = PyObject_Type(item); // type_op.rc = x + 1
+        if (!_Py_IsImmutable(type_op)){ 
+            // Previously this included a check for is_leaf_type, but 
+            if (stack_push(frontier, type_op))
+            {
                 Py_DECREF(type_op);
-            }else{
-                if(stack_push(frontier, type_op)){
-                    Py_DECREF(type_op);
-                    Py_DECREF(item);
-                    stack_free(frontier);
-                    return PyErr_NoMemory();
-                }
+                Py_DECREF(item);
+                stack_free(frontier);
+                return PyErr_NoMemory();
             }
+        }
+        else {
+            Py_DECREF(type_op); // type_op.rc = x
         }
 
 next:
