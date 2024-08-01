@@ -531,9 +531,6 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
             goto next;
         }
 
-        if(is_leaf(item)){
-            goto handle_type;
-        }
 
         traverse = type->tp_traverse;
         if(traverse != NULL){
@@ -547,8 +544,6 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
             _Py_MAKEIMMUTABLE_CALL(walk_sequence, item, frontier);
             _Py_MAKEIMMUTABLE_CALL(walk_mapping, item, frontier);
         }
-
-        _Py_MAKEIMMUTABLE_CALL(walk_object, item, frontier);
 
 handle_type:
         type_op = PyObject_Type(item); // type.rc = x + 1
