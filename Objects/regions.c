@@ -513,11 +513,13 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
 
         _Py_VPYDBG("item: ");
         _Py_VPYDBGPRINT(item);
-        _Py_VPYDBG("\n");
 
         if(_Py_IsImmutable(item)){
+            _Py_VPYDBG(" already immutable!\n");
+            // Why do we need to handle the type here, surely what ever made this immutable already did that?
             goto handle_type;
         }
+        _Py_VPYDBG("\n");
 
         _Py_SetImmutable(item);
 
@@ -541,8 +543,15 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
                 return NULL;
             }
         }else{
-            _Py_MAKEIMMUTABLE_CALL(walk_sequence, item, frontier);
-            _Py_MAKEIMMUTABLE_CALL(walk_mapping, item, frontier);
+            _Py_VPYDBG("does not implements tp_traverse\n");
+            // TODO: (mjp comment) These functions causes every character of
+            // a string to become an immutable object, which is is not the
+            // desired behavior.  Commenting so we can discuss.  I believe
+            // we should depend solely on the tp_traverse function to
+            // determine the objects an object depends on.
+            // 
+            // _Py_MAKEIMMUTABLE_CALL(walk_sequence, item, frontier);
+            // _Py_MAKEIMMUTABLE_CALL(walk_mapping, item, frontier);
         }
 
 handle_type:
