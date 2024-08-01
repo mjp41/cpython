@@ -36,6 +36,9 @@ bool stack_push(stack* s, PyObject* object){
         return true;
     }
 
+    _Py_VPYDBG("pushing ");
+    _Py_VPYDBGPRINT(object);
+    _Py_VPYDBG(" [rc=%ld]\n", object->ob_refcnt);
     n->object = object;
     n->next = s->head;
     s->head = n;
@@ -163,7 +166,9 @@ PyObject* walk_object(PyObject* obj, stack* frontier)
         Py_RETURN_NONE;
     }
 
-    _Py_VPYDBG("object: pushing (attr: value)\n");
+    _Py_VPYDBG("object:");
+    _Py_VPYDBGPRINT(obj);
+    _Py_VPYDBG("\n pushing (attr: value)\n");
 
     attrs = PyObject_Dir(obj);
     size = PyList_Size(attrs);
@@ -182,7 +187,7 @@ PyObject* walk_object(PyObject* obj, stack* frontier)
             continue;
         }
 
-        _Py_VPYDBG("(");
+        _Py_VPYDBG("  (");
         _Py_VPYDBGPRINT(attr);
         _Py_VPYDBG(": ");
         _Py_VPYDBGPRINT(value);
