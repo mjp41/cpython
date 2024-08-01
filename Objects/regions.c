@@ -81,16 +81,8 @@ void stack_print(stack* s){
     }
 }
 
-bool is_leaf(PyObject* obj){
-    return Py_IsNone(obj) || Py_IsTrue(obj) || Py_IsFalse(obj) || PyUnicode_Check(obj) || PyLong_Check(obj) || PyFloat_Check(obj) || PyBytes_Check(obj) || PyFrozenSet_Check(obj);
-}
-
 bool is_c_wrapper(PyObject* obj){
     return PyCFunction_Check(obj) || Py_IS_TYPE(obj, &_PyMethodWrapper_Type) || Py_IS_TYPE(obj, &PyWrapperDescr_Type);
-}
-
-bool is_leaf_type(PyTypeObject* obj){
-    return PyType_HasFeature(obj, Py_TPFLAGS_IMMUTABLETYPE) || !PyType_HasFeature(obj, Py_TPFLAGS_HEAPTYPE);
 }
 
 PyObject* walk_sequence(PyObject* seq, stack* frontier) {
