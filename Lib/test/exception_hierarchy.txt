@@ -53,6 +53,7 @@ BaseException
       │         ├── UnicodeDecodeError
       │         ├── UnicodeEncodeError
       │         └── UnicodeTranslateError
+      ├── NotWriteableError
       └── Warning
            ├── BytesWarning
            ├── DeprecationWarning

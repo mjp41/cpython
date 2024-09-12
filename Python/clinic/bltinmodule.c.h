@@ -1409,4 +1409,22 @@ builtin_issubclass(PyObject *module, PyObject *const *args, Py_ssize_t nargs)
 exit:
     return return_value;
 }
-/*[clinic end generated code: output=84a04e7446debf58 input=a9049054013a1b77]*/
+
+PyDoc_STRVAR(builtin_isimmutable__doc__,
+"isimmutable($module, obj, /)\n"
+"--\n"
+"\n"
+"Return whether \'obj\' is immutable.");
+
+#define BUILTIN_ISIMMUTABLE_METHODDEF    \
+    {"isimmutable", (PyCFunction)builtin_isimmutable, METH_O, builtin_isimmutable__doc__},
+
+PyDoc_STRVAR(builtin_makeimmutable__doc__,
+"makeimmutable($module, obj, /)\n"
+"--\n"
+"\n"
+"Make \'obj\' and its entire graph immutable.");
+
+#define BUILTIN_MAKEIMMUTABLE_METHODDEF    \
+    {"makeimmutable", (PyCFunction)builtin_makeimmutable, METH_O, builtin_makeimmutable__doc__},
+/*[clinic end generated code: output=356f1513888beba0 input=a9049054013a1b77]*/

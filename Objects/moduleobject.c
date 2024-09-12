@@ -7,6 +7,7 @@
 #include "pycore_object.h"        // _PyType_AllocNoTrack
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 #include "pycore_moduleobject.h"  // _PyModule_GetDef()
+#include "pycore_dict.h"          // _PyDict_IsKeyImmutable()
 #include "structmember.h"         // PyMemberDef
 
 
@@ -619,10 +620,12 @@ _PyModule_ClearDict(PyObject *d)
 
     int verbose = _Py_GetConfig()->verbose;
 
+    // VPYTODO add code to omit immutable keys from this (similar to __builtins__)
+
     /* First, clear only names starting with a single underscore */
     pos = 0;
     while (PyDict_Next(d, &pos, &key, &value)) {
-        if (value != Py_None && PyUnicode_Check(key)) {
+        if (value != Py_None && PyUnicode_Check(key) && !_PyDict_IsKeyImmutable(d, key)) {
             if (PyUnicode_READ_CHAR(key, 0) == '_' &&
                 PyUnicode_READ_CHAR(key, 1) != '_') {
                 if (verbose > 1) {
@@ -642,7 +645,7 @@ _PyModule_ClearDict(PyObject *d)
     /* Next, clear all names except for __builtins__ */
     pos = 0;
     while (PyDict_Next(d, &pos, &key, &value)) {
-        if (value != Py_None && PyUnicode_Check(key)) {
+        if (value != Py_None && PyUnicode_Check(key) && !_PyDict_IsKeyImmutable(d, key)) {
             if (PyUnicode_READ_CHAR(key, 0) != '_' ||
                 !_PyUnicode_EqualToASCIIString(key, "__builtins__"))
             {

@@ -1360,7 +1360,7 @@ dummy_func(
             DEOPT_IF(dict->ma_keys->dk_version != version, LOAD_GLOBAL);
             assert(DK_IS_UNICODE(dict->ma_keys));
             PyDictUnicodeEntry *entries = DK_UNICODE_ENTRIES(dict->ma_keys);
-            res = entries[index].me_value;
+            res = _PyDictEntry_Value(entries + index);
             DEOPT_IF(res == NULL, LOAD_GLOBAL);
             Py_INCREF(res);
             STAT_INC(LOAD_GLOBAL, hit);
@@ -1377,7 +1377,7 @@ dummy_func(
             DEOPT_IF(bdict->ma_keys->dk_version != bltn_version, LOAD_GLOBAL);
             assert(DK_IS_UNICODE(bdict->ma_keys));
             PyDictUnicodeEntry *entries = DK_UNICODE_ENTRIES(bdict->ma_keys);
-            res = entries[index].me_value;
+            res = _PyDictEntry_Value(entries + index);
             DEOPT_IF(res == NULL, LOAD_GLOBAL);
             Py_INCREF(res);
             STAT_INC(LOAD_GLOBAL, hit);
@@ -1410,6 +1410,12 @@ dummy_func(
                 format_exc_unbound(tstate, frame->f_code, oparg);
                 goto error;
             }
+
+            if (!Py_CHECKWRITE(cell)){
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                goto error;
+            }
+
             PyCell_SET(cell, NULL);
             Py_DECREF(oldobj);
         }
@@ -1464,6 +1470,12 @@ dummy_func(
         inst(STORE_DEREF, (v --)) {
             PyObject *cell = GETLOCAL(oparg);
             PyObject *oldobj = PyCell_GET(cell);
+
+            if(!Py_CHECKWRITE(cell)){
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                goto error;
+            }
+
             PyCell_SET(cell, v);
             Py_XDECREF(oldobj);
         }
@@ -1826,7 +1838,7 @@ dummy_func(
             assert(dict->ma_keys->dk_kind == DICT_KEYS_UNICODE);
             assert(index < dict->ma_keys->dk_nentries);
             PyDictUnicodeEntry *ep = DK_UNICODE_ENTRIES(dict->ma_keys) + index;
-            res = ep->me_value;
+            res = _PyDictEntry_Value(ep);
             DEOPT_IF(res == NULL, LOAD_ATTR);
             STAT_INC(LOAD_ATTR, hit);
             Py_INCREF(res);
@@ -1850,12 +1862,12 @@ dummy_func(
             if (DK_IS_UNICODE(dict->ma_keys)) {
                 PyDictUnicodeEntry *ep = DK_UNICODE_ENTRIES(dict->ma_keys) + hint;
                 DEOPT_IF(ep->me_key != name, LOAD_ATTR);
-                res = ep->me_value;
+                res = _PyDictEntry_Value(ep);
             }
             else {
                 PyDictKeyEntry *ep = DK_ENTRIES(dict->ma_keys) + hint;
                 DEOPT_IF(ep->me_key != name, LOAD_ATTR);
-                res = ep->me_value;
+                res = _PyDictEntry_Value(ep);
             }
             DEOPT_IF(res == NULL, LOAD_ATTR);
             STAT_INC(LOAD_ATTR, hit);
@@ -1954,6 +1966,12 @@ dummy_func(
             PyDictOrValues dorv = *_PyObject_DictOrValuesPointer(owner);
             DEOPT_IF(!_PyDictOrValues_IsValues(dorv), STORE_ATTR);
             STAT_INC(STORE_ATTR, hit);
+            if (!Py_CHECKWRITE(owner))
+            {
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                Py_DECREF(owner);
+                goto error;
+            }
             PyDictValues *values = _PyDictOrValues_GetValues(dorv);
             PyObject *old_value = values->values[index];
             values->values[index] = value;
@@ -1975,6 +1993,12 @@ dummy_func(
             DEOPT_IF(_PyDictOrValues_IsValues(dorv), STORE_ATTR);
             PyDictObject *dict = (PyDictObject *)_PyDictOrValues_GetDict(dorv);
             DEOPT_IF(dict == NULL, STORE_ATTR);
+            if (!Py_CHECKWRITE(owner))
+            {
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                Py_DECREF(owner);
+                goto error;
+            }
             assert(PyDict_CheckExact((PyObject *)dict));
             PyObject *name = GETITEM(frame->f_code->co_names, oparg);
             DEOPT_IF(hint >= (size_t)dict->ma_keys->dk_nentries, STORE_ATTR);
@@ -1983,18 +2007,26 @@ dummy_func(
             if (DK_IS_UNICODE(dict->ma_keys)) {
                 PyDictUnicodeEntry *ep = DK_UNICODE_ENTRIES(dict->ma_keys) + hint;
                 DEOPT_IF(ep->me_key != name, STORE_ATTR);
-                old_value = ep->me_value;
+                old_value = _PyDictEntry_Value(ep);
                 DEOPT_IF(old_value == NULL, STORE_ATTR);
                 new_version = _PyDict_NotifyEvent(tstate->interp, PyDict_EVENT_MODIFIED, dict, name, value);
-                ep->me_value = value;
+                if(_PyDictEntry_IsImmutable(ep)){
+                    format_exc_notwriteable(tstate, frame->f_code, oparg);
+                    goto error;
+                }
+                _PyDictEntry_SetValue(ep, value);
             }
             else {
                 PyDictKeyEntry *ep = DK_ENTRIES(dict->ma_keys) + hint;
                 DEOPT_IF(ep->me_key != name, STORE_ATTR);
-                old_value = ep->me_value;
+                old_value = _PyDictEntry_Value(ep);
                 DEOPT_IF(old_value == NULL, STORE_ATTR);
                 new_version = _PyDict_NotifyEvent(tstate->interp, PyDict_EVENT_MODIFIED, dict, name, value);
-                ep->me_value = value;
+                if(_PyDictEntry_IsImmutable(ep)){
+                    format_exc_notwriteable(tstate, frame->f_code, oparg);
+                    goto error;
+                }
+                _PyDictEntry_SetValue(ep, value);
             }
             Py_DECREF(old_value);
             STAT_INC(STORE_ATTR, hit);
@@ -2011,6 +2043,12 @@ dummy_func(
             PyTypeObject *tp = Py_TYPE(owner);
             assert(type_version != 0);
             DEOPT_IF(tp->tp_version_tag != type_version, STORE_ATTR);
+            if (!Py_CHECKWRITE(owner))
+            {
+                format_exc_notwriteable(tstate, frame->f_code, oparg);
+                Py_DECREF(owner);
+                goto error;
+            }
             char *addr = (char *)owner + index;
             STAT_INC(STORE_ATTR, hit);
             PyObject *old_value = *(PyObject **)addr;
