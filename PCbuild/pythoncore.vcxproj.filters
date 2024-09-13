@@ -1052,6 +1052,9 @@
     <ClCompile Include="..\Objects\rangeobject.c">
       <Filter>Objects</Filter>
     </ClCompile>
+    <ClCompile Include="..\Objects\regions.c">
+      <Filter>Objects</Filter>
+    </ClCompile>
     <ClCompile Include="..\Objects\setobject.c">
       <Filter>Objects</Filter>
     </ClCompile>

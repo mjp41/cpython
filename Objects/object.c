@@ -17,6 +17,7 @@
 #include "pycore_typevarobject.h" // _PyTypeAlias_Type, _Py_initialize_generic
 #include "pycore_typeobject.h"    // _PyBufferWrapper_Type
 #include "pycore_unionobject.h"   // _PyUnion_Type
+#include "pycore_regions.h"      // Py_CHECKWRITE
 #include "interpreteridobject.h"  // _PyInterpreterID_Type
 
 #ifdef Py_LIMITED_API
@@ -1172,7 +1173,13 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
 
     PyUnicode_InternInPlace(&name);
     if (tp->tp_setattro != NULL) {
-        err = (*tp->tp_setattro)(v, name, value);
+        if(Py_CHECKWRITE(v)){
+            err = (*tp->tp_setattro)(v, name, value);
+        }else{
+            PyErr_WriteToImmutable(v);
+            err = -1;
+        }
+
         Py_DECREF(name);
         return err;
     }
@@ -1182,7 +1189,14 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
             Py_DECREF(name);
             return -1;
         }
-        err = (*tp->tp_setattr)(v, (char *)name_str, value);
+
+        if(Py_CHECKWRITE(v)){
+            err = (*tp->tp_setattr)(v, (char *)name_str, value);
+        }else{
+            PyErr_WriteToImmutable(v);
+            err = -1;
+        }
+
         Py_DECREF(name);
         return err;
     }
@@ -1622,6 +1636,11 @@ PyObject_GenericSetAttr(PyObject *obj, PyObject *name, PyObject *value)
 int
 PyObject_GenericSetDict(PyObject *obj, PyObject *value, void *context)
 {
+    if(!Py_CHECKWRITE(obj)){
+        PyErr_WriteToImmutable(obj);
+        return -1;
+    }
+
     PyObject **dictptr = _PyObject_GetDictPtr(obj);
     if (dictptr == NULL) {
         if (_PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MANAGED_DICT) &&
@@ -1898,7 +1917,8 @@ PyTypeObject _PyNone_Type = {
 PyObject _Py_NoneStruct = {
     _PyObject_EXTRA_INIT
     { _Py_IMMORTAL_REFCNT },
-    &_PyNone_Type
+    &_PyNone_Type,
+    _Py_IMMUTABLE
 };
 
 /* NotImplemented is an object that can be used to signal that an

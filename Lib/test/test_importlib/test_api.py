@@ -135,6 +135,8 @@ class FindLoaderTests:
                 del module.__spec__.loader
             except AttributeError:
                 pass
+            except NotWriteableError:
+                pass
             sys.modules[name] = module
             with self.assertRaises(ValueError):
                 self.util.find_spec(name)

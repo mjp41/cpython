@@ -13,6 +13,7 @@ extern "C" {
 #include "pycore_interp.h"        // PyInterpreterState.gc
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 #include "pycore_runtime.h"       // _PyRuntime
+#include "pycore_regions.h"      // _Py_DEFAULT_REGION
 
 /* We need to maintain an internal copy of Py{Var}Object_HEAD_INIT to avoid
    designated initializer conflicts in C++20. If we use the deinition in
@@ -22,11 +23,12 @@ extern "C" {
    Furthermore, we can't use designated initializers in Extensions since these
    are not supported pre-C++20. Thus, keeping an internal copy here is the most
    backwards compatible solution */
-#define _PyObject_HEAD_INIT(type)         \
+#define _PyObject_HEAD_INIT(type) \
     {                                     \
         _PyObject_EXTRA_INIT              \
         .ob_refcnt = _Py_IMMORTAL_REFCNT, \
-        .ob_type = (type)                 \
+        .ob_type = (type),                \
+        .ob_region = _Py_DEFAULT_REGION   \
     },
 #define _PyVarObject_HEAD_INIT(type, size)    \
     {                                         \
@@ -90,6 +92,17 @@ static inline void _Py_ClearImmortal(PyObject *op)
         _Py_ClearImmortal(_PyObject_CAST(op)); \
         op = NULL; \
     } while (0)
+
+static inline void _Py_SetImmutable(PyObject *op)
+{
+    if(op) {
+        op->ob_region = _Py_IMMUTABLE;
+        // TODO once reference counting across regions is fully working
+        // we no longer need to make all immutable objects immortal
+        op->ob_refcnt = _Py_IMMORTAL_REFCNT;
+    }
+}
+#define _Py_SetImmutable(op) _Py_SetImmutable(_PyObject_CAST(op))
 
 static inline void
 _Py_DECREF_SPECIALIZED(PyObject *op, const destructor destruct)
@@ -164,6 +177,7 @@ _PyObject_Init(PyObject *op, PyTypeObject *typeobj)
 {
     assert(op != NULL);
     Py_SET_TYPE(op, typeobj);
+    Py_SET_REGION(op, _Py_DEFAULT_REGION);
     if (_PyType_HasFeature(typeobj, Py_TPFLAGS_HEAPTYPE)) {
         Py_INCREF(typeobj);
     }

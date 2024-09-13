@@ -121,6 +121,7 @@ PyAPI_DATA(PyObject *) PyExc_UnicodeDecodeError;
 PyAPI_DATA(PyObject *) PyExc_UnicodeTranslateError;
 PyAPI_DATA(PyObject *) PyExc_ValueError;
 PyAPI_DATA(PyObject *) PyExc_ZeroDivisionError;
+PyAPI_DATA(PyObject *) PyExc_NotWriteableError;
 
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 >= 0x03030000
 PyAPI_DATA(PyObject *) PyExc_BlockingIOError;

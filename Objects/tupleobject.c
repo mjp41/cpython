@@ -6,6 +6,7 @@
 #include "pycore_gc.h"            // _PyObject_GC_IS_TRACKED()
 #include "pycore_initconfig.h"    // _PyStatus_OK()
 #include "pycore_object.h"        // _PyObject_GC_TRACK(), _Py_FatalRefcountError()
+#include "pycore_regions.h"      // Py_CHECKWRITE()
 
 /*[clinic input]
 class tuple "PyTupleObject *" "&PyTuple_Type"
@@ -116,6 +117,13 @@ PyTuple_SetItem(PyObject *op, Py_ssize_t i, PyObject *newitem)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(op)){
+        Py_XDECREF(newitem);
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     if (i < 0 || i >= Py_SIZE(op)) {
         Py_XDECREF(newitem);
         PyErr_SetString(PyExc_IndexError,

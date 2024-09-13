@@ -154,6 +154,7 @@
     <ClCompile Include="..\Objects\odictobject.c" />
     <ClCompile Include="..\Objects\picklebufobject.c" />
     <ClCompile Include="..\Objects\rangeobject.c" />
+    <ClCompile Include="..\Objects\regions.c" />
     <ClCompile Include="..\Objects\setobject.c" />
     <ClCompile Include="..\Objects\sliceobject.c" />
     <ClCompile Include="..\Objects\structseq.c" />

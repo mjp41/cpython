@@ -168,6 +168,12 @@ PyAPI_FUNC(void) _Py_NO_RETURN _Py_FatalErrorFormat(
     const char *format,
     ...);
 
+PyAPI_FUNC(PyObject *) _PyErr_WriteToImmutable(const char* file, int line, PyObject *obj);
+#define PyErr_WriteToImmutable(obj) _PyErr_WriteToImmutable(__FILE__, __LINE__, _PyObject_CAST(obj))
+
+PyAPI_FUNC(PyObject *) _PyErr_WriteToImmutableKey(const char* file, int line, PyObject *key);
+#define PyErr_WriteToImmutableKey(key) _PyErr_WriteToImmutableKey(__FILE__, __LINE__, _PyObject_CAST(key))
+
 extern PyObject *_PyErr_SetImportErrorWithNameFrom(
         PyObject *,
         PyObject *,

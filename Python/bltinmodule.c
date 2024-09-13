@@ -11,6 +11,8 @@
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
 #include "pycore_ceval.h"         // _PyEval_Vector()
+#include "pycore_regions.h"      // _Py_IMMUTABLE
+#include "pycore_dict.h"          // _PyDict_SetGlobalImmutable()
 
 #include "clinic/bltinmodule.c.h"
 
@@ -2737,6 +2739,42 @@ builtin_issubclass_impl(PyObject *module, PyObject *cls,
     return PyBool_FromLong(retval);
 }
 
+/*[clinic input]
+isimmutable as builtin_isimmutable
+
+    obj: object
+    /
+
+Return whether 'obj' is immutable.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_isimmutable(PyObject *module, PyObject *obj)
+/*[clinic end generated code: output=80c746a3bd7adb46 input=15c0c9d2da47bc15]*/
+{
+    _Py_VPYDBG("isimmutable(");
+    _Py_VPYDBGPRINT(obj);
+    _Py_VPYDBG(") region: %lu\n", Py_REGION(obj));
+    return PyBool_FromLong(_Py_IsImmutable(obj));
+}
+
+
+/*[clinic input]
+makeimmutable as builtin_makeimmutable
+
+    obj: object
+    /
+
+Make 'obj' and its entire reachable object graph immutable.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_makeimmutable(PyObject *module, PyObject *obj)
+/*[clinic end generated code: output=4e665122542dfd24 input=21a50256fa4fb099]*/
+{
+    return Py_MakeImmutable(obj);
+}
+
 typedef struct {
     PyObject_HEAD
     Py_ssize_t tuplesize;
@@ -3035,6 +3073,8 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_INPUT_METHODDEF
     BUILTIN_ISINSTANCE_METHODDEF
     BUILTIN_ISSUBCLASS_METHODDEF
+    BUILTIN_ISIMMUTABLE_METHODDEF
+    BUILTIN_MAKEIMMUTABLE_METHODDEF
     BUILTIN_ITER_METHODDEF
     BUILTIN_AITER_METHODDEF
     BUILTIN_LEN_METHODDEF

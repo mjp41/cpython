@@ -2,6 +2,7 @@
 
 #include "Python.h"
 #include "pycore_object.h"
+#include "pycore_regions.h"
 
 PyObject *
 PyCell_New(PyObject *obj)
@@ -66,6 +67,12 @@ PyCell_Set(PyObject *op, PyObject *value)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     PyObject *old_value = PyCell_GET(op);
     PyCell_SET(op, Py_XNewRef(value));
     Py_XDECREF(old_value);
@@ -121,6 +128,11 @@ cell_traverse(PyCellObject *op, visitproc visit, void *arg)
 static int
 cell_clear(PyCellObject *op)
 {
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     Py_CLEAR(op->ob_ref);
     return 0;
 }
@@ -139,6 +151,11 @@ cell_get_contents(PyCellObject *op, void *closure)
 static int
 cell_set_contents(PyCellObject *op, PyObject *obj, void *Py_UNUSED(ignored))
 {
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     Py_XSETREF(op->ob_ref, Py_XNewRef(obj));
     return 0;
 }
