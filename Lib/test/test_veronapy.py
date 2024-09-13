@@ -334,6 +334,34 @@ class TestLocals(unittest.TestCase):
         self.assertTrue(isimmutable(obj2))
         self.assertFalse(isimmutable(obj3))
 
+class TestDictMutation(unittest.TestCase):
+    class C:
+        def __init__(self):
+            self.x = 0
+
+        def get(self):
+            return self.x
+
+        def set(self, x):
+            d = self.__dict__
+            d['x'] = x
+
+    def test_dict_mutation(self):
+        obj = TestDictMutation.C()
+        makeimmutable(obj)
+        self.assertTrue(isimmutable(obj))
+        self.assertRaises(NotWriteableError, obj.set, 1)
+        self.assertEqual(obj.get(), 0)
+
+    def test_dict_mutation2(self):
+        obj = TestDictMutation.C()
+        obj.set(1)
+        self.assertEqual(obj.get(), 1)
+        makeimmutable(obj)
+        self.assertEqual(obj.get(), 1)
+        self.assertTrue(isimmutable(obj))
+        self.assertRaises(NotWriteableError, obj.set, 1)
+
 class TestWeakRef(unittest.TestCase):
     class B:
         pass

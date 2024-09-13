@@ -5752,6 +5752,11 @@ _PyObject_ClearManagedDict(PyObject *obj)
 PyObject *
 PyObject_GenericGetDict(PyObject *obj, void *context)
 {
+    // TODO: Pyrona: This method does not change the representation in the frozen case.
+    // However, repeated calls to __dict__ on a frozen object will all create a new dict.
+    // Alternative designs
+    //  * Error on this case
+    //  * Introduce locking, and return the same dict.
     PyObject *dict;
     PyInterpreterState *interp = _PyInterpreterState_GET();
     PyTypeObject *tp = Py_TYPE(obj);
@@ -5763,7 +5768,12 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
             dict = make_dict_from_instance_attributes(
                     interp, CACHED_KEYS(tp), values);
             if (dict != NULL) {
-                dorv_ptr->dict = dict;
+                if (_Py_IsImmutable(obj)) {
+                    _Py_SetImmutable(dict);
+                }
+                else {
+                    dorv_ptr->dict = dict;
+                }
             }
         }
         else {
@@ -5771,7 +5781,12 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
             if (dict == NULL) {
                 dictkeys_incref(CACHED_KEYS(tp));
                 dict = new_dict_with_shared_keys(interp, CACHED_KEYS(tp));
-                dorv_ptr->dict = dict;
+                if (_Py_IsImmutable(obj)) {
+                    _Py_SetImmutable(dict);
+                }
+                else {
+                    dorv_ptr->dict = dict;
+                }
             }
         }
     }
@@ -5787,11 +5802,17 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
             PyTypeObject *tp = Py_TYPE(obj);
             if (_PyType_HasFeature(tp, Py_TPFLAGS_HEAPTYPE) && CACHED_KEYS(tp)) {
                 dictkeys_incref(CACHED_KEYS(tp));
-                *dictptr = dict = new_dict_with_shared_keys(
+                dict = new_dict_with_shared_keys(
                         interp, CACHED_KEYS(tp));
             }
             else {
-                *dictptr = dict = PyDict_New();
+                dict = PyDict_New();
+            }
+            if (_Py_IsImmutable(obj)) {
+                _Py_SetImmutable(dict);
+            }
+            else {
+                *dictptr = dict;
             }
         }
     }
