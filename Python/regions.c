@@ -41,7 +41,7 @@ static bool stack_push(stack* s, PyObject* object){
 
     _Py_VPYDBG("pushing ");
     _Py_VPYDBGPRINT(object);
-    _Py_VPYDBG(" [rc=%ld]\n", object->ob_refcnt);
+    _Py_VPYDBG(" [rc=%zd]\n", object->ob_refcnt);
     n->object = object;
     n->next = s->head;
     s->head = n;
@@ -72,16 +72,6 @@ static void stack_free(stack* s){
 
 static bool stack_empty(stack* s){
     return s->head == NULL;
-}
-
-static void stack_print(stack* s){
-    _Py_VPYDBG("stack: ");
-    node* n = s->head;
-    while(n != NULL){
-        _Py_VPYDBGPRINT(n->object);
-        _Py_VPYDBG("[rc=%ld]\n", n->object->ob_refcnt);
-        n = n->next;
-    }
 }
 
 static bool is_c_wrapper(PyObject* obj){
@@ -143,7 +133,7 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
 
     _Py_VPYDBG("function: ");
     _Py_VPYDBGPRINT(op);
-    _Py_VPYDBG("[rc=%ld]\n", Py_REFCNT(op));
+    _Py_VPYDBG("[rc=%zd]\n", Py_REFCNT(op));
 
     _Py_SetImmutable(op);
 
@@ -156,7 +146,21 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
     // func_globals, func_builtins, and func_module can stay mutable, but depending on code we may need to make some keys immutable
     globals = f->func_globals;
     builtins = f->func_builtins;
+    _Py_VPYDBG("func_module: ");
+    _Py_VPYDBGPRINT(f->func_module);
+    _Py_VPYDBG("\n");
+
+    if(PyUnicode_CompareWithASCIIString(f->func_module, "_frozen_importlib")){
+        // we don't want to freeze the importlib module
+        _Py_VPYDBG("skipping importlib\n");
+        Py_RETURN_NONE;
+    }
+
     module = PyImport_Import(f->func_module);
+    if(module == NULL){
+        return module;
+    }
+
     if(PyModule_Check(module)){
         module_dict = PyModule_GetDict(module);
     }else{
@@ -198,7 +202,7 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
         size = 0;
         if (f_code->co_names != NULL)
           size = PySequence_Fast_GET_SIZE(f_code->co_names);
-        _Py_VPYDBG("Enumerating %ld names\n", size);
+        _Py_VPYDBG("Enumerating %zd names\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* name = PySequence_Fast_GET_ITEM(f_code->co_names, i); // name.rc = x
             _Py_VPYDBG("name ");
@@ -257,7 +261,7 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
         }
 
         size = PySequence_Fast_GET_SIZE(f_code->co_consts);
-        _Py_VPYDBG("Enumerating %ld consts\n", size);
+        _Py_VPYDBG("Enumerating %zd consts\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* value = PySequence_Fast_GET_ITEM(f_code->co_consts, i); // value.rc = x
             _Py_VPYDBG("const ");
@@ -319,7 +323,7 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
         size = 0;
         if(f->func_closure != NULL)
             size = PySequence_Fast_GET_SIZE(f->func_closure);
-        _Py_VPYDBG("Enumerating %ld closure vars to check for global names\n", size);
+        _Py_VPYDBG("Enumerating %zd closure vars to check for global names\n", size);
         for(Py_ssize_t i=0; i < size; ++i){
             PyObject* cellvar = PySequence_Fast_GET_ITEM(f->func_closure, i); // cellvar.rc = x
             PyObject* value = PyCell_GET(cellvar); // value.rc = x
@@ -362,9 +366,25 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
 
 static int _makeimmutable_visit(PyObject* obj, void* frontier)
 {
+    if(PyModule_Check(obj)){
+        const char* name = PyModule_GetName(obj);
+
+        if(strcmp(name, "_frozen_importlib_external") == 0){
+            _Py_VPYDBG("skipping _frozen_importlib_external module\n");
+            return 0;
+        }
+
+        if(strcmp(name, "_frozen_importlib") == 0){
+            _Py_VPYDBG("skipping _frozen_importlib module\n");
+            return 0;
+        }
+    }
+
     _Py_VPYDBG("visit(");
     _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));
+    _Py_VPYDBG("[");
+    _Py_VPYDBGPRINT(obj->ob_type);
+    _Py_VPYDBG("]) region: %" PRIuPTR " rc: %zd\n", Py_REGION(obj), Py_REFCNT(obj));
     if(!_Py_IsImmutable(obj)){
         if(stack_push((stack*)frontier, obj)){
             PyErr_NoMemory();
@@ -375,11 +395,29 @@ static int _makeimmutable_visit(PyObject* obj, void* frontier)
     return 0;
 }
 
+static inline PyObject* allocate_rlock(void)
+{
+    PyObject* module = PyImport_ImportModule("_behaviors");
+    if(module == NULL){
+        return NULL;
+    }
+
+    PyObject* rlock_t = PyObject_GetAttrString(module, "RLock");
+    if(rlock_t == NULL){
+        return NULL;
+    }
+
+    PyObject* rlock = PyObject_CallNoArgs(rlock_t);
+    Py_DECREF(rlock_t);
+    Py_DECREF(module);
+    return rlock;
+}
+
 PyObject* _Py_MakeImmutable(PyObject* obj)
 {
     _Py_VPYDBG(">> makeimmutable(");
     _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));
+    _Py_VPYDBG(") region: %" PRIuPTR " rc: %zd\n", Py_REGION(obj), Py_REFCNT(obj));
     if(_Py_IsImmutable(obj) && _Py_IsImmutable(Py_TYPE(obj))){
         return obj;
     }
@@ -442,16 +480,17 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
                 stack_free(frontier);
                 return NULL;
             }
+
+            if(PyType_Check(item)){
+                // we need to allocate and store the subclass lock
+                PyTypeObject* tp = (PyTypeObject *)PyObject_Type(item); // type_op.rc = x + 1
+                if(tp->tp_subclasses == NULL){
+                    // subclasses were not requested prior to this point
+                    // we will store the lock here
+                }
+            }
         }else{
             _Py_VPYDBG("does not implements tp_traverse\n");
-            // TODO: (mjp comment) These functions causes every character of
-            // a string to become an immutable object, which is is not the
-            // desired behavior.  Commenting so we can discuss.  I believe
-            // we should depend solely on the tp_traverse function to
-            // determine the objects an object depends on.
-            //
-            // _Py_MAKEIMMUTABLE_CALL(walk_sequence, item, frontier);
-            // _Py_MAKEIMMUTABLE_CALL(walk_mapping, item, frontier);
         }
 
 handle_type:
@@ -464,6 +503,18 @@ handle_type:
                 stack_free(frontier);
                 return PyErr_NoMemory();
             }
+
+            // we need to allocate an rlock to control access
+            // to this type's subclass list
+            PyTypeObject* tp = (PyTypeObject*)type_op;
+            PyObject* rlock = allocate_rlock();
+            if(rlock == NULL){
+                Py_DECREF(item);
+                stack_free(frontier);
+                return PyErr_NoMemory();
+            }
+
+            tp->tp_lock = rlock;
         }
         else {
             Py_DECREF(type_op); // type_op.rc = x
@@ -476,8 +527,45 @@ next:
     stack_free(frontier);
 
     _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(" region: %lu rc: %ld \n", Py_REGION(obj), Py_REFCNT(obj));
+    _Py_VPYDBG(" region: %" PRIuPTR " rc: %zd \n", Py_REGION(obj), Py_REFCNT(obj));
     _Py_VPYDBG("<< makeimmutable complete\n\n");
 
     return obj;
+}
+
+bool globals_immutable = false;
+
+PyObject* Py_MakeGlobalsImmutable()
+{
+    PyObject* ret;
+
+    _Py_VPYDBG(">> makeglobalsimmutable\n");
+
+    // go module by module and freeze their global dictionaries
+    PyObject* modules = PyImport_GetModuleDict();
+    Py_ssize_t size = PyDict_Size(modules);
+    PyObject* keys = PyDict_Keys(modules);
+    for(Py_ssize_t i = 0; i < size; i++){
+        PyObject* key = PyList_GetItem(keys, i);
+        _Py_VPYDBG("module: ");
+        _Py_VPYDBGPRINT(key);
+        _Py_VPYDBG("\n");
+        PyObject* module = PyDict_GetItem(modules, key);
+        PyObject* globals = PyModule_GetDict(module);
+        ret = _Py_MakeImmutable(globals);
+        if(ret == NULL){
+            _Py_VPYDBG("<< makeglobalsimmutable failed\n");
+            Py_DECREF(keys);
+            return NULL;
+        }
+    }
+
+    globals_immutable = true;
+    _Py_VPYDBG("<< makeglobalsimmutable complete\n");
+    Py_RETURN_NONE;
+}
+
+bool _PyGlobalsImmutable_Check()
+{
+    return globals_immutable;
 }

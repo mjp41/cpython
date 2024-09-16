@@ -8,6 +8,7 @@
 extern PyObject* PyInit__abc(void);
 extern PyObject* PyInit_array(void);
 extern PyObject* PyInit_audioop(void);
+extern PyObject* PyInit__behaviors(void);
 extern PyObject* PyInit_binascii(void);
 extern PyObject* PyInit_cmath(void);
 extern PyObject* PyInit_errno(void);
@@ -90,6 +91,7 @@ struct _inittab _PyImport_Inittab[] = {
     {"array", PyInit_array},
     {"_ast", PyInit__ast},
     {"audioop", PyInit_audioop},
+    {"_behaviors", PyInit__behaviors},
     {"binascii", PyInit_binascii},
     {"cmath", PyInit_cmath},
     {"errno", PyInit_errno},

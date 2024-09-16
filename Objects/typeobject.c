@@ -12,6 +12,7 @@
 #include "pycore_long.h"          // _PyLong_IsNegative()
 #include "pycore_pyerrors.h"      // _PyErr_Occurred()
 #include "pycore_pystate.h"       // _PyThreadState_GET()
+#include "pycore_regions.h"       // Py_MakeImmutable()
 #include "pycore_typeobject.h"    // struct type_cache
 #include "pycore_unionobject.h"   // _Py_union_type_or
 #include "pycore_frame.h"         // _PyInterpreterFrame
@@ -446,8 +447,48 @@ _PyType_GetSubclasses(PyTypeObject *self)
         return NULL;
     }
 
+    PyObject* rlock = self->tp_lock;
+    PyObject* res;
+    if (rlock != NULL) {
+        PyObject* name = PyUnicode_FromString("acquire");
+        if (name == NULL) {
+            Py_DECREF(list);
+            return NULL;
+        }
+
+        res = PyObject_CallMethodNoArgs(rlock, name);
+        Py_DECREF(name);
+
+        if (res == NULL) {
+            Py_DECREF(list);
+            return NULL;
+        }
+
+        if (Py_IsFalse(res)) {
+            Py_DECREF(list);
+            PyErr_SetString(PyExc_RuntimeError,
+                            "cannot acquire lock");
+            return NULL;
+        }
+    }
+
     PyObject *subclasses = lookup_tp_subclasses(self);  // borrowed ref
     if (subclasses == NULL) {
+        if (rlock != NULL) {
+            PyObject *name = PyUnicode_FromString("release");
+            if (name == NULL) {
+                Py_DECREF(list);
+                return NULL;
+            }
+
+            res = PyObject_CallMethodNoArgs(rlock, name);
+            Py_DECREF(name);
+
+            if(res == NULL) {
+                Py_DECREF(list);
+                return NULL;
+            }
+        }
         return list;
     }
     assert(PyDict_CheckExact(subclasses));
@@ -467,6 +508,27 @@ _PyType_GetSubclasses(PyTypeObject *self)
             return NULL;
         }
     }
+
+    if (rlock != NULL) {
+        PyObject *name = PyUnicode_FromString("release");
+        if (name == NULL) {
+            Py_DECREF(list);
+            return NULL;
+        }
+
+        res = PyObject_CallMethodNoArgs(rlock, name);
+        Py_DECREF(name);
+
+        if (res == NULL) {
+            Py_DECREF(list);
+            return NULL;
+        }
+    }
+
+    if(_Py_IsImmutable(self)) {
+        Py_MakeImmutable(list);
+    }
+
     return list;
 }
 
@@ -5008,7 +5070,7 @@ static void
 clear_static_type_objects(PyInterpreterState *interp, PyTypeObject *type)
 {
     if (_Py_IsMainInterpreter(interp)) {
-        Py_CLEAR(type->tp_cache);
+        Py_CLEAR(type->tp_lock);
     }
     clear_tp_dict(type);
     clear_tp_bases(type);
@@ -5056,7 +5118,7 @@ type_dealloc(PyTypeObject *type)
     Py_XDECREF(type->tp_dict);
     Py_XDECREF(type->tp_bases);
     Py_XDECREF(type->tp_mro);
-    Py_XDECREF(type->tp_cache);
+    Py_XDECREF(type->tp_lock);
     clear_tp_subclasses(type);
 
     /* A type's tp_doc is heap allocated, unlike the tp_doc slots
@@ -5248,7 +5310,7 @@ type_traverse(PyTypeObject *type, visitproc visit, void *arg)
     // }
 
     Py_VISIT(type->tp_dict);
-    Py_VISIT(type->tp_cache);
+    Py_VISIT(type->tp_lock);
     Py_VISIT(type->tp_mro);
     Py_VISIT(type->tp_bases);
     Py_VISIT(type->tp_base);
@@ -5287,7 +5349,7 @@ type_clear(PyTypeObject *type)
 
        cleared, and here's why:
 
-       tp_cache:
+       tp_lock:
            Not used; if it were, it would be a dict.
 
        tp_bases, tp_base:
@@ -7602,6 +7664,33 @@ add_subclass(PyTypeObject *base, PyTypeObject *type)
         return -1;
     }
 
+    PyObject* rlock = type->tp_lock;
+    PyObject* res;
+    if (rlock != NULL) {
+        PyObject *name = PyUnicode_FromString("acquire");
+        if (name == NULL) {
+            Py_DECREF(key);
+            Py_DECREF(ref);
+            return -1;
+        }
+
+        res = PyObject_CallMethodNoArgs(rlock, name);
+        Py_DECREF(name);
+
+        if (res == NULL) {
+            Py_DECREF(key);
+            Py_DECREF(ref);
+            return -1;
+        }
+
+        if (Py_IsFalse(res)) {
+            PyErr_SetString(PyExc_RuntimeError, "unable to acquire lock");
+            Py_DECREF(key);
+            Py_DECREF(ref);
+            return -1;
+        }
+    }
+
     // Only get tp_subclasses after creating the key and value.
     // PyWeakref_NewRef() can trigger a garbage collection which can execute
     // arbitrary Python code and so modify base->tp_subclasses.
@@ -7609,6 +7698,31 @@ add_subclass(PyTypeObject *base, PyTypeObject *type)
     if (subclasses == NULL) {
         subclasses = init_tp_subclasses(base);
         if (subclasses == NULL) {
+            if(rlock != NULL) {
+                PyObject *name = PyUnicode_FromString("release");
+                if (name != NULL) {
+                    PyObject_CallMethodNoArgs(rlock, name);
+                    Py_DECREF(name);
+                }
+            }
+            Py_DECREF(key);
+            Py_DECREF(ref);
+            return -1;
+        }
+    }
+
+    if(rlock != NULL) {
+        PyObject* name = PyUnicode_FromString("release");
+        if(name == NULL){
+            Py_DECREF(key);
+            Py_DECREF(ref);
+            return -1;
+        }
+
+        res = PyObject_CallMethodNoArgs(rlock, name);
+        Py_DECREF(name);
+
+        if (res == NULL) {
             Py_DECREF(key);
             Py_DECREF(ref);
             return -1;
@@ -7667,8 +7781,36 @@ get_subclasses_key(PyTypeObject *type, PyTypeObject *base)
 static void
 remove_subclass(PyTypeObject *base, PyTypeObject *type)
 {
+    PyObject* res;
+    PyObject* rlock = base->tp_lock;
+    if(rlock != NULL) {
+        PyObject* name = PyUnicode_FromString("acquire");
+        if(name == NULL){
+            return;
+        }
+
+        res = PyObject_CallMethodNoArgs(rlock, name);
+        Py_DECREF(name);
+
+        if(res == NULL){
+            return;
+        }
+
+        if(Py_IsFalse(res)){
+            PyErr_SetString(PyExc_RuntimeError, "unable to acquire lock");
+            return;
+        }
+    }
+
     PyObject *subclasses = lookup_tp_subclasses(base);  // borrowed ref
     if (subclasses == NULL) {
+        if(rlock != NULL) {
+            PyObject* name = PyUnicode_FromString("release");
+            if(name != NULL){
+                PyObject_CallMethodNoArgs(rlock, name);
+                Py_DECREF(name);
+            }
+        }
         return;
     }
     assert(PyDict_CheckExact(subclasses));
@@ -7684,6 +7826,14 @@ remove_subclass(PyTypeObject *base, PyTypeObject *type)
 
     if (PyDict_Size(subclasses) == 0) {
         clear_tp_subclasses(base);
+    }
+
+    if(rlock != NULL) {
+            PyObject *name = PyUnicode_FromString("release");
+            if(name != NULL){
+                PyObject_CallMethodNoArgs(rlock, name);
+                Py_DECREF(name);
+            }
     }
 }
 

@@ -90,3 +90,17 @@
     - [x] [PyCell_Set](Objects/cellobject.c#L63)
     - [x] [DELETE_DEREF](Python/bytecodes.c)
     - [x] [STORE_DEREF](Python/bytecodes.c)
+
+# Phase 2
+
+## Notes
+- Make all the keys of the globals dictionary immutable
+- Module dictionaries are made immutable (`PyModule_GetDict()` should return an immutable dict)
+- Implement `_PyBehaviorRuntime_CheckInit` which returns whether behaviors can run.
+- Make all types immutable (except for subtype checks, see below). This includes static/built-in types.
+- Altered behavior if `_PyBehaviorRuntime_CheckInit` is true:
+  * `Py_NewInterpreterFromConfig()` uses the immutable globals dictionary for new thread state
+  * `PyState_AddModule()/PyState_RemoveModule()` acquire a global lock. The resulting module is made immutable once it is loaded.
+  * `PyObject_GenericGetDict()` acquires the type lock if a dictionary is not already present. Dictionary is made immutable if created.
+  * `PyType_IsSubtype()/add_subclass()/remove_subclasses` acquire the type lock.
+  * `PyType_FromMetaclass()/PyType_FromModuleAndSpec()/PyType_FromSpecWithBases()/PyType_FromSpec()` create immutable types
