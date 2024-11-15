@@ -249,7 +249,7 @@ Here we present the idea as a reverse polish evaluator.
 >>> calc("4 x y + *")
 ```
 The idea is to interpolate the `x` and `y` into the string while evaluating it.
-```
+```python
 def calc(str):
   ctxt = sys._getframe().f_back
   ops = str.split()
