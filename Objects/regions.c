@@ -649,3 +649,92 @@ next:
 
     return obj;
 }
+
+typedef struct RegionObject RegionObject;
+
+typedef struct {
+    int lrc;  // Integer field for "local reference count"
+    int osc;  // Integer field for "open subregion count"
+    RegionObject* bridge;
+} RegionMetadata;
+
+struct RegionObject {
+    PyObject_HEAD
+    RegionMetadata* metadata;
+    PyObject *name;   // Optional string field for "name"
+};
+
+static void Region_dealloc(RegionObject *self) {
+    Py_XDECREF(self->name);
+    self->metadata->bridge = NULL;
+    // The lifetimes are joined for now
+    free(self->metadata);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static int Region_init(RegionObject *self, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = {"name", NULL};
+    self->metadata = (RegionMetadata*)calloc(1, sizeof(RegionMetadata));
+    self->metadata->bridge = self;
+    self->name = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->name))
+        return -1;
+    
+    Py_XINCREF(self->name);
+    return 0;
+}
+
+static PyObject *Region_repr(RegionObject *self) {
+    if (Py_DebugFlag) {
+        RegionMetadata* data = self->metadata;
+        // Debug mode: include detailed representation
+        return PyUnicode_FromFormat(
+            "Region(lrc=%d, osc=%d, name=%S)", data->lrc, data->osc, self->name ? self->name : Py_None
+        );
+    } else {
+        // Normal mode: simple representation
+        return PyUnicode_FromFormat("Region(name=%S)", self->name ? self->name : Py_None);
+    }
+}
+
+PyTypeObject Region_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "Region",                          /* tp_name */
+    sizeof(RegionObject),              /* tp_basicsize */
+    0,                                 /* tp_itemsize */
+    (destructor)Region_dealloc,        /* tp_dealloc */
+    0,                                 /* tp_vectorcall_offset */
+    0,                                 /* tp_getattr */
+    0,                                 /* tp_setattr */
+    0,                                 /* tp_as_async */
+    (reprfunc)Region_repr,             /* tp_repr */
+    0,                                 /* tp_as_number */
+    0,                                 /* tp_as_sequence */
+    0,                                 /* tp_as_mapping */
+    0,                                 /* tp_hash  */
+    0,                                 /* tp_call */
+    0,                                 /* tp_str */
+    0,                                 /* tp_getattro */
+    0,                                 /* tp_setattro */
+    0,                                 /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,                /* tp_flags */
+    "TODO =^.^=",                  /* tp_doc */
+    0,                                 /* tp_traverse */
+    0,                                 /* tp_clear */
+    0,                                 /* tp_richcompare */
+    0,                                 /* tp_weaklistoffset */
+    0,                                 /* tp_iter */
+    0,                                 /* tp_iternext */
+    0,                                 /* tp_methods */
+    0,                                 /* tp_members */
+    0,                                 /* tp_getset */
+    0,                                 /* tp_base */
+    0,                                 /* tp_dict */
+    0,                                 /* tp_descr_get */
+    0,                                 /* tp_descr_set */
+    0,                                 /* tp_dictoffset */
+    (initproc)Region_init,             /* tp_init */
+    0,                                 /* tp_alloc */
+    PyType_GenericNew,                 /* tp_new */
+};
