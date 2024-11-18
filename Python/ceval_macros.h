@@ -91,6 +91,8 @@
 /* Do interpreter dispatch accounting for tracing and instrumentation */
 #define DISPATCH() \
     { \
+        if (_Py_CheckRegionInvariant(tstate) != 0) \
+            goto error; \
         NEXTOPARG(); \
         PRE_DISPATCH_GOTO(); \
         DISPATCH_GOTO(); \

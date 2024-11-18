@@ -1423,8 +1423,62 @@ PyDoc_STRVAR(builtin_makeimmutable__doc__,
 "makeimmutable($module, obj, /)\n"
 "--\n"
 "\n"
-"Make \'obj\' and its entire graph immutable.");
+"Make \'obj\' and its entire reachable object graph immutable.");
 
 #define BUILTIN_MAKEIMMUTABLE_METHODDEF    \
     {"makeimmutable", (PyCFunction)builtin_makeimmutable, METH_O, builtin_makeimmutable__doc__},
-/*[clinic end generated code: output=356f1513888beba0 input=a9049054013a1b77]*/
+
+PyDoc_STRVAR(builtin_invariantsrcfailure__doc__,
+"invariant_failure_src($module, /)\n"
+"--\n"
+"\n"
+"Find the source of an invariant failure.");
+
+#define BUILTIN_INVARIANTSRCFAILURE_METHODDEF    \
+    {"invariant_failure_src", (PyCFunction)builtin_invariantsrcfailure, METH_NOARGS, builtin_invariantsrcfailure__doc__},
+
+static PyObject *
+builtin_invariantsrcfailure_impl(PyObject *module);
+
+static PyObject *
+builtin_invariantsrcfailure(PyObject *module, PyObject *Py_UNUSED(ignored))
+{
+    return builtin_invariantsrcfailure_impl(module);
+}
+
+PyDoc_STRVAR(builtin_invarianttgtfailure__doc__,
+"invariant_failure_tgt($module, /)\n"
+"--\n"
+"\n"
+"Find the target of an invariant failure.");
+
+#define BUILTIN_INVARIANTTGTFAILURE_METHODDEF    \
+    {"invariant_failure_tgt", (PyCFunction)builtin_invarianttgtfailure, METH_NOARGS, builtin_invarianttgtfailure__doc__},
+
+static PyObject *
+builtin_invarianttgtfailure_impl(PyObject *module);
+
+static PyObject *
+builtin_invarianttgtfailure(PyObject *module, PyObject *Py_UNUSED(ignored))
+{
+    return builtin_invarianttgtfailure_impl(module);
+}
+
+PyDoc_STRVAR(builtin_enableinvariant__doc__,
+"enableinvariant($module, /)\n"
+"--\n"
+"\n"
+"Enable the checking of the region invariant.");
+
+#define BUILTIN_ENABLEINVARIANT_METHODDEF    \
+    {"enableinvariant", (PyCFunction)builtin_enableinvariant, METH_NOARGS, builtin_enableinvariant__doc__},
+
+static PyObject *
+builtin_enableinvariant_impl(PyObject *module);
+
+static PyObject *
+builtin_enableinvariant(PyObject *module, PyObject *Py_UNUSED(ignored))
+{
+    return builtin_enableinvariant_impl(module);
+}
+/*[clinic end generated code: output=3a883fa08bbd248e input=a9049054013a1b77]*/
