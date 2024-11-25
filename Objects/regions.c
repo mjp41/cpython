@@ -127,13 +127,15 @@ PyObject* _Py_EnableInvariant(void)
  * Set the global variables for a failure.
  * This allows the interpreter to inspect what has failed.
  */
-void set_failed_edge(PyObject* src, PyObject* tgt)
+void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
 {
+    Py_DecRef(error_src);
     Py_IncRef(src);
     error_src = src;
+    Py_DecRef(error_tgt);
     Py_IncRef(tgt);
     error_tgt = tgt;
-    printf("Error: %p -> %p: destination is not immutable\n", src, tgt);
+    printf("Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
     do_region_check = false;
@@ -171,7 +173,7 @@ visit_invariant_check(PyObject *op, void *parent)
     if ((src_op->ob_region == _Py_IMMUTABLE)
         && (op->ob_region != _Py_IMMUTABLE))
         {
-            set_failed_edge(src_op, op);
+            set_failed_edge(src_op, op, "Destination is not immutable");
             return 0;
         }
     // TODO: More checks to go here as we add more region
