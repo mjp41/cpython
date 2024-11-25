@@ -389,6 +389,58 @@ class TestWeakRef(unittest.TestCase):
         # self.assertTrue(c.val() is obj)
         self.assertIsNone(c.val())
 
+class TestRegionOwnership(unittest.TestCase):
+    class A:
+        pass
+
+    def test_default_ownership(self):
+        a = self.A()
+        r = Region()
+        self.assertFalse(r.owns_object(a))
+
+    def test_add_ownership(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        self.assertTrue(r.owns_object(a))
+
+    def test_remove_ownership(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        r.remove_object(a)
+        self.assertFalse(r.owns_object(a))
+
+    def test_add_ownership2(self):
+        a = self.A()
+        r1 = Region()
+        r2 = Region()
+        r1.add_object(a)
+        self.assertFalse(r2.owns_object(a))
+
+    def test_should_fail_add_ownership_twice_1(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        try:
+            r.add_object(a)
+        except RuntimeError:
+            pass
+        else:
+            self.fail("Should not reach here")
+
+    def test_should_fail_add_ownership_twice_2(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        try:
+            r2 = Region()
+            r2.add_object(a)
+        except RuntimeError:
+            pass
+        else:
+            self.fail("Should not reach here")
+
 # This test will make the Python environment unusable.
 # Should perhaps forbid making the frame immutable.
 # class TestStackCapture(unittest.TestCase):

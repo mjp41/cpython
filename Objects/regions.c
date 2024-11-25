@@ -650,68 +650,68 @@ next:
     return obj;
 }
 
-typedef struct RegionObject RegionObject;
-typedef struct RegionMetadata RegionMetadata;
+typedef struct PyRegionObject PyRegionObject;
+typedef struct regionmetadata regionmetadata;
 
-struct RegionMetadata {
+struct regionmetadata {
     int lrc;  // Integer field for "local reference count"
     int osc;  // Integer field for "open subregion count"
     int is_open;
-    RegionMetadata* parent;
-    RegionObject* bridge;
+    regionmetadata* parent;
+    PyRegionObject* bridge;
 };
 
-struct RegionObject {
+struct PyRegionObject {
     PyObject_HEAD
-    RegionMetadata* metadata;
+    regionmetadata* metadata;
     PyObject *name;   // Optional string field for "name"
 };
 
-static void RegionMetadata_inc_lrc(RegionMetadata* data) {
+static void RegionMetadata_inc_lrc(regionmetadata* data) {
     data->lrc += 1;
 }
 
-static void RegionMetadata_dec_lrc(RegionMetadata* data) {
+static void RegionMetadata_dec_lrc(regionmetadata* data) {
     data->lrc -= 1;
 }
 
-static void RegionMetadata_inc_osc(RegionMetadata* data) {
+static void RegionMetadata_inc_osc(regionmetadata* data) {
     data->osc += 1;
 }
 
-static void RegionMetadata_dec_osc(RegionMetadata* data) {
+static void RegionMetadata_dec_osc(regionmetadata* data) {
     data->osc -= 1;
 }
 
-static void RegionMetadata_open(RegionMetadata* data) {
+static void RegionMetadata_open(regionmetadata* data) {
     data->is_open = 1;
 }
 
-static void RegionMetadata_close(RegionMetadata* data) {
+static void RegionMetadata_close(regionmetadata* data) {
     data->is_open = 0;
 }
 
-static bool RegionMetadata_is_open(RegionMetadata* data) {
+static bool RegionMetadata_is_open(regionmetadata* data) {
     return data->is_open == 0;
 }
 
-static void RegionMetadata_set_parent(RegionMetadata* data, RegionMetadata* parent) {
+static void RegionMetadata_set_parent(regionmetadata* data, regionmetadata* parent) {
     data->parent = parent;
 }
 
-static bool RegionMetadata_has_parent(RegionMetadata* data) {
+static bool RegionMetadata_has_parent(regionmetadata* data) {
     return data->parent != NULL;
 }
 
-static RegionMetadata* RegionMetadata_get_parent(RegionMetadata* data) {
+static regionmetadata* RegionMetadata_get_parent(regionmetadata* data) {
     return data->parent;
 }
 
-static void RegionMetadata_unparent(RegionMetadata* data) {
+static void RegionMetadata_unparent(regionmetadata* data) {
     RegionMetadata_set_parent(data, NULL);
 }
 
-static PyObject* RegionMetadata_is_root(RegionMetadata* data) {
+static PyObject* RegionMetadata_is_root(regionmetadata* data) {
     if (RegionMetadata_has_parent(data)) {
         Py_RETURN_TRUE;
     } else {
@@ -719,12 +719,12 @@ static PyObject* RegionMetadata_is_root(RegionMetadata* data) {
     }
 }
 
-static RegionMetadata* Region_get_metadata(RegionObject* obj) {
+static regionmetadata* Region_get_metadata(PyRegionObject* obj) {
     return obj->metadata;
 }
 
 
-static void Region_dealloc(RegionObject *self) {
+static void Region_dealloc(PyRegionObject *self) {
     Py_XDECREF(self->name);
     self->metadata->bridge = NULL;
     // The lifetimes are joined for now
@@ -732,9 +732,9 @@ static void Region_dealloc(RegionObject *self) {
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
-static int Region_init(RegionObject *self, PyObject *args, PyObject *kwds) {
+static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"name", NULL};
-    self->metadata = (RegionMetadata*)calloc(1, sizeof(RegionMetadata));
+    self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
     self->metadata->bridge = self;
     self->name = NULL;
 
@@ -746,7 +746,7 @@ static int Region_init(RegionObject *self, PyObject *args, PyObject *kwds) {
 }
 
 // is_open method (returns True if the region is open, otherwise False)
-static PyObject *Region_is_open(RegionObject *self, PyObject *args) {
+static PyObject *Region_is_open(PyRegionObject *self, PyObject *args) {
     if (RegionMetadata_is_open(self->metadata)) {
         Py_RETURN_TRUE;  // Return True if the region is open
     } else {
@@ -755,20 +755,20 @@ static PyObject *Region_is_open(RegionObject *self, PyObject *args) {
 }
 
 // Open method (sets the region to "open")
-static PyObject *Region_open(RegionObject *self, PyObject *args) {
+static PyObject *Region_open(PyRegionObject *self, PyObject *args) {
     RegionMetadata_open(self->metadata);
     Py_RETURN_NONE;  // Return None (standard for methods with no return value)
 }
 
 // Close method (sets the region to "closed")
-static PyObject *Region_close(RegionObject *self, PyObject *args) {
+static PyObject *Region_close(PyRegionObject *self, PyObject *args) {
     RegionMetadata_close(self->metadata);  // Mark as closed
     Py_RETURN_NONE;  // Return None (standard for methods with no return value)
 }
 
 // Adds args object to self region
-static PyObject *Region_add_object(RegionObject *self, PyObject *args) {
-    RegionMetadata* md = Region_get_metadata(self);
+static PyObject *Region_add_object(PyRegionObject *self, PyObject *args) {
+    regionmetadata* md = Region_get_metadata(self);
     if (args->ob_region == _Py_DEFAULT_REGION) {
         args->ob_region = (Py_uintptr_t) md;
         Py_RETURN_NONE;
@@ -779,8 +779,8 @@ static PyObject *Region_add_object(RegionObject *self, PyObject *args) {
 }
 
 // Remove args object to self region
-static PyObject *Region_remove_object(RegionObject *self, PyObject *args) {
-    RegionMetadata* md = Region_get_metadata(self);
+static PyObject *Region_remove_object(PyRegionObject *self, PyObject *args) {
+    regionmetadata* md = Region_get_metadata(self);
     if (args->ob_region == (Py_uintptr_t) md) {
         args->ob_region = _Py_DEFAULT_REGION;
         Py_RETURN_NONE;
@@ -791,7 +791,7 @@ static PyObject *Region_remove_object(RegionObject *self, PyObject *args) {
 }
 
 // Return True if args object is member of self region
-static PyObject *Region_owns_object(RegionObject *self, PyObject *args) {
+static PyObject *Region_owns_object(PyRegionObject *self, PyObject *args) {
     if ((Py_uintptr_t) Region_get_metadata(self) == args->ob_region) {
         Py_RETURN_TRUE;
     } else {
@@ -799,8 +799,8 @@ static PyObject *Region_owns_object(RegionObject *self, PyObject *args) {
     }
 }
 
-static PyObject *Region_repr(RegionObject *self) {
-    RegionMetadata* data = self->metadata;
+static PyObject *Region_repr(PyRegionObject *self) {
+    regionmetadata* data = self->metadata;
     // FIXME: deprecated flag, but config.parse_debug seems to not work?
     if (Py_DebugFlag) {
         // Debug mode: include detailed representation
@@ -826,10 +826,10 @@ static PyMethodDef Region_methods[] = {
 };
 
 
-PyTypeObject Region_Type = {
+PyTypeObject PyRegion_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "Region",                          /* tp_name */
-    sizeof(RegionObject),              /* tp_basicsize */
+    sizeof(PyRegionObject),              /* tp_basicsize */
     0,                                 /* tp_itemsize */
     (destructor)Region_dealloc,        /* tp_dealloc */
     0,                                 /* tp_vectorcall_offset */

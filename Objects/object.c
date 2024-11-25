@@ -2041,7 +2041,7 @@ extern PyTypeObject _PyMemoryIter_Type;
 extern PyTypeObject _PyLineIterator;
 extern PyTypeObject _PyPositionsIterator;
 extern PyTypeObject _PyLegacyEventHandler_Type;
-extern PyTypeObject Region_Type;
+extern PyTypeObject PyRegion_Type;
 
 static PyTypeObject* static_types[] = {
     // The two most important base types: must be initialized first and
@@ -2164,7 +2164,7 @@ static PyTypeObject* static_types[] = {
     &PyODict_Type,        // base=&PyDict_Type
 
     // Pyrona Region:
-    &Region_Type,
+    &PyRegion_Type,
 };
 
 
