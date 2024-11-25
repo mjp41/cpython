@@ -238,7 +238,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
             // Also need to visit the type of the object
             // As this isn't covered by the traverse.
             PyObject* type_op = PyObject_Type(op);
-            visit_invariant_check(op, type_op);
+            visit_invariant_check(type_op, op);
             Py_DECREF(type_op);
 
             // If we detected an error, stop so we don't
@@ -733,6 +733,8 @@ static void Region_dealloc(PyRegionObject *self) {
 }
 
 static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
+    notify_regions_in_use();
+
     static char *kwlist[] = {"name", NULL};
     self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
     self->metadata->bridge = self;

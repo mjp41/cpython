@@ -393,6 +393,10 @@ class TestRegionOwnership(unittest.TestCase):
     class A:
         pass
 
+    def setUp(self):
+        # This freezes A and super and meta types of A namely `type` and `object`
+        makeimmutable(self.A)
+
     def test_default_ownership(self):
         a = self.A()
         r = Region()
