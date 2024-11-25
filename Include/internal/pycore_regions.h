@@ -26,6 +26,9 @@ PyObject* _Py_InvariantTgtFailure(void);
 PyObject* _Py_EnableInvariant(void);
 #define Py_EnableInvariant() _Py_EnableInvariant()
 
+PyObject* _Py_ResetInvariant(void);
+#define Py_ResetInvariant() _Py_ResetInvariant()
+
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
 #define _Py_VPYDBGPRINT(fmt, ...)

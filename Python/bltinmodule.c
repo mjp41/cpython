@@ -2814,7 +2814,6 @@ builtin_enableinvariant_impl(PyObject *module)
     return Py_EnableInvariant();
 }
 
-
 typedef struct {
     PyObject_HEAD
     Py_ssize_t tuplesize;

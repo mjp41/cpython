@@ -2,11 +2,37 @@
 #include "Python.h"
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include "object.h"
 #include "pycore_dict.h"
 #include "pycore_interp.h"
 #include "pycore_object.h"
 #include "pycore_regions.h"
+
+typedef struct PyRegionObject PyRegionObject;
+typedef struct regionmetadata regionmetadata;
+
+struct PyRegionObject {
+    PyObject_HEAD
+    regionmetadata* metadata;
+    PyObject *name;   // Optional string field for "name"
+};
+
+struct regionmetadata {
+    int lrc;  // Integer field for "local reference count"
+    int osc;  // Integer field for "open subregion count"
+    int is_open;
+    regionmetadata* parent;
+    PyRegionObject* bridge;
+    // TODO: make the following conditional of a debug build (or something)
+    // Intrinsic list for invariant checking
+    regionmetadata* next;
+};
+
+bool is_bridge_object(PyObject *op);
+static int RegionMetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
+static regionmetadata* Region_get_metadata(PyRegionObject* obj);
 
 /**
  * Simple implementation of stack for tracing during make immutable.
@@ -103,6 +129,10 @@ PyObject* error_tgt = Py_None;
 // Once an error has occurred this is used to surpress further checking
 bool error_occurred = false;
 
+// Start of a linked list of bridge objects used to check for external uniqueness
+// Bridge objects appear in this list if they are captured
+#define CAPTURED_SENTINEL 0xc0defefe
+regionmetadata* captured = (regionmetadata*) CAPTURED_SENTINEL;
 
 /**
  * Enable the region check.
@@ -120,6 +150,9 @@ PyObject* _Py_EnableInvariant(void)
     error_occurred = false;
     // Re-enable region check
     do_region_check = true;
+    // Reset the error state
+    error_src = Py_None;
+    error_tgt = Py_None;
     return Py_None;
 }
 
@@ -135,7 +168,7 @@ void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
     Py_DecRef(error_tgt);
     Py_IncRef(tgt);
     error_tgt = tgt;
-    printf("Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
+    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
     do_region_check = false;
@@ -160,22 +193,68 @@ typedef struct _gc_runtime_state GCState;
 #define GC_PREV _PyGCHead_PREV
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
+static int
+is_immutable_region(regionmetadata* r)
+{
+    return ((Py_uintptr_t) r) == _Py_IMMUTABLE;    
+}
+
+static int
+is_default_region(regionmetadata* r)
+{
+    return ((Py_uintptr_t) r) == _Py_DEFAULT_REGION;    
+}
 
 /* A traversal callback for _Py_CheckRegionInvariant.
    - op is the target of the reference we are checking, and
    - parent is the source of the reference we are checking.
 */
 static int
-visit_invariant_check(PyObject *op, void *parent)
+visit_invariant_check(PyObject *tgt, void *parent)
 {
+    // fprintf(stderr, "Visited %p from %p\n", tgt, parent);
     PyObject *src_op = _PyObject_CAST(parent);
-    // Check Immutable only reaches immutable
-    if ((src_op->ob_region == _Py_IMMUTABLE)
-        && (op->ob_region != _Py_IMMUTABLE))
-        {
-            set_failed_edge(src_op, op, "Destination is not immutable");
+    regionmetadata* src_region = (regionmetadata*) src_op->ob_region;
+    regionmetadata* tgt_region = (regionmetadata*) tgt->ob_region;
+    // Anything is allowed to point to immutable
+    if (is_immutable_region(tgt_region))
+        return 0;
+    // Since tgt is not immutable, src also may not be as immutable may not point to mutable
+    if (is_immutable_region(src_region)) {
+        set_failed_edge(src_op, tgt, "Destination is not immutable");
+        return 0;
+    // Borrowed references are unrestricted
+    } else if (is_default_region(src_region)) {
+        return 0;
+    // Check cross-region references
+    } else if (src_region != tgt_region)  {
+        // Permitted cross-region references
+        fprintf(stderr, "%p <-- %p\n", tgt, parent);
+        if (is_bridge_object(tgt)) {
+            // We just followed a non-borrowed, external reference here, 
+            // so this is a *capturing* reference (so we add it to the captured list)
+            regionmetadata* meta = Region_get_metadata((PyRegionObject*) tgt);
+            // Check if region is already added to captured list
+            if (meta->next == NULL) {
+                // First discovery of bridge -- add to list of captured bridge objects
+                meta->next = captured;
+                captured = meta;
+            } else {
+                // Bridge object was already captured
+                set_failed_edge(src_op, tgt, "Bridge object not externally unique");
+                return 0;
+            }
+            // Forbid cycles in the region topology
+            if (RegionMetadata_has_ancestor(src_region, tgt_region)) {
+                set_failed_edge(src_op, tgt, "Region cycle detected");
+                return 0;
+            }
             return 0;
         }
+        set_failed_edge(src_op, tgt, "Destination is not in the same region");
+        return 0;
+    }
+
     // TODO: More checks to go here as we add more region
     // properties.
 
@@ -237,6 +316,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
 
             // Also need to visit the type of the object
             // As this isn't covered by the traverse.
+            // TODO: this might be covered by tp_traverse?
             PyObject* type_op = PyObject_Type(op);
             visit_invariant_check(type_op, op);
             Py_DECREF(type_op);
@@ -249,6 +329,14 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
                 return 1;
         }
     }
+
+    // Reset the captured list
+    while (captured != CAPTURED_SENTINEL) {
+        regionmetadata* m = captured;
+        captured = m->next;
+        m->next = NULL;
+    }
+    // fprintf(stderr, "----\n");
 
     return 0;
 }
@@ -650,22 +738,18 @@ next:
     return obj;
 }
 
-typedef struct PyRegionObject PyRegionObject;
-typedef struct regionmetadata regionmetadata;
+bool is_bridge_object(PyObject *op) {
+    Py_uintptr_t region = op->ob_region;
+    if (region == _Py_IMMUTABLE || region == _Py_DEFAULT_REGION) {
+        return 0;
+    }
 
-struct regionmetadata {
-    int lrc;  // Integer field for "local reference count"
-    int osc;  // Integer field for "open subregion count"
-    int is_open;
-    regionmetadata* parent;
-    PyRegionObject* bridge;
-};
-
-struct PyRegionObject {
-    PyObject_HEAD
-    regionmetadata* metadata;
-    PyObject *name;   // Optional string field for "name"
-};
+    if (((regionmetadata*)region)->bridge == op) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
 
 static void RegionMetadata_inc_lrc(regionmetadata* data) {
     data->lrc += 1;
@@ -719,6 +803,16 @@ static PyObject* RegionMetadata_is_root(regionmetadata* data) {
     }
 }
 
+static int RegionMetadata_has_ancestor(regionmetadata* data, regionmetadata* other) {
+    do {
+        if (data == other) {
+            return 1;
+        }
+        data = RegionMetadata_get_parent(data);
+    } while (data);
+    return 0;
+}
+
 static regionmetadata* Region_get_metadata(PyRegionObject* obj) {
     return obj->metadata;
 }
@@ -739,6 +833,8 @@ static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
     self->metadata->bridge = self;
     self->name = NULL;
+    // Make the region an owner of the bridge object
+    self->ob_base.ob_region = (Py_uintptr_t) self->metadata;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->name))
         return -1;
