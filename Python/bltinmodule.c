@@ -2770,10 +2770,50 @@ Make 'obj' and its entire reachable object graph immutable.
 
 static PyObject *
 builtin_makeimmutable(PyObject *module, PyObject *obj)
-/*[clinic end generated code: output=4e665122542dfd24 input=21a50256fa4fb099]*/
+/*[clinic end generated code: output=4e665122542dfd24 input=bec4cf1797c848d4]*/
 {
     return Py_MakeImmutable(obj);
 }
+
+/*[clinic input]
+invariant_failure_src as builtin_invariantsrcfailure
+
+Find the source of an invariant failure.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_invariantsrcfailure_impl(PyObject *module)
+/*[clinic end generated code: output=8830901cbbefe8ba input=0266aae8308be0a4]*/
+{
+    return Py_InvariantSrcFailure();
+}
+
+/*[clinic input]
+invariant_failure_tgt as builtin_invarianttgtfailure
+
+Find the target of an invariant failure.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_invarianttgtfailure_impl(PyObject *module)
+/*[clinic end generated code: output=f7c9cd7cb737bd13 input=9c79a563d1eb52f9]*/
+{
+    return Py_InvariantTgtFailure();
+}
+
+/*[clinic input]
+enableinvariant as builtin_enableinvariant
+
+Enable the checking of the region invariant.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_enableinvariant_impl(PyObject *module)
+/*[clinic end generated code: output=a3a27509957788c2 input=cf5922b1eb45ef0e]*/
+{
+    return Py_EnableInvariant();
+}
+
 
 typedef struct {
     PyObject_HEAD
@@ -3061,6 +3101,7 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_DELATTR_METHODDEF
     BUILTIN_DIR_METHODDEF
     BUILTIN_DIVMOD_METHODDEF
+    BUILTIN_ENABLEINVARIANT_METHODDEF
     BUILTIN_EVAL_METHODDEF
     BUILTIN_EXEC_METHODDEF
     BUILTIN_FORMAT_METHODDEF
@@ -3075,6 +3116,8 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_ISSUBCLASS_METHODDEF
     BUILTIN_ISIMMUTABLE_METHODDEF
     BUILTIN_MAKEIMMUTABLE_METHODDEF
+    BUILTIN_INVARIANTSRCFAILURE_METHODDEF
+    BUILTIN_INVARIANTTGTFAILURE_METHODDEF
     BUILTIN_ITER_METHODDEF
     BUILTIN_AITER_METHODDEF
     BUILTIN_LEN_METHODDEF

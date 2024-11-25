@@ -17,6 +17,15 @@ extern "C" {
 PyObject* _Py_MakeImmutable(PyObject* obj);
 #define Py_MakeImmutable(op) _Py_MakeImmutable(_PyObject_CAST(op))
 
+PyObject* _Py_InvariantSrcFailure(void);
+#define Py_InvariantSrcFailure() _Py_InvariantSrcFailure()
+
+PyObject* _Py_InvariantTgtFailure(void);
+#define Py_InvariantTgtFailure() _Py_InvariantTgtFailure()
+
+PyObject* _Py_EnableInvariant(void);
+#define Py_EnableInvariant() _Py_EnableInvariant()
+
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
 #define _Py_VPYDBGPRINT(fmt, ...)
@@ -24,6 +33,8 @@ PyObject* _Py_MakeImmutable(PyObject* obj);
 #define _Py_VPYDBG(fmt, ...) printf(fmt, ##__VA_ARGS__)
 #define _Py_VPYDBGPRINT(op) PyObject_Print(_PyObject_CAST(op), stdout, 0)
 #endif
+
+int _Py_CheckRegionInvariant(PyThreadState *tstate);
 
 #ifdef __cplusplus
 }

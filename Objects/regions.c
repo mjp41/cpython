@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "pycore_dict.h"
+#include "pycore_interp.h"
 #include "pycore_object.h"
 #include "pycore_regions.h"
 
@@ -86,6 +87,170 @@ void stack_print(stack* s){
 
 bool is_c_wrapper(PyObject* obj){
     return PyCFunction_Check(obj) || Py_IS_TYPE(obj, &_PyMethodWrapper_Type) || Py_IS_TYPE(obj, &PyWrapperDescr_Type);
+}
+
+/**
+ * Global status for performing the region check.
+ */
+bool do_region_check = false;
+
+// The src object for an edge that invalidated the invariant.
+PyObject* error_src = Py_None;
+
+// The tgt object for an edge that invalidated the invariant.
+PyObject* error_tgt = Py_None;
+
+// Once an error has occurred this is used to surpress further checking
+bool error_occurred = false;
+
+
+/**
+ * Enable the region check.
+ */
+void notify_regions_in_use(void)
+{
+    // Do not re-enable, if we have detected a fault.
+    if (!error_occurred)
+        do_region_check = true;
+}
+
+PyObject* _Py_EnableInvariant(void)
+{
+    // Disable failure as program has explicitly requested invariant to be checked again.
+    error_occurred = false;
+    // Re-enable region check
+    do_region_check = true;
+    return Py_None;
+}
+
+/**
+ * Set the global variables for a failure.
+ * This allows the interpreter to inspect what has failed.
+ */
+void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
+{
+    Py_DecRef(error_src);
+    Py_IncRef(src);
+    error_src = src;
+    Py_DecRef(error_tgt);
+    Py_IncRef(tgt);
+    error_tgt = tgt;
+    printf("Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
+    // We have discovered a failure.
+    // Disable region check, until the program switches it back on.
+    do_region_check = false;
+    error_occurred = true;
+}
+
+PyObject* _Py_InvariantSrcFailure(void)
+{
+    return Py_NewRef(error_src);
+}
+
+PyObject* _Py_InvariantTgtFailure(void)
+{
+    return Py_NewRef(error_tgt);
+}
+
+
+// Lifted from gcmodule.c
+typedef struct _gc_runtime_state GCState;
+#define GEN_HEAD(gcstate, n) (&(gcstate)->generations[n].head)
+#define GC_NEXT _PyGCHead_NEXT
+#define GC_PREV _PyGCHead_PREV
+#define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
+
+
+/* A traversal callback for _Py_CheckRegionInvariant.
+   - op is the target of the reference we are checking, and
+   - parent is the source of the reference we are checking.
+*/
+static int
+visit_invariant_check(PyObject *op, void *parent)
+{
+    PyObject *src_op = _PyObject_CAST(parent);
+    // Check Immutable only reaches immutable
+    if ((src_op->ob_region == _Py_IMMUTABLE)
+        && (op->ob_region != _Py_IMMUTABLE))
+        {
+            set_failed_edge(src_op, op, "Destination is not immutable");
+            return 0;
+        }
+    // TODO: More checks to go here as we add more region
+    // properties.
+
+    return 0;
+}
+
+/**
+ * This uses checks that the region topology is valid.
+ *
+ * It is currently implemented using the GC data. This
+ * means that not all objects are traversed as some objects
+ * are considered to not participate in cycles, and hence
+ * do not need to be understood for the cycle detector.
+ *
+ * This is not ideal for the region invariant, but is a good
+ * first approximation.  We could actually walk the heap
+ * in a subsequent more elaborate invariant check.
+ *
+ * Returns non-zero if the invariant is violated.
+ */
+int _Py_CheckRegionInvariant(PyThreadState *tstate)
+{
+    // Check if we should perform the region invariant check
+    if(!do_region_check){
+        return 0;
+    }
+
+    // Use the GC data to find all the objects, and traverse them to
+    // confirm all their references satisfy the region invariant.
+    GCState *gcstate = &tstate->interp->gc;
+
+    // There is an cyclic doubly linked list per generation of all the objects
+    // in that generation.
+    for (int i = NUM_GENERATIONS-1; i >= 0; i--) {
+        PyGC_Head *containers = GEN_HEAD(gcstate, i);
+        PyGC_Head *gc = GC_NEXT(containers);
+        // Walk doubly linked list of objects.
+        for (; gc != containers; gc = GC_NEXT(gc)) {
+            PyObject *op = FROM_GC(gc);
+            // Local can point to anything.  No invariant needed
+            if (op->ob_region == _Py_DEFAULT_REGION)
+                continue;
+            // Functions are complex.
+            // Removing from invariant initially.
+            // TODO provide custom traverse here.
+            if (PyFunction_Check(op))
+                continue;
+
+            // TODO the immutable code ignores c_wrappers
+            // review if this is correct.
+            if (is_c_wrapper(op))
+                continue;
+
+            // Use traverse proceduce to visit each field of the object.
+            traverseproc traverse = Py_TYPE(op)->tp_traverse;
+            (void) traverse(op,
+                            (visitproc)visit_invariant_check,
+                            op);
+
+            // Also need to visit the type of the object
+            // As this isn't covered by the traverse.
+            PyObject* type_op = PyObject_Type(op);
+            visit_invariant_check(op, type_op);
+            Py_DECREF(type_op);
+
+            // If we detected an error, stop so we don't
+            // write too much.
+            // TODO: The first error might not be the most useful.
+            // So might not need to build all error edges as a structure.
+            if (error_occurred)
+                return 1;
+        }
+    }
+
+    return 0;
 }
 
 #define _Py_VISIT_FUNC_ATTR(attr, frontier) do { \
@@ -377,6 +542,9 @@ int _makeimmutable_visit(PyObject* obj, void* frontier)
 
 PyObject* _Py_MakeImmutable(PyObject* obj)
 {
+    // We have started using regions, so notify to potentially enable checks.
+    notify_regions_in_use();
+
     _Py_VPYDBG(">> makeimmutable(");
     _Py_VPYDBGPRINT(obj);
     _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));

@@ -7,6 +7,7 @@
 #include "pycore_initconfig.h"    // _PyStatus_OK()
 #include "pycore_interp.h"        // _Py_RunGC()
 #include "pycore_pymem.h"         // _PyMem_IsPtrFreed()
+#include "pycore_regions.h"       // _Py_CheckRegionInvariant()
 
 /*
    Notes about the implementation:
@@ -1055,6 +1056,11 @@ _Py_HandlePending(PyThreadState *tstate)
     _PyRuntimeState * const runtime = &_PyRuntime;
     struct _ceval_runtime_state *ceval = &runtime->ceval;
     struct _ceval_state *interp_ceval_state = &tstate->interp->ceval;
+
+    /* Check the region invariant if required. */
+    if (_Py_CheckRegionInvariant(tstate) != 0) {
+        return -1;
+    }
 
     /* Pending signals */
     if (_Py_atomic_load_relaxed_int32(&ceval->signals_pending)) {
