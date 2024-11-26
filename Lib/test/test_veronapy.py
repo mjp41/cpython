@@ -1,5 +1,4 @@
 import unittest
-from gc import collect
 
 # This is a canary to check that global variables are not made immutable
 # when others are made immutable
@@ -395,7 +394,6 @@ class TestRegionOwnership(unittest.TestCase):
         pass
 
     def setUp(self):
-        collect()
         # This freezes A and super and meta types of A namely `type` and `object`
         makeimmutable(self.A)
         enableinvariant()
@@ -429,24 +427,35 @@ class TestRegionOwnership(unittest.TestCase):
         a = self.A()
         r = Region()
         r.add_object(a)
-        try:
-            r.add_object(a)
-        except RuntimeError:
-            pass
-        else:
-            self.fail("Should not reach here")
+        self.assertRaises(RuntimeError, r.add_object, a)
 
     def test_should_fail_add_ownership_twice_2(self):
         a = self.A()
         r = Region()
         r.add_object(a)
-        try:
-            r2 = Region()
-            r2.add_object(a)
-        except RuntimeError:
-            pass
-        else:
-            self.fail("Should not reach here")
+        r2 = Region()
+        self.assertRaises(RuntimeError, r2.add_object, a)
+
+    def test_init_with_name(self):
+        r1 = Region()
+        r2 = Region("Super-name")
+        self.assertTrue("Super-name" in repr(r2))
+
+        r3_name = "Trevligt-Name"
+        r3a = Region(r3_name)
+        r3b = Region(r3_name)
+        self.assertTrue(r3_name in repr(r3a))
+        self.assertTrue(r3_name in repr(r3b))
+        self.assertTrue(isimmutable(r3_name))
+
+    def test_init_invalid_name(self):
+        self.assertRaises(TypeError, Region, 42)
+
+    def test_init_same_name(self):
+        r1 = Region("Andy")
+        r2 = Region("Andy")
+        # Check that we reach the end of the test
+        self.assertTrue(True)
 
 class TestRegionInvariance(unittest.TestCase):
     class A:
@@ -454,7 +463,6 @@ class TestRegionInvariance(unittest.TestCase):
 
     def setUp(self):
         # This freezes A and super and meta types of A namely `type` and `object`
-        collect()
         makeimmutable(self.A)
         enableinvariant()
 
@@ -466,19 +474,13 @@ class TestRegionInvariance(unittest.TestCase):
 
         # Create a region and take ownership of a
         r = Region()
-        try:
-            r.add_object(a)
-        except RuntimeError:
-            # Check that the errors are on the appropriate objects
-            self.assertFalse(r.owns_object(b))
-            self.assertTrue(r.owns_object(a))
-            self.assertEqual(invariant_failure_src(), a)
-            self.assertEqual(invariant_failure_tgt(), b)
-            # We have broken the heap -- need to fix it to continue testing
-            r.remove_object(a)
-            a.b = None
-        else:
-            self.fail("Should not reach here")
+        self.assertRaises(RuntimeError, r.add_object, a)
+        
+        # Check that the errors are on the appropriate objects
+        self.assertFalse(r.owns_object(b))
+        self.assertTrue(r.owns_object(a))
+        self.assertEqual(invariant_failure_src(), a)
+        self.assertEqual(invariant_failure_tgt(), b)
 
     def test_allow_bridge_object_ref(self):
         # Create linked objects (a) -> (b)
@@ -491,31 +493,31 @@ class TestRegionInvariance(unittest.TestCase):
         r.add_object(a)
         self.assertFalse(r.owns_object(b))
         self.assertTrue(r.owns_object(a))
-    
-#     def disabled_test_allow_bridge_object_ref(self):
-#         r1 = Region()
-#         r1a = self.A()
-#         r1.add_object(r1a)
-#         r2 = Region()
-#         r2a = self.A()
-#         r2.add_object(r2a)
 
-#         # Make r2 a subregion of r1
-#         r1a.f = r2
-#         try:
-#             # Create a beautiful cycle
-#             r2a.f = r1
-#         except RuntimeError:
-#             # These are currently true since the write barrier doesn't exist
-#             # and the exception is thrown by the invariance check
-#             if invariant_failure_src() == a:
-#                 self.assertEqual(invariant_failure_tgt(), b)
-#             elif invariant_failure_tgt() == a:
-#                 self.assertEqual(invariant_failure_src(), b)
-#             else:
-#                 self.fail("Should not reach here")
-#         else:
-#             self.fail("Should not reach here")
+    def disabled_test_allow_bridge_object_ref(self):
+        r1 = Region()
+        r1a = self.A()
+        r1.add_object(r1a)
+        r2 = Region()
+        r2a = self.A()
+        r2.add_object(r2a)
+
+        # Make r2 a subregion of r1
+        r1a.f = r2
+        try:
+            # Create a beautiful cycle
+            r2a.f = r1
+        except RuntimeError:
+            # These are currently true since the write barrier doesn't exist
+            # and the exception is thrown by the invariance check
+            if invariant_failure_src() == a:
+                self.assertEqual(invariant_failure_tgt(), b)
+            elif invariant_failure_tgt() == a:
+                self.assertEqual(invariant_failure_src(), b)
+            else:
+                self.fail("Should not reach here")
+        else:
+            self.fail("Should not reach here")
 
     def test_should_fail_external_uniqueness(self):
         a = self.A()
@@ -526,17 +528,11 @@ class TestRegionInvariance(unittest.TestCase):
         try:
             r2.add_object(a)
         except RuntimeError:
-            # We have broken the heap -- need to fix it to continue testing
-            r2.remove_object(a)
-            a.f = None
-            a.g = None
             # Check that the errors are on the appropriate objects
             self.assertEqual(invariant_failure_src(), a)
             self.assertEqual(invariant_failure_tgt(), r)
         else:
             self.fail("Should not reach here -- external uniqueness validated but not caught by invariant checker")
-
-            
 
 # This test will make the Python environment unusable.
 # Should perhaps forbid making the frame immutable.
