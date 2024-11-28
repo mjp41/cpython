@@ -13,8 +13,8 @@
 typedef struct PyRegionObject PyRegionObject;
 typedef struct regionmetadata regionmetadata;
 
-static PyObject *Region_add_object(PyRegionObject *self, PyObject *args);
-static PyObject *Region_remove_object(PyRegionObject *self, PyObject *args);
+static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
+static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
 
 struct PyRegionObject {
     PyObject_HEAD
@@ -37,8 +37,8 @@ struct regionmetadata {
 };
 
 bool is_bridge_object(PyObject *op);
-static int RegionMetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
-static regionmetadata* Region_get_metadata(PyRegionObject* obj);
+static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
+static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj);
 
 /**
  * Simple implementation of stack for tracing during make immutable.
@@ -244,7 +244,7 @@ visit_invariant_check(PyObject *tgt, void *parent)
         return 0;
     }
     // Forbid cycles in the region topology
-    if (RegionMetadata_has_ancestor((regionmetadata*)src_region, (regionmetadata*)tgt_region)) {
+    if (regionmetadata_has_ancestor((regionmetadata*)src_region, (regionmetadata*)tgt_region)) {
         set_failed_edge(src_op, tgt, "Region cycle detected");
         return 0;
     }
@@ -694,79 +694,79 @@ bool is_bridge_object(PyObject *op) {
 }
 
 __attribute__((unused))
-static void RegionMetadata_inc_lrc(regionmetadata* data) {
+static void regionmetadata_inc_lrc(regionmetadata* data) {
     data->lrc += 1;
 }
 
 __attribute__((unused))
-static void RegionMetadata_dec_lrc(regionmetadata* data) {
+static void regionmetadata_dec_lrc(regionmetadata* data) {
     data->lrc -= 1;
 }
 
 __attribute__((unused))
-static void RegionMetadata_inc_osc(regionmetadata* data) {
+static void regionmetadata_inc_osc(regionmetadata* data) {
     data->osc += 1;
 }
 
 __attribute__((unused))
-static void RegionMetadata_dec_osc(regionmetadata* data) {
+static void regionmetadata_dec_osc(regionmetadata* data) {
     data->osc -= 1;
 }
 
-static void RegionMetadata_open(regionmetadata* data) {
+static void regionmetadata_open(regionmetadata* data) {
     data->is_open = 1;
 }
 
-static void RegionMetadata_close(regionmetadata* data) {
+static void regionmetadata_close(regionmetadata* data) {
     data->is_open = 0;
 }
 
-static bool RegionMetadata_is_open(regionmetadata* data) {
+static bool regionmetadata_is_open(regionmetadata* data) {
     return data->is_open == 0;
 }
 
-static void RegionMetadata_set_parent(regionmetadata* data, regionmetadata* parent) {
+static void regionmetadata_set_parent(regionmetadata* data, regionmetadata* parent) {
     data->parent = parent;
 }
 
-static bool RegionMetadata_has_parent(regionmetadata* data) {
+static bool regionmetadata_has_parent(regionmetadata* data) {
     return data->parent != NULL;
 }
 
-static regionmetadata* RegionMetadata_get_parent(regionmetadata* data) {
+static regionmetadata* regionmetadata_get_parent(regionmetadata* data) {
     return data->parent;
 }
 
 __attribute__((unused))
-static void RegionMetadata_unparent(regionmetadata* data) {
-    RegionMetadata_set_parent(data, NULL);
+static void regionmetadata_unparent(regionmetadata* data) {
+    regionmetadata_set_parent(data, NULL);
 }
 
 __attribute__((unused))
-static PyObject* RegionMetadata_is_root(regionmetadata* data) {
-    if (RegionMetadata_has_parent(data)) {
+static PyObject* regionmetadata_is_root(regionmetadata* data) {
+    if (regionmetadata_has_parent(data)) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
     }
 }
 
-static int RegionMetadata_has_ancestor(regionmetadata* data, regionmetadata* other) {
+static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other) {
     do {
         if (data == other) {
             return 1;
         }
-        data = RegionMetadata_get_parent(data);
+        data = regionmetadata_get_parent(data);
     } while (data);
     return 0;
 }
 
-static regionmetadata* Region_get_metadata(PyRegionObject* obj) {
+static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
     return obj->metadata;
 }
 
 
-static void Region_dealloc(PyRegionObject *self) {
+static void PyRegion_dealloc(PyRegionObject *self) {
     // Name is immutable and not in our region.
     Py_XDECREF(self->name);
     self->name = NULL;
@@ -777,7 +777,7 @@ static void Region_dealloc(PyRegionObject *self) {
         // We need to clear the ownership, since this dictionary might be
         // returned to an object pool rather than freed. This would result
         // in an error if the dictionary has the previous region.
-        Region_remove_object(self, (PyObject*)self->dict);
+        PyRegion_remove_object(self, (PyObject*)self->dict);
         Py_DECREF(self->dict);
         self->dict = NULL;
     }
@@ -789,7 +789,7 @@ static void Region_dealloc(PyRegionObject *self) {
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
-static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
+static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     notify_regions_in_use();
 
     static char *kwlist[] = {"name", NULL};
@@ -809,7 +809,7 @@ static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         _Py_MakeImmutable(self->name);
         // FIXME: Implicit freezing should take care of this instead
         if (!_Py_IsImmutable(self->name)) {
-            Region_add_object(self, self->name);
+            PyRegion_add_object(self, self->name);
         }
     }
 
@@ -824,20 +824,20 @@ static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         return -1; // Propagate memory allocation failure
     }
     _Py_MakeImmutable((PyObject*)Py_TYPE(self->dict));
-    Region_add_object(self, self->dict);
+    PyRegion_add_object(self, self->dict);
 
     return 0;
 }
 
-static int PyRegionObject_traverse(PyRegionObject *self, visitproc visit, void *arg) {
+static int PyRegion_traverse(PyRegionObject *self, visitproc visit, void *arg) {
     Py_VISIT(self->name);
     Py_VISIT(self->dict);
     return 0;
 }
 
 // is_open method (returns True if the region is open, otherwise False)
-static PyObject *Region_is_open(PyRegionObject *self, PyObject *args) {
-    if (RegionMetadata_is_open(self->metadata)) {
+static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *args) {
+    if (regionmetadata_is_open(self->metadata)) {
         Py_RETURN_TRUE;  // Return True if the region is open
     } else {
         Py_RETURN_FALSE; // Return False if the region is closed
@@ -845,24 +845,24 @@ static PyObject *Region_is_open(PyRegionObject *self, PyObject *args) {
 }
 
 // Open method (sets the region to "open")
-static PyObject *Region_open(PyRegionObject *self, PyObject *args) {
-    RegionMetadata_open(self->metadata);
+static PyObject *PyRegion_open(PyRegionObject *self, PyObject *args) {
+    regionmetadata_open(self->metadata);
     Py_RETURN_NONE;  // Return None (standard for methods with no return value)
 }
 
 // Close method (sets the region to "closed")
-static PyObject *Region_close(PyRegionObject *self, PyObject *args) {
-    RegionMetadata_close(self->metadata);  // Mark as closed
+static PyObject *PyRegion_close(PyRegionObject *self, PyObject *args) {
+    regionmetadata_close(self->metadata);  // Mark as closed
     Py_RETURN_NONE;  // Return None (standard for methods with no return value)
 }
 
 // Adds args object to self region
-static PyObject *Region_add_object(PyRegionObject *self, PyObject *args) {
+static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args) {
     if (!args) {
         Py_RETURN_NONE;
     }
 
-    regionmetadata* md = Region_get_metadata(self);
+    regionmetadata* md = PyRegion_get_metadata(self);
     if (args->ob_region == _Py_DEFAULT_REGION) {
         args->ob_region = (Py_uintptr_t) md;
         Py_RETURN_NONE;
@@ -873,12 +873,12 @@ static PyObject *Region_add_object(PyRegionObject *self, PyObject *args) {
 }
 
 // Remove args object to self region
-static PyObject *Region_remove_object(PyRegionObject *self, PyObject *args) {
+static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
     if (!args) {
         Py_RETURN_NONE;
     }
 
-    regionmetadata* md = Region_get_metadata(self);
+    regionmetadata* md = PyRegion_get_metadata(self);
     if (args->ob_region == (Py_uintptr_t) md) {
         args->ob_region = _Py_DEFAULT_REGION;
         Py_RETURN_NONE;
@@ -889,15 +889,15 @@ static PyObject *Region_remove_object(PyRegionObject *self, PyObject *args) {
 }
 
 // Return True if args object is member of self region
-static PyObject *Region_owns_object(PyRegionObject *self, PyObject *args) {
-    if ((Py_uintptr_t) Region_get_metadata(self) == args->ob_region) {
+static PyObject *PyRegion_owns_object(PyRegionObject *self, PyObject *args) {
+    if ((Py_uintptr_t) PyRegion_get_metadata(self) == args->ob_region) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
     }
 }
 
-static PyObject *Region_repr(PyRegionObject *self) {
+static PyObject *PyRegion_repr(PyRegionObject *self) {
     regionmetadata* data = self->metadata;
     // FIXME: deprecated flag, but config.parse_debug seems to not work?
 #pragma GCC diagnostic push
@@ -916,54 +916,54 @@ static PyObject *Region_repr(PyRegionObject *self) {
 }
 
 // Define the RegionType with methods
-static PyMethodDef Region_methods[] = {
-    {"open", (PyCFunction)Region_open, METH_NOARGS, "Open the region."},
-    {"close", (PyCFunction)Region_close, METH_NOARGS, "Close the region."},
-    {"is_open", (PyCFunction)Region_is_open, METH_NOARGS, "Check if the region is open."},
-    {"add_object", (PyCFunction)Region_add_object, METH_O, "Add object to the region."},
-    {"remove_object", (PyCFunction)Region_remove_object, METH_O, "Remove object from the region."},
-    {"owns_object", (PyCFunction)Region_owns_object, METH_O, "Check if object is owned by the region."},
+static PyMethodDef PyRegion_methods[] = {
+    {"open", (PyCFunction)PyRegion_open, METH_NOARGS, "Open the region."},
+    {"close", (PyCFunction)PyRegion_close, METH_NOARGS, "Close the region."},
+    {"is_open", (PyCFunction)PyRegion_is_open, METH_NOARGS, "Check if the region is open."},
+    {"add_object", (PyCFunction)PyRegion_add_object, METH_O, "Add object to the region."},
+    {"remove_object", (PyCFunction)PyRegion_remove_object, METH_O, "Remove object from the region."},
+    {"owns_object", (PyCFunction)PyRegion_owns_object, METH_O, "Check if object is owned by the region."},
     {NULL}  // Sentinel
 };
 
 
 PyTypeObject PyRegion_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "Region",                          /* tp_name */
-    sizeof(PyRegionObject),              /* tp_basicsize */
-    0,                                 /* tp_itemsize */
-    (destructor)Region_dealloc,        /* tp_dealloc */
-    0,                                 /* tp_vectorcall_offset */
-    0,                                 /* tp_getattr */
-    0,                                 /* tp_setattr */
-    0,                                 /* tp_as_async */
-    (reprfunc)Region_repr,             /* tp_repr */
-    0,                                 /* tp_as_number */
-    0,                                 /* tp_as_sequence */
-    0,                                 /* tp_as_mapping */
-    0,                                 /* tp_hash  */
-    0,                                 /* tp_call */
-    0,                                 /* tp_str */
-    0,                                 /* tp_getattro */
-    0,                                 /* tp_setattro */
-    0,                                 /* tp_as_buffer */
+    "Region",                                /* tp_name */
+    sizeof(PyRegionObject),                  /* tp_basicsize */
+    0,                                       /* tp_itemsize */
+    (destructor)PyRegion_dealloc,            /* tp_dealloc */
+    0,                                       /* tp_vectorcall_offset */
+    0,                                       /* tp_getattr */
+    0,                                       /* tp_setattr */
+    0,                                       /* tp_as_async */
+    (reprfunc)PyRegion_repr,                 /* tp_repr */
+    0,                                       /* tp_as_number */
+    0,                                       /* tp_as_sequence */
+    0,                                       /* tp_as_mapping */
+    0,                                       /* tp_hash  */
+    0,                                       /* tp_call */
+    0,                                       /* tp_str */
+    0,                                       /* tp_getattro */
+    0,                                       /* tp_setattro */
+    0,                                       /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, /* tp_flags */
     "TODO =^.^=",                            /* tp_doc */
-    (traverseproc)PyRegionObject_traverse,                                 /* tp_traverse */
-    0,                                 /* tp_clear */
-    0,                                 /* tp_richcompare */
-    0,                                 /* tp_weaklistoffset */
-    0,                                 /* tp_iter */
-    0,                                 /* tp_iternext */
-    Region_methods,                    /* tp_methods */
-    0,                                 /* tp_members */
-    0,                                 /* tp_getset */
-    0,                                 /* tp_base */
-    0,                                 /* tp_dict */
-    0,                                 /* tp_descr_get */
-    0,                                 /* tp_descr_set */
-    offsetof(PyRegionObject, dict),                                 /* tp_dictoffset */
-    (initproc)Region_init,             /* tp_init */
-    0,                                 /* tp_alloc */
-    PyType_GenericNew,                 /* tp_new */
+    (traverseproc)PyRegion_traverse,         /* tp_traverse */
+    0,                                       /* tp_clear */
+    0,                                       /* tp_richcompare */
+    0,                                       /* tp_weaklistoffset */
+    0,                                       /* tp_iter */
+    0,                                       /* tp_iternext */
+    PyRegion_methods,                        /* tp_methods */
+    0,                                       /* tp_members */
+    0,                                       /* tp_getset */
+    0,                                       /* tp_base */
+    0,                                       /* tp_dict */
+    0,                                       /* tp_descr_get */
+    0,                                       /* tp_descr_set */
+    offsetof(PyRegionObject, dict),          /* tp_dictoffset */
+    (initproc)PyRegion_init,                 /* tp_init */
+    0,                                       /* tp_alloc */
+    PyType_GenericNew,                       /* tp_new */
 };
