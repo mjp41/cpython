@@ -3163,6 +3163,7 @@ static struct PyModuleDef builtinsmodule = {
 };
 
 extern PyTypeObject PyRegion_Type;
+
 PyObject *
 _PyBuiltin_Init(PyInterpreterState *interp)
 {

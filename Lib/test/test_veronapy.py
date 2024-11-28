@@ -474,8 +474,10 @@ class TestRegionInvariance(unittest.TestCase):
 
         # Create a region and take ownership of a
         r = Region()
+        # FIXME: Once the write barrier is implemented, this assert will fail.
+        # The code above should work without any errors.
         self.assertRaises(RuntimeError, r.add_object, a)
-        
+
         # Check that the errors are on the appropriate objects
         self.assertFalse(r.owns_object(b))
         self.assertTrue(r.owns_object(a))
@@ -493,31 +495,6 @@ class TestRegionInvariance(unittest.TestCase):
         r.add_object(a)
         self.assertFalse(r.owns_object(b))
         self.assertTrue(r.owns_object(a))
-
-    def disabled_test_allow_bridge_object_ref(self):
-        r1 = Region()
-        r1a = self.A()
-        r1.add_object(r1a)
-        r2 = Region()
-        r2a = self.A()
-        r2.add_object(r2a)
-
-        # Make r2 a subregion of r1
-        r1a.f = r2
-        try:
-            # Create a beautiful cycle
-            r2a.f = r1
-        except RuntimeError:
-            # These are currently true since the write barrier doesn't exist
-            # and the exception is thrown by the invariance check
-            if invariant_failure_src() == a:
-                self.assertEqual(invariant_failure_tgt(), b)
-            elif invariant_failure_tgt() == a:
-                self.assertEqual(invariant_failure_src(), b)
-            else:
-                self.fail("Should not reach here")
-        else:
-            self.fail("Should not reach here")
 
     def test_should_fail_external_uniqueness(self):
         a = self.A()
