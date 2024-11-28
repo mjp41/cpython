@@ -131,8 +131,8 @@ bool error_occurred = false;
 
 // Start of a linked list of bridge objects used to check for external uniqueness
 // Bridge objects appear in this list if they are captured
-#define CAPTURED_SENTINEL 0xc0defefe
-regionmetadata* captured = (regionmetadata*) CAPTURED_SENTINEL;
+#define CAPTURED_SENTINEL ((regionmetadata*) 0xc0defefe)
+regionmetadata* captured = CAPTURED_SENTINEL;
 
 /**
  * Enable the region check.
@@ -256,7 +256,7 @@ visit_invariant_check(PyObject *tgt, void *parent)
     return 0;
 }
 
-void invariant_reset_captured_list() {
+void invariant_reset_captured_list(void) {
     // Reset the captured list
     while (captured != CAPTURED_SENTINEL) {
         regionmetadata* m = captured;
@@ -693,18 +693,22 @@ bool is_bridge_object(PyObject *op) {
     }
 }
 
+__attribute__((unused))
 static void RegionMetadata_inc_lrc(regionmetadata* data) {
     data->lrc += 1;
 }
 
+__attribute__((unused))
 static void RegionMetadata_dec_lrc(regionmetadata* data) {
     data->lrc -= 1;
 }
 
+__attribute__((unused))
 static void RegionMetadata_inc_osc(regionmetadata* data) {
     data->osc += 1;
 }
 
+__attribute__((unused))
 static void RegionMetadata_dec_osc(regionmetadata* data) {
     data->osc -= 1;
 }
@@ -733,10 +737,12 @@ static regionmetadata* RegionMetadata_get_parent(regionmetadata* data) {
     return data->parent;
 }
 
+__attribute__((unused))
 static void RegionMetadata_unparent(regionmetadata* data) {
     RegionMetadata_set_parent(data, NULL);
 }
 
+__attribute__((unused))
 static PyObject* RegionMetadata_is_root(regionmetadata* data) {
     if (RegionMetadata_has_parent(data)) {
         Py_RETURN_TRUE;
@@ -809,7 +815,7 @@ static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
 
     // Make the region an owner of the bridge object
     self->ob_base.ob_region = (Py_uintptr_t) self->metadata;
-    _Py_MakeImmutable(Py_TYPE(self));
+    _Py_MakeImmutable((PyObject*)Py_TYPE(self));
 
     // FIXME: Usually this is created on the fly. We need to do it manually to
     // set the region and freeze the type
@@ -817,7 +823,7 @@ static int Region_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     if (self->dict == NULL) {
         return -1; // Propagate memory allocation failure
     }
-    _Py_MakeImmutable(Py_TYPE(self->dict));
+    _Py_MakeImmutable((PyObject*)Py_TYPE(self->dict));
     Region_add_object(self, self->dict);
 
     return 0;
@@ -894,7 +900,10 @@ static PyObject *Region_owns_object(PyRegionObject *self, PyObject *args) {
 static PyObject *Region_repr(PyRegionObject *self) {
     regionmetadata* data = self->metadata;
     // FIXME: deprecated flag, but config.parse_debug seems to not work?
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     if (Py_DebugFlag) {
+#pragma GCC diagnostic pop
         // Debug mode: include detailed representation
         return PyUnicode_FromFormat(
             "Region(lrc=%d, osc=%d, name=%S, is_open=%d)", data->lrc, data->osc, self->name ? self->name : Py_None, data->is_open
