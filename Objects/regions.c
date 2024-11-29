@@ -677,7 +677,7 @@ next:
     stack_free(frontier);
 
 
-    return obj;
+    Py_RETURN_NONE;
 }
 
 bool is_bridge_object(PyObject *op) {
@@ -801,7 +801,7 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         return -1;
     if (self->name) {
         Py_XINCREF(self->name);
-        // Freeze the name and it's type. Short strings in python are inturned
+        // Freeze the name and it's type. Short strings in Python are interned
         // by default. This means that `id("AB") == id("AB")`. We therefore
         // need to either clone the name object or freeze it to share it
         // across regions. Freezing should be safe, since `+=` and other
