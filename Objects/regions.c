@@ -195,57 +195,48 @@ typedef struct _gc_runtime_state GCState;
 #define GC_PREV _PyGCHead_PREV
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
-static int
-is_immutable_region(Py_uintptr_t r)
-{
-    return r == _Py_IMMUTABLE;
-}
-
-static int
-is_default_region(Py_uintptr_t r)
-{
-    return r == _Py_DEFAULT_REGION;
-}
+#define IS_IMMUTABLE_REGION(r) ((Py_uintptr_t)r == _Py_IMMUTABLE)
+#define IS_DEFAULT_REGION(r) ((Py_uintptr_t)r == _Py_DEFAULT_REGION)
 
 /* A traversal callback for _Py_CheckRegionInvariant.
-   - op is the target of the reference we are checking, and
-   - parent is the source of the reference we are checking.
+   - tgt is the target of the reference we are checking, and
+   - src(_void) is the source of the reference we are checking.
 */
 static int
-visit_invariant_check(PyObject *tgt, void *parent)
+visit_invariant_check(PyObject *tgt, void *src_void)
 {
-    PyObject *src_op = _PyObject_CAST(parent);
-    regionmetadata* src_region = (regionmetadata*) Py_GET_REGION(src_op);
+    PyObject *src = _PyObject_CAST(src_void);
+    regionmetadata* src_region = (regionmetadata*) Py_GET_REGION(src);
     regionmetadata* tgt_region = (regionmetadata*) Py_GET_REGION(tgt);
      // Internal references are always allowed
     if (src_region == tgt_region)
         return 0;
     // Anything is allowed to point to immutable
-    if (is_immutable_region((Py_uintptr_t)tgt_region))
+    if (IS_IMMUTABLE_REGION(tgt_region))
         return 0;
     // Borrowed references are unrestricted
-    if (is_default_region((Py_uintptr_t)src_region))
+    if (IS_DEFAULT_REGION(src_region))
         return 0;
     // Since tgt is not immutable, src also may not be as immutable may not point to mutable
-    if (is_immutable_region((Py_uintptr_t)src_region)) {
-        set_failed_edge(src_op, tgt, "Destination is not immutable");
+    if (IS_IMMUTABLE_REGION(src_region)) {
+        set_failed_edge(src, tgt, "Reference from immutable object to mutable target");
         return 0;
     }
 
     // Cross-region references must be to a bridge
     if (!is_bridge_object(tgt)) {
-        set_failed_edge(src_op, tgt, "Destination is not in the same region");
+        set_failed_edge(src, tgt, "Reference from object in one region into another region");
         return 0;
     }
     // Check if region is already added to captured list
     if (tgt_region->next != NULL) {
         // Bridge object was already captured
-        set_failed_edge(src_op, tgt, "Bridge object not externally unique");
+        set_failed_edge(src, tgt, "Reference to bridge is not externally unique");
         return 0;
     }
     // Forbid cycles in the region topology
     if (regionmetadata_has_ancestor((regionmetadata*)src_region, (regionmetadata*)tgt_region)) {
-        set_failed_edge(src_op, tgt, "Region cycle detected");
+        set_failed_edge(src, tgt, "Regions create a cycle with subreagions");
         return 0;
     }
 
@@ -299,7 +290,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
         for (; gc != containers; gc = GC_NEXT(gc)) {
             PyObject *op = FROM_GC(gc);
             // Local can point to anything.  No invariant needed
-            if (is_default_region(Py_GET_REGION(op)))
+            if (_Py_IsLocal(op))
                 continue;
             // Functions are complex.
             // Removing from invariant initially.
@@ -585,7 +576,7 @@ int _makeimmutable_visit(PyObject* obj, void* frontier)
 PyObject* _Py_MakeImmutable(PyObject* obj)
 {
     if (!obj) {
-        return NULL;
+        Py_RETURN_NONE;
     }
 
     // We have started using regions, so notify to potentially enable checks.
@@ -681,15 +672,16 @@ next:
 
 bool is_bridge_object(PyObject *op) {
     Py_uintptr_t region = Py_GET_REGION(op);
-    if (is_default_region(region) || is_immutable_region(region)) {
-        return 0;
+    if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
+        return false;
     }
 
-    if ((Py_uintptr_t)((regionmetadata*)region)->bridge == (Py_uintptr_t)op) {
-        return 1;
-    } else {
-        return 0;
-    }
+    // It's not yet clear how immutability will interact with region objects.
+    // It's likely that the object will remain in the object topology but
+    // will use the properties of a bridge object. This therefore checks if
+    // the object is equal to the regions bridge object rather than checking
+    // that the type is `PyRegionObject`
+    return ((Py_uintptr_t)((regionmetadata*)region)->bridge == (Py_uintptr_t)op);
 }
 
 __attribute__((unused))
@@ -742,22 +734,18 @@ static void regionmetadata_unparent(regionmetadata* data) {
 }
 
 __attribute__((unused))
-static PyObject* regionmetadata_is_root(regionmetadata* data) {
-    if (regionmetadata_has_parent(data)) {
-        Py_RETURN_TRUE;
-    } else {
-        Py_RETURN_FALSE;
-    }
+static int regionmetadata_is_root(regionmetadata* data) {
+    return regionmetadata_has_parent(data);
 }
 
 static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other) {
     do {
         if (data == other) {
-            return 1;
+            return true;
         }
         data = regionmetadata_get_parent(data);
     } while (data);
-    return 0;
+    return false;
 }
 
 static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
@@ -805,11 +793,9 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         // need to either clone the name object or freeze it to share it
         // across regions. Freezing should be safe, since `+=` and other
         // operators return new strings and keep the old one intact
-        _Py_MakeImmutable(self->name);
+        //
         // FIXME: Implicit freezing should take care of this instead
-        if (!_Py_IsImmutable(self->name)) {
-            PyRegion_add_object(self, self->name);
-        }
+        _Py_MakeImmutable(self->name);
     }
 
     // Make the region an owner of the bridge object
@@ -822,6 +808,8 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     if (self->dict == NULL) {
         return -1; // Propagate memory allocation failure
     }
+    // TODO: Once phase 2 is done, we might be able to do this statically
+    // at compile time.
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self->dict)));
     PyRegion_add_object(self, self->dict);
 
@@ -862,7 +850,7 @@ static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args) {
     }
 
     regionmetadata* md = PyRegion_get_metadata(self);
-    if (is_default_region(Py_GET_REGION(args))) {
+    if (_Py_IsLocal(args)) {
         Py_SET_REGION(args, (Py_uintptr_t) md);
         Py_RETURN_NONE;
     } else {
@@ -898,20 +886,23 @@ static PyObject *PyRegion_owns_object(PyRegionObject *self, PyObject *args) {
 
 static PyObject *PyRegion_repr(PyRegionObject *self) {
     regionmetadata* data = self->metadata;
-    // FIXME: deprecated flag, but config.parse_debug seems to not work?
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    if (Py_DebugFlag) {
-#pragma GCC diagnostic pop
-        // Debug mode: include detailed representation
-        return PyUnicode_FromFormat(
-            "Region(lrc=%d, osc=%d, name=%S, is_open=%d)", data->lrc, data->osc, self->name ? self->name : Py_None, data->is_open
-        );
-    } else {
-        // Normal mode: simple representation
-        return PyUnicode_FromFormat("Region(name=%S, is_open=%d)", self->name ? self->name : Py_None, data->is_open);
-    }
-    Py_RETURN_NONE;
+#ifdef NDEBUG
+    // Debug mode: include detailed representation
+    return PyUnicode_FromFormat(
+        "Region(lrc=%d, osc=%d, name=%S, is_open=%d)",
+        data->lrc,
+        data->osc,
+        self->name ? self->name : Py_None,
+        data->is_open
+    );
+#else
+    // Normal mode: simple representation
+    return PyUnicode_FromFormat(
+        "Region(name=%S, is_open=%d)",
+        self->name ? self->name : Py_None,
+        data->is_open
+    );
+#endif
 }
 
 // Define the RegionType with methods
@@ -919,6 +910,8 @@ static PyMethodDef PyRegion_methods[] = {
     {"open", (PyCFunction)PyRegion_open, METH_NOARGS, "Open the region."},
     {"close", (PyCFunction)PyRegion_close, METH_NOARGS, "Close the region."},
     {"is_open", (PyCFunction)PyRegion_is_open, METH_NOARGS, "Check if the region is open."},
+    // Temporary methods for testing. These will be removed or at least renamed once
+    // the write barrier is done.
     {"add_object", (PyCFunction)PyRegion_add_object, METH_O, "Add object to the region."},
     {"remove_object", (PyCFunction)PyRegion_remove_object, METH_O, "Remove object from the region."},
     {"owns_object", (PyCFunction)PyRegion_owns_object, METH_O, "Check if object is owned by the region."},

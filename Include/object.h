@@ -275,6 +275,12 @@ static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
 }
 #define _Py_IsImmutable(op) _Py_IsImmutable(_PyObject_CAST(op))
 
+static inline Py_ALWAYS_INLINE int _Py_IsLocal(PyObject *op)
+{
+    return op->ob_region == _Py_DEFAULT_REGION;
+}
+#define _Py_IsLocal(op) _Py_IsLocal(_PyObject_CAST(op))
+
 
 static inline void Py_SET_REFCNT(PyObject *ob, Py_ssize_t refcnt) {
     // This immortal check is for code that is unaware of immortal objects.
