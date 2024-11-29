@@ -314,6 +314,13 @@ static inline void Py_SET_REGION(PyObject *ob, Py_uintptr_t region) {
 #  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), (region))
 #endif
 
+static inline Py_uintptr_t Py_GET_REGION(PyObject *ob) {
+    return ob->ob_region;
+}
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_GET_REGION(ob) Py_GET_REGION(_PyObject_CAST(ob))
+#endif
+
 
 /*
 Type objects contain a string containing the type name (to help somewhat

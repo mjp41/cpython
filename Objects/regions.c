@@ -10,8 +10,8 @@
 #include "pycore_object.h"
 #include "pycore_regions.h"
 
-typedef struct PyRegionObject PyRegionObject;
 typedef struct regionmetadata regionmetadata;
+typedef struct PyRegionObject PyRegionObject;
 
 static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
@@ -196,15 +196,15 @@ typedef struct _gc_runtime_state GCState;
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
 static int
-is_immutable_region(regionmetadata* r)
+is_immutable_region(Py_uintptr_t r)
 {
-    return ((Py_uintptr_t) r) == _Py_IMMUTABLE;
+    return r == _Py_IMMUTABLE;
 }
 
 static int
-is_default_region(regionmetadata* r)
+is_default_region(Py_uintptr_t r)
 {
-    return ((Py_uintptr_t) r) == _Py_DEFAULT_REGION;
+    return r == _Py_DEFAULT_REGION;
 }
 
 /* A traversal callback for _Py_CheckRegionInvariant.
@@ -215,19 +215,19 @@ static int
 visit_invariant_check(PyObject *tgt, void *parent)
 {
     PyObject *src_op = _PyObject_CAST(parent);
-    regionmetadata* src_region = (regionmetadata*) src_op->ob_region;
-    regionmetadata* tgt_region = (regionmetadata*) tgt->ob_region;
+    regionmetadata* src_region = (regionmetadata*) Py_GET_REGION(src_op);
+    regionmetadata* tgt_region = (regionmetadata*) Py_GET_REGION(tgt);
      // Internal references are always allowed
     if (src_region == tgt_region)
         return 0;
     // Anything is allowed to point to immutable
-    if (is_immutable_region(tgt_region))
+    if (is_immutable_region((Py_uintptr_t)tgt_region))
         return 0;
     // Borrowed references are unrestricted
-    if (is_default_region(src_region))
+    if (is_default_region((Py_uintptr_t)src_region))
         return 0;
     // Since tgt is not immutable, src also may not be as immutable may not point to mutable
-    if (is_immutable_region(src_region)) {
+    if (is_immutable_region((Py_uintptr_t)src_region)) {
         set_failed_edge(src_op, tgt, "Destination is not immutable");
         return 0;
     }
@@ -299,7 +299,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
         for (; gc != containers; gc = GC_NEXT(gc)) {
             PyObject *op = FROM_GC(gc);
             // Local can point to anything.  No invariant needed
-            if (op->ob_region == _Py_DEFAULT_REGION)
+            if (is_default_region(Py_GET_REGION(op)))
                 continue;
             // Functions are complex.
             // Removing from invariant initially.
@@ -320,7 +320,6 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
 
             // Also need to visit the type of the object
             // As this isn't covered by the traverse.
-            // TODO: this might be covered by tp_traverse?
             PyObject* type_op = PyObject_Type(op);
             visit_invariant_check(type_op, op);
             Py_DECREF(type_op);
@@ -681,8 +680,8 @@ next:
 }
 
 bool is_bridge_object(PyObject *op) {
-    Py_uintptr_t region = op->ob_region;
-    if (region == _Py_IMMUTABLE || region == _Py_DEFAULT_REGION) {
+    Py_uintptr_t region = Py_GET_REGION(op);
+    if (is_default_region(region) || is_immutable_region(region)) {
         return 0;
     }
 
@@ -777,7 +776,7 @@ static void PyRegion_dealloc(PyRegionObject *self) {
         // We need to clear the ownership, since this dictionary might be
         // returned to an object pool rather than freed. This would result
         // in an error if the dictionary has the previous region.
-        PyRegion_remove_object(self, (PyObject*)self->dict);
+        PyRegion_remove_object(self, _PyObject_CAST(self->dict));
         Py_DECREF(self->dict);
         self->dict = NULL;
     }
@@ -814,8 +813,8 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     }
 
     // Make the region an owner of the bridge object
-    self->ob_base.ob_region = (Py_uintptr_t) self->metadata;
-    _Py_MakeImmutable((PyObject*)Py_TYPE(self));
+    Py_SET_REGION(self, (Py_uintptr_t) self->metadata);
+    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
     // FIXME: Usually this is created on the fly. We need to do it manually to
     // set the region and freeze the type
@@ -823,7 +822,7 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     if (self->dict == NULL) {
         return -1; // Propagate memory allocation failure
     }
-    _Py_MakeImmutable((PyObject*)Py_TYPE(self->dict));
+    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self->dict)));
     PyRegion_add_object(self, self->dict);
 
     return 0;
@@ -863,8 +862,8 @@ static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args) {
     }
 
     regionmetadata* md = PyRegion_get_metadata(self);
-    if (args->ob_region == _Py_DEFAULT_REGION) {
-        args->ob_region = (Py_uintptr_t) md;
+    if (is_default_region(Py_GET_REGION(args))) {
+        Py_SET_REGION(args, (Py_uintptr_t) md);
         Py_RETURN_NONE;
     } else {
         PyErr_SetString(PyExc_RuntimeError, "Object already had an owner or was immutable!");
@@ -879,8 +878,8 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
     }
 
     regionmetadata* md = PyRegion_get_metadata(self);
-    if (args->ob_region == (Py_uintptr_t) md) {
-        args->ob_region = _Py_DEFAULT_REGION;
+    if (Py_GET_REGION(args) == (Py_uintptr_t) md) {
+        Py_SET_REGION(args, _Py_DEFAULT_REGION);
         Py_RETURN_NONE;
     } else {
         PyErr_SetString(PyExc_RuntimeError, "Object not a member of region!");
@@ -890,7 +889,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
 
 // Return True if args object is member of self region
 static PyObject *PyRegion_owns_object(PyRegionObject *self, PyObject *args) {
-    if ((Py_uintptr_t) PyRegion_get_metadata(self) == args->ob_region) {
+    if ((Py_uintptr_t) PyRegion_get_metadata(self) == Py_GET_REGION(args)) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
