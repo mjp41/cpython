@@ -581,6 +581,10 @@ given type object has a specified feature.
 #define Py_TPFLAGS_BASE_EXC_SUBCLASS    (1UL << 30)
 #define Py_TPFLAGS_TYPE_SUBCLASS        (1UL << 31)
 
+/* Used to indicate that a type is aware of the region model, and
+   can be trusted to correctly modify the region topology.*/
+#define Py_TPFLAGS_REGION_AWARE         (1UL << 32)
+
 #define Py_TPFLAGS_DEFAULT  ( \
                  Py_TPFLAGS_HAVE_STACKLESS_EXTENSION | \
                 0)
