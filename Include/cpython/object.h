@@ -176,7 +176,7 @@ struct _typeobject {
     PyBufferProcs *tp_as_buffer;
 
     /* Flags to define presence of optional/expanded features */
-    unsigned long tp_flags;
+    uint64_t tp_flags; // Made flags 64 bit to support region flags.
 
     const char *tp_doc; /* Documentation string */
 
