@@ -423,18 +423,35 @@ class TestRegionOwnership(unittest.TestCase):
         r1.add_object(a)
         self.assertFalse(r2.owns_object(a))
 
-    def test_should_fail_add_ownership_twice_1(self):
+    def test_add_object_is_deep(self):
+        # Create linked objects (a) -> (b)
         a = self.A()
+        b = self.A()
+        c = self.A()
+        a.b = b
+        b.c = c
+
+        # Create a region and take ownership of a
         r = Region()
         r.add_object(a)
-        self.assertRaises(RuntimeError, r.add_object, a)
+
+        # Check that b was also moved into the region
+        self.assertTrue(r.owns_object(a))
+        self.assertTrue(r.owns_object(b))
+        self.assertTrue(r.owns_object(c))
 
     def test_should_fail_add_ownership_twice_2(self):
         a = self.A()
-        r = Region()
-        r.add_object(a)
-        r2 = Region()
-        self.assertRaises(RuntimeError, r2.add_object, a)
+        r1 = Region("r1")
+        r1.add_object(a)
+        r2 = Region("r2")
+        try:
+            r2.add_object(a)
+        except RegionError as e:
+            self.assertEqual(e.source, r2)
+            self.assertEqual(e.target, a)
+        else:
+            self.fail("Should not reach here -- a can't be owned by two objects")
 
     def test_init_with_name(self):
         r1 = Region()
@@ -457,59 +474,33 @@ class TestRegionOwnership(unittest.TestCase):
         # Check that we reach the end of the test
         self.assertTrue(True)
 
-class TestRegionInvariance(unittest.TestCase):
-    class A:
-        pass
-
-    def setUp(self):
-        # This freezes A and super and meta types of A namely `type` and `object`
-        makeimmutable(self.A)
-        enableinvariant()
-
-    def test_invalid_point_to_local(self):
-        # Create linked objects (a) -> (b)
-        a = self.A()
-        b = self.A()
-        a.b = b
-
-        # Create a region and take ownership of a
-        r = Region()
-        # FIXME: Once the write barrier is implemented, this assert will fail.
-        # The code above should work without any errors.
-        self.assertRaises(RuntimeError, r.add_object, a)
-
-        # Check that the errors are on the appropriate objects
-        self.assertFalse(r.owns_object(b))
-        self.assertTrue(r.owns_object(a))
-        self.assertEqual(invariant_failure_src(), a)
-        self.assertEqual(invariant_failure_tgt(), b)
-
     def test_allow_bridge_object_ref(self):
         # Create linked objects (a) -> (b)
         a = self.A()
-        b = Region()
+        b = Region("Child")
         a.b = b
 
         # Create a region and take ownership of a
-        r = Region()
+        r = Region("Parent")
         r.add_object(a)
         self.assertFalse(r.owns_object(b))
         self.assertTrue(r.owns_object(a))
 
     def test_should_fail_external_uniqueness(self):
         a = self.A()
-        r = Region()
-        a.f = r
-        a.g = r
-        r2 = Region()
+        r1 = Region("r1")
+        # Two refs from the local region are allowed
+        a.f = r1
+        a.g = r1
+        r2 = Region("r2")
         try:
             r2.add_object(a)
-        except RuntimeError:
-            # Check that the errors are on the appropriate objects
-            self.assertEqual(invariant_failure_src(), a)
-            self.assertEqual(invariant_failure_tgt(), r)
+        except RegionError as e:
+            # Check that the error is on the appropriate objects
+            self.assertEqual(e.source, a)
+            self.assertEqual(e.target, r1)
         else:
-            self.fail("Should not reach here -- external uniqueness validated but not caught by invariant checker")
+            self.fail("Should not reach here -- a can't be owned by two objects")
 
 # This test will make the Python environment unusable.
 # Should perhaps forbid making the frame immutable.

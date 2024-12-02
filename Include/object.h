@@ -163,6 +163,9 @@ check by comparing the reference count field to the immortality reference count.
 #define PyObject_VAR_HEAD      PyVarObject ob_base;
 #define Py_INVALID_SIZE (Py_ssize_t)-1
 
+typedef Py_uintptr_t Py_region_ptr;
+typedef Py_uintptr_t Py_region_ptr_with_flags;
+
 /* Nothing is actually declared to be a PyObject, but every pointer to
  * a Python object can be cast to a PyObject*.  This is inheritance built
  * by hand.  Similarly every pointer to a variable-size Python object can,
@@ -233,7 +236,7 @@ static inline PyTypeObject* Py_TYPE(PyObject *ob) {
 #  define Py_TYPE(ob) Py_TYPE(_PyObject_CAST(ob))
 #endif
 
-// This is the mask off all used bits to indicate the region.
+// This is the mask of all used bits to indicate the region.
 // this should be used when the region pointer was requested.
 // Macros for the individual flags are defined in regions.c.
 #define Py_REGION_MASK (~((Py_uintptr_t)0x2))
@@ -320,12 +323,19 @@ static inline void Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 #endif
 
 static inline void Py_SET_REGION(PyObject *ob, Py_uintptr_t region) {
-    ob->ob_region = region;
+    // Retain the old flags
+    ob->ob_region = (region & Py_REGION_MASK) | (ob->ob_region & (~Py_REGION_MASK));
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), (region))
 #endif
 
+static inline void Py_SET_REGION_WITH_FLAGS(PyObject *ob, Py_uintptr_t region) {
+    ob->ob_region = region;
+}
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_SET_REGION_WITH_FLAGS(ob, region) Py_SET_REGION_WITH_FLAGS(_PyObject_CAST(ob), (region))
+#endif
 
 /*
 Type objects contain a string containing the type name (to help somewhat
