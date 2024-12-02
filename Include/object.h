@@ -275,6 +275,12 @@ static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
 }
 #define _Py_IsImmutable(op) _Py_IsImmutable(_PyObject_CAST(op))
 
+static inline Py_ALWAYS_INLINE int _Py_IsLocal(PyObject *op)
+{
+    return op->ob_region == _Py_DEFAULT_REGION;
+}
+#define _Py_IsLocal(op) _Py_IsLocal(_PyObject_CAST(op))
+
 
 static inline void Py_SET_REFCNT(PyObject *ob, Py_ssize_t refcnt) {
     // This immortal check is for code that is unaware of immortal objects.
@@ -312,6 +318,13 @@ static inline void Py_SET_REGION(PyObject *ob, Py_uintptr_t region) {
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), (region))
+#endif
+
+static inline Py_uintptr_t Py_GET_REGION(PyObject *ob) {
+    return ob->ob_region;
+}
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_GET_REGION(ob) Py_GET_REGION(_PyObject_CAST(ob))
 #endif
 
 

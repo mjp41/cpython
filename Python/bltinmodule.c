@@ -2814,7 +2814,6 @@ builtin_enableinvariant_impl(PyObject *module)
     return Py_EnableInvariant();
 }
 
-
 typedef struct {
     PyObject_HEAD
     Py_ssize_t tuplesize;
@@ -3163,6 +3162,7 @@ static struct PyModuleDef builtinsmodule = {
     NULL
 };
 
+extern PyTypeObject PyRegion_Type;
 
 PyObject *
 _PyBuiltin_Init(PyInterpreterState *interp)
@@ -3224,6 +3224,8 @@ _PyBuiltin_Init(PyInterpreterState *interp)
     SETBUILTIN("tuple",                 &PyTuple_Type);
     SETBUILTIN("type",                  &PyType_Type);
     SETBUILTIN("zip",                   &PyZip_Type);
+    SETBUILTIN("Region",                &PyRegion_Type);
+
     debug = PyBool_FromLong(config->optimization_level == 0);
     if (PyDict_SetItemString(dict, "__debug__", debug) < 0) {
         Py_DECREF(debug);

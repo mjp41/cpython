@@ -2,11 +2,43 @@
 #include "Python.h"
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include "object.h"
 #include "pycore_dict.h"
 #include "pycore_interp.h"
 #include "pycore_object.h"
 #include "pycore_regions.h"
+
+typedef struct regionmetadata regionmetadata;
+typedef struct PyRegionObject PyRegionObject;
+
+static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
+static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
+
+struct PyRegionObject {
+    PyObject_HEAD
+    regionmetadata* metadata;
+    PyObject *name;   // Optional string field for "name"
+    PyObject *dict;
+};
+
+struct regionmetadata {
+    int lrc;  // Integer field for "local reference count"
+    int osc;  // Integer field for "open subregion count"
+    int is_open;
+    regionmetadata* parent;
+    PyRegionObject* bridge;
+    // TODO: Currently only used for invariant checking. If it's not used for other things
+    // it might make sense to make this conditional in debug builds (or something)
+    //
+    // Intrinsic list for invariant checking
+    regionmetadata* next;
+};
+
+bool is_bridge_object(PyObject *op);
+static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
+static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj);
 
 /**
  * Simple implementation of stack for tracing during make immutable.
@@ -40,9 +72,6 @@ bool stack_push(stack* s, PyObject* object){
         return true;
     }
 
-    _Py_VPYDBG("pushing ");
-    _Py_VPYDBGPRINT(object);
-    _Py_VPYDBG(" [rc=%ld]\n", object->ob_refcnt);
     n->object = object;
     n->next = s->head;
     s->head = n;
@@ -76,11 +105,8 @@ bool stack_empty(stack* s){
 }
 
 void stack_print(stack* s){
-    _Py_VPYDBG("stack: ");
     node* n = s->head;
     while(n != NULL){
-        _Py_VPYDBGPRINT(n->object);
-        _Py_VPYDBG("[rc=%ld]\n", n->object->ob_refcnt);
         n = n->next;
     }
 }
@@ -103,6 +129,10 @@ PyObject* error_tgt = Py_None;
 // Once an error has occurred this is used to surpress further checking
 bool error_occurred = false;
 
+// Start of a linked list of bridge objects used to check for external uniqueness
+// Bridge objects appear in this list if they are captured
+#define CAPTURED_SENTINEL ((regionmetadata*) 0xc0defefe)
+regionmetadata* captured = CAPTURED_SENTINEL;
 
 /**
  * Enable the region check.
@@ -120,6 +150,11 @@ PyObject* _Py_EnableInvariant(void)
     error_occurred = false;
     // Re-enable region check
     do_region_check = true;
+    // Reset the error state
+    Py_DecRef(error_src);
+    error_src = Py_None;
+    Py_DecRef(error_tgt);
+    error_tgt = Py_None;
     return Py_None;
 }
 
@@ -135,7 +170,7 @@ void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
     Py_DecRef(error_tgt);
     Py_IncRef(tgt);
     error_tgt = tgt;
-    printf("Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
+    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
     do_region_check = false;
@@ -160,26 +195,65 @@ typedef struct _gc_runtime_state GCState;
 #define GC_PREV _PyGCHead_PREV
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
+#define IS_IMMUTABLE_REGION(r) ((Py_uintptr_t)r == _Py_IMMUTABLE)
+#define IS_DEFAULT_REGION(r) ((Py_uintptr_t)r == _Py_DEFAULT_REGION)
 
 /* A traversal callback for _Py_CheckRegionInvariant.
-   - op is the target of the reference we are checking, and
-   - parent is the source of the reference we are checking.
+   - tgt is the target of the reference we are checking, and
+   - src(_void) is the source of the reference we are checking.
 */
 static int
-visit_invariant_check(PyObject *op, void *parent)
+visit_invariant_check(PyObject *tgt, void *src_void)
 {
-    PyObject *src_op = _PyObject_CAST(parent);
-    // Check Immutable only reaches immutable
-    if ((src_op->ob_region == _Py_IMMUTABLE)
-        && (op->ob_region != _Py_IMMUTABLE))
-        {
-            set_failed_edge(src_op, op, "Destination is not immutable");
-            return 0;
-        }
-    // TODO: More checks to go here as we add more region
-    // properties.
+    PyObject *src = _PyObject_CAST(src_void);
+    regionmetadata* src_region = (regionmetadata*) Py_GET_REGION(src);
+    regionmetadata* tgt_region = (regionmetadata*) Py_GET_REGION(tgt);
+     // Internal references are always allowed
+    if (src_region == tgt_region)
+        return 0;
+    // Anything is allowed to point to immutable
+    if (IS_IMMUTABLE_REGION(tgt_region))
+        return 0;
+    // Borrowed references are unrestricted
+    if (IS_DEFAULT_REGION(src_region))
+        return 0;
+    // Since tgt is not immutable, src also may not be as immutable may not point to mutable
+    if (IS_IMMUTABLE_REGION(src_region)) {
+        set_failed_edge(src, tgt, "Reference from immutable object to mutable target");
+        return 0;
+    }
+
+    // Cross-region references must be to a bridge
+    if (!is_bridge_object(tgt)) {
+        set_failed_edge(src, tgt, "Reference from object in one region into another region");
+        return 0;
+    }
+    // Check if region is already added to captured list
+    if (tgt_region->next != NULL) {
+        // Bridge object was already captured
+        set_failed_edge(src, tgt, "Reference to bridge is not externally unique");
+        return 0;
+    }
+    // Forbid cycles in the region topology
+    if (regionmetadata_has_ancestor((regionmetadata*)src_region, (regionmetadata*)tgt_region)) {
+        set_failed_edge(src, tgt, "Regions create a cycle with subreagions");
+        return 0;
+    }
+
+    // First discovery of bridge -- add to list of captured bridge objects
+    tgt_region->next = captured;
+    captured = tgt_region;
 
     return 0;
+}
+
+void invariant_reset_captured_list(void) {
+    // Reset the captured list
+    while (captured != CAPTURED_SENTINEL) {
+        regionmetadata* m = captured;
+        captured = m->next;
+        m->next = NULL;
+    }
 }
 
 /**
@@ -216,7 +290,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
         for (; gc != containers; gc = GC_NEXT(gc)) {
             PyObject *op = FROM_GC(gc);
             // Local can point to anything.  No invariant needed
-            if (op->ob_region == _Py_DEFAULT_REGION)
+            if (_Py_IsLocal(op))
                 continue;
             // Functions are complex.
             // Removing from invariant initially.
@@ -238,18 +312,21 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
             // Also need to visit the type of the object
             // As this isn't covered by the traverse.
             PyObject* type_op = PyObject_Type(op);
-            visit_invariant_check(op, type_op);
+            visit_invariant_check(type_op, op);
             Py_DECREF(type_op);
 
             // If we detected an error, stop so we don't
             // write too much.
             // TODO: The first error might not be the most useful.
             // So might not need to build all error edges as a structure.
-            if (error_occurred)
+            if (error_occurred) {
+                invariant_reset_captured_list();
                 return 1;
+            }
         }
     }
 
+    invariant_reset_captured_list();
     return 0;
 }
 
@@ -265,18 +342,13 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
 PyObject* make_global_immutable(PyObject* globals, PyObject* name)
 {
     PyObject* value = PyDict_GetItem(globals, name); // value.rc = x
-    _Py_VPYDBG("value(");
-    _Py_VPYDBGPRINT(value);
-    _Py_VPYDBG(") -> ");
 
     _PyDict_SetKeyImmutable((PyDictObject*)globals, name);
 
     if(!_Py_IsImmutable(value)){
-        _Py_VPYDBG("pushed\n");
         Py_INCREF(value);
         return value;
     }else{
-        _Py_VPYDBG("immutable\n");
         Py_RETURN_NONE;
     }
 }
@@ -306,9 +378,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     bool check_globals = false;
     _PyObject_ASSERT(op, PyFunction_Check(op));
 
-    _Py_VPYDBG("function: ");
-    _Py_VPYDBGPRINT(op);
-    _Py_VPYDBG("[rc=%ld]\n", Py_REFCNT(op));
 
     _Py_SetImmutable(op);
 
@@ -350,25 +419,17 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     }
 
     Py_INCREF(f_ptr); // fp.rc = x + 1
-    _Py_VPYDBG("function: adding captured vars/funcs/builtins\n");
     while(!stack_empty(f_stack)){
         f_ptr = stack_pop(f_stack); // fp.rc = x + 1
         _PyObject_ASSERT(f_ptr, PyCode_Check(f_ptr));
         f_code = (PyCodeObject*)f_ptr;
 
-        _Py_VPYDBG("analysing code: ");
-        _Py_VPYDBGPRINT(f_code->co_name);
-        _Py_VPYDBG("\n");
 
         size = 0;
         if (f_code->co_names != NULL)
           size = PySequence_Fast_GET_SIZE(f_code->co_names);
-        _Py_VPYDBG("Enumerating %ld names\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* name = PySequence_Fast_GET_ITEM(f_code->co_names, i); // name.rc = x
-            _Py_VPYDBG("name ");
-            _Py_VPYDBGPRINT(name);
-            _Py_VPYDBG(": ");
 
             if(PyUnicode_CompareWithASCIIString(name, "globals") == 0){
                 // if the code calls the globals() builtin, then any
@@ -389,7 +450,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     }
                 }
             }else if(PyDict_Contains(builtins, name)){
-                _Py_VPYDBG("builtin\n");
 
                 _PyDict_SetKeyImmutable((PyDictObject*)builtins, name);
 
@@ -399,9 +459,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                 }
             }else if(PyDict_Contains(module_dict, name)){
                 PyObject* value = PyDict_GetItem(module_dict, name); // value.rc = x
-                _Py_VPYDBG("module(");
-                _Py_VPYDBGPRINT(value);
-                _Py_VPYDBG(") -> ");
 
                 _PyDict_SetKeyImmutable((PyDictObject*)module_dict, name);
 
@@ -413,25 +470,18 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         return PyErr_NoMemory();
                     }
                 }else{
-                    _Py_VPYDBG("immutable\n");
                 }
             }else{
-                _Py_VPYDBG("instance\n");
                 // TODO assert that it is an instance variable
             }
         }
 
         size = PySequence_Fast_GET_SIZE(f_code->co_consts);
-        _Py_VPYDBG("Enumerating %ld consts\n", size);
         for(Py_ssize_t i = 0; i < size; i++){
             PyObject* value = PySequence_Fast_GET_ITEM(f_code->co_consts, i); // value.rc = x
-            _Py_VPYDBG("const ");
-            _Py_VPYDBGPRINT(value);
-            _Py_VPYDBG(": ");
             if(!_Py_IsImmutable(value)){
                 Py_INCREF(value); // value.rc = x + 1
                 if(PyCode_Check(value)){
-                    _Py_VPYDBG("nested_func\n");
 
                     _Py_SetImmutable(value);
 
@@ -441,7 +491,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         return PyErr_NoMemory();
                     }
                 }else{
-                    _Py_VPYDBG("pushed\n");
 
                     if(stack_push(frontier, value)){
                         stack_free(f_stack);
@@ -450,16 +499,11 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                     }
                 }
             }else{
-                _Py_VPYDBG("immutable\n");
             }
 
             if(check_globals && PyUnicode_Check(value)){
-                _Py_VPYDBG("checking if");
-                _Py_VPYDBGPRINT(value);
-                _Py_VPYDBG(" is a global: ");
                 PyObject* name = value;
                 if(PyDict_Contains(globals, name)){
-                    _Py_VPYDBG(" true ");
                     value = make_global_immutable(globals, name);
                     if(!Py_IsNone(value)){
                         if(stack_push(frontier, value)){
@@ -469,7 +513,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         }
                     }
                 }else{
-                    _Py_VPYDBG("false\n");
 
                 }
             }
@@ -484,18 +527,13 @@ PyObject* walk_function(PyObject* op, stack* frontier)
         size = 0;
         if(f->func_closure != NULL)
             size = PySequence_Fast_GET_SIZE(f->func_closure);
-        _Py_VPYDBG("Enumerating %ld closure vars to check for global names\n", size);
         for(Py_ssize_t i=0; i < size; ++i){
             PyObject* cellvar = PySequence_Fast_GET_ITEM(f->func_closure, i); // cellvar.rc = x
             PyObject* value = PyCell_GET(cellvar); // value.rc = x
-            _Py_VPYDBG("cellvar(");
-            _Py_VPYDBGPRINT(value);
-            _Py_VPYDBG(") is ");
 
             if(PyUnicode_Check(value)){
                 PyObject* name = value;
                 if(PyDict_Contains(globals, name)){
-                    _Py_VPYDBG("a global ");
                     value = make_global_immutable(globals, name);
                     if(!Py_IsNone(value)){
                         if(stack_push(frontier, value)){
@@ -505,10 +543,8 @@ PyObject* walk_function(PyObject* op, stack* frontier)
                         }
                     }
                 }else{
-                    _Py_VPYDBG("not a global\n");
                 }
             }else{
-                _Py_VPYDBG("not a global\n");
             }
         }
     }
@@ -527,9 +563,6 @@ PyObject* walk_function(PyObject* op, stack* frontier)
 
 int _makeimmutable_visit(PyObject* obj, void* frontier)
 {
-    _Py_VPYDBG("visit(");
-    _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));
     if(!_Py_IsImmutable(obj)){
         if(stack_push((stack*)frontier, obj)){
             PyErr_NoMemory();
@@ -542,12 +575,13 @@ int _makeimmutable_visit(PyObject* obj, void* frontier)
 
 PyObject* _Py_MakeImmutable(PyObject* obj)
 {
+    if (!obj) {
+        Py_RETURN_NONE;
+    }
+
     // We have started using regions, so notify to potentially enable checks.
     notify_regions_in_use();
 
-    _Py_VPYDBG(">> makeimmutable(");
-    _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(") region: %lu rc: %ld\n", Py_REGION(obj), Py_REFCNT(obj));
     if(_Py_IsImmutable(obj) && _Py_IsImmutable(Py_TYPE(obj))){
         return obj;
     }
@@ -569,25 +603,16 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
         traverseproc traverse;
         PyObject* type_op = NULL;
 
-        _Py_VPYDBG("item: ");
-        _Py_VPYDBGPRINT(item);
 
         if(_Py_IsImmutable(item)){
-            _Py_VPYDBG(" already immutable!\n");
             // Direct access like this is not recommended, but will be removed in the future as
             // this is just for debugging purposes.
             if(type->ob_base.ob_base.ob_region != _Py_IMMUTABLE){
                // Why do we need to handle the type here, surely what ever made this immutable already did that?
                // Log so we can investigate.
-                _Py_VPYDBG("type ");
-                _Py_VPYDBGPRINT(type_op);
-                _Py_VPYDBG(" not immutable! but object is: ");
-                _Py_VPYDBGPRINT(item);
-                _Py_VPYDBG("\n");
             }
             goto handle_type;
         }
-        _Py_VPYDBG("\n");
 
         _Py_SetImmutable(item);
 
@@ -604,14 +629,12 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
 
         traverse = type->tp_traverse;
         if(traverse != NULL){
-            _Py_VPYDBG("implements tp_traverse\n");
             if(traverse(item, (visitproc)_makeimmutable_visit, frontier)){
                 Py_DECREF(item);
                 stack_free(frontier);
                 return NULL;
             }
         }else{
-            _Py_VPYDBG("does not implements tp_traverse\n");
             // TODO: (mjp comment) These functions causes every character of
             // a string to become an immutable object, which is is not the
             // desired behavior.  Commenting so we can discuss.  I believe
@@ -643,9 +666,296 @@ next:
 
     stack_free(frontier);
 
-    _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(" region: %lu rc: %ld \n", Py_REGION(obj), Py_REFCNT(obj));
-    _Py_VPYDBG("<< makeimmutable complete\n\n");
 
-    return obj;
+    Py_RETURN_NONE;
 }
+
+bool is_bridge_object(PyObject *op) {
+    Py_uintptr_t region = Py_GET_REGION(op);
+    if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
+        return false;
+    }
+
+    // It's not yet clear how immutability will interact with region objects.
+    // It's likely that the object will remain in the object topology but
+    // will use the properties of a bridge object. This therefore checks if
+    // the object is equal to the regions bridge object rather than checking
+    // that the type is `PyRegionObject`
+    return ((Py_uintptr_t)((regionmetadata*)region)->bridge == (Py_uintptr_t)op);
+}
+
+__attribute__((unused))
+static void regionmetadata_inc_lrc(regionmetadata* data) {
+    data->lrc += 1;
+}
+
+__attribute__((unused))
+static void regionmetadata_dec_lrc(regionmetadata* data) {
+    data->lrc -= 1;
+}
+
+__attribute__((unused))
+static void regionmetadata_inc_osc(regionmetadata* data) {
+    data->osc += 1;
+}
+
+__attribute__((unused))
+static void regionmetadata_dec_osc(regionmetadata* data) {
+    data->osc -= 1;
+}
+
+static void regionmetadata_open(regionmetadata* data) {
+    data->is_open = 1;
+}
+
+static void regionmetadata_close(regionmetadata* data) {
+    data->is_open = 0;
+}
+
+static bool regionmetadata_is_open(regionmetadata* data) {
+    return data->is_open == 0;
+}
+
+static void regionmetadata_set_parent(regionmetadata* data, regionmetadata* parent) {
+    data->parent = parent;
+}
+
+static bool regionmetadata_has_parent(regionmetadata* data) {
+    return data->parent != NULL;
+}
+
+static regionmetadata* regionmetadata_get_parent(regionmetadata* data) {
+    return data->parent;
+}
+
+__attribute__((unused))
+static void regionmetadata_unparent(regionmetadata* data) {
+    regionmetadata_set_parent(data, NULL);
+}
+
+__attribute__((unused))
+static int regionmetadata_is_root(regionmetadata* data) {
+    return regionmetadata_has_parent(data);
+}
+
+static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other) {
+    do {
+        if (data == other) {
+            return true;
+        }
+        data = regionmetadata_get_parent(data);
+    } while (data);
+    return false;
+}
+
+static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
+    return obj->metadata;
+}
+
+
+static void PyRegion_dealloc(PyRegionObject *self) {
+    // Name is immutable and not in our region.
+    Py_XDECREF(self->name);
+    self->name = NULL;
+    self->metadata->bridge = NULL;
+
+    // The dictionary can be NULL if the Region constructor crashed
+    if (self->dict) {
+        // We need to clear the ownership, since this dictionary might be
+        // returned to an object pool rather than freed. This would result
+        // in an error if the dictionary has the previous region.
+        PyRegion_remove_object(self, _PyObject_CAST(self->dict));
+        Py_DECREF(self->dict);
+        self->dict = NULL;
+    }
+
+    PyObject_GC_UnTrack((PyObject *)self);
+
+    // The lifetimes are joined for now
+    free(self->metadata);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
+    notify_regions_in_use();
+
+    static char *kwlist[] = {"name", NULL};
+    self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
+    self->metadata->bridge = self;
+    self->name = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->name))
+        return -1;
+    if (self->name) {
+        Py_XINCREF(self->name);
+        // Freeze the name and it's type. Short strings in Python are interned
+        // by default. This means that `id("AB") == id("AB")`. We therefore
+        // need to either clone the name object or freeze it to share it
+        // across regions. Freezing should be safe, since `+=` and other
+        // operators return new strings and keep the old one intact
+        //
+        // FIXME: Implicit freezing should take care of this instead
+        _Py_MakeImmutable(self->name);
+    }
+
+    // Make the region an owner of the bridge object
+    Py_SET_REGION(self, (Py_uintptr_t) self->metadata);
+    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
+
+    // FIXME: Usually this is created on the fly. We need to do it manually to
+    // set the region and freeze the type
+    self->dict = PyDict_New();
+    if (self->dict == NULL) {
+        return -1; // Propagate memory allocation failure
+    }
+    // TODO: Once phase 2 is done, we might be able to do this statically
+    // at compile time.
+    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self->dict)));
+    PyRegion_add_object(self, self->dict);
+
+    return 0;
+}
+
+static int PyRegion_traverse(PyRegionObject *self, visitproc visit, void *arg) {
+    Py_VISIT(self->name);
+    Py_VISIT(self->dict);
+    return 0;
+}
+
+// is_open method (returns True if the region is open, otherwise False)
+static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *args) {
+    if (regionmetadata_is_open(self->metadata)) {
+        Py_RETURN_TRUE;  // Return True if the region is open
+    } else {
+        Py_RETURN_FALSE; // Return False if the region is closed
+    }
+}
+
+// Open method (sets the region to "open")
+static PyObject *PyRegion_open(PyRegionObject *self, PyObject *args) {
+    regionmetadata_open(self->metadata);
+    Py_RETURN_NONE;  // Return None (standard for methods with no return value)
+}
+
+// Close method (sets the region to "closed")
+static PyObject *PyRegion_close(PyRegionObject *self, PyObject *args) {
+    regionmetadata_close(self->metadata);  // Mark as closed
+    Py_RETURN_NONE;  // Return None (standard for methods with no return value)
+}
+
+// Adds args object to self region
+static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args) {
+    if (!args) {
+        Py_RETURN_NONE;
+    }
+
+    regionmetadata* md = PyRegion_get_metadata(self);
+    if (_Py_IsLocal(args)) {
+        Py_SET_REGION(args, (Py_uintptr_t) md);
+        Py_RETURN_NONE;
+    } else {
+        PyErr_SetString(PyExc_RuntimeError, "Object already had an owner or was immutable!");
+        return NULL;
+    }
+}
+
+// Remove args object to self region
+static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
+    if (!args) {
+        Py_RETURN_NONE;
+    }
+
+    regionmetadata* md = PyRegion_get_metadata(self);
+    if (Py_GET_REGION(args) == (Py_uintptr_t) md) {
+        Py_SET_REGION(args, _Py_DEFAULT_REGION);
+        Py_RETURN_NONE;
+    } else {
+        PyErr_SetString(PyExc_RuntimeError, "Object not a member of region!");
+        return NULL;
+    }
+}
+
+// Return True if args object is member of self region
+static PyObject *PyRegion_owns_object(PyRegionObject *self, PyObject *args) {
+    if ((Py_uintptr_t) PyRegion_get_metadata(self) == Py_GET_REGION(args)) {
+        Py_RETURN_TRUE;
+    } else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static PyObject *PyRegion_repr(PyRegionObject *self) {
+    regionmetadata* data = self->metadata;
+#ifdef NDEBUG
+    // Debug mode: include detailed representation
+    return PyUnicode_FromFormat(
+        "Region(lrc=%d, osc=%d, name=%S, is_open=%d)",
+        data->lrc,
+        data->osc,
+        self->name ? self->name : Py_None,
+        data->is_open
+    );
+#else
+    // Normal mode: simple representation
+    return PyUnicode_FromFormat(
+        "Region(name=%S, is_open=%d)",
+        self->name ? self->name : Py_None,
+        data->is_open
+    );
+#endif
+}
+
+// Define the RegionType with methods
+static PyMethodDef PyRegion_methods[] = {
+    {"open", (PyCFunction)PyRegion_open, METH_NOARGS, "Open the region."},
+    {"close", (PyCFunction)PyRegion_close, METH_NOARGS, "Close the region."},
+    {"is_open", (PyCFunction)PyRegion_is_open, METH_NOARGS, "Check if the region is open."},
+    // Temporary methods for testing. These will be removed or at least renamed once
+    // the write barrier is done.
+    {"add_object", (PyCFunction)PyRegion_add_object, METH_O, "Add object to the region."},
+    {"remove_object", (PyCFunction)PyRegion_remove_object, METH_O, "Remove object from the region."},
+    {"owns_object", (PyCFunction)PyRegion_owns_object, METH_O, "Check if object is owned by the region."},
+    {NULL}  // Sentinel
+};
+
+
+PyTypeObject PyRegion_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "Region",                                /* tp_name */
+    sizeof(PyRegionObject),                  /* tp_basicsize */
+    0,                                       /* tp_itemsize */
+    (destructor)PyRegion_dealloc,            /* tp_dealloc */
+    0,                                       /* tp_vectorcall_offset */
+    0,                                       /* tp_getattr */
+    0,                                       /* tp_setattr */
+    0,                                       /* tp_as_async */
+    (reprfunc)PyRegion_repr,                 /* tp_repr */
+    0,                                       /* tp_as_number */
+    0,                                       /* tp_as_sequence */
+    0,                                       /* tp_as_mapping */
+    0,                                       /* tp_hash  */
+    0,                                       /* tp_call */
+    0,                                       /* tp_str */
+    0,                                       /* tp_getattro */
+    0,                                       /* tp_setattro */
+    0,                                       /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, /* tp_flags */
+    "TODO =^.^=",                            /* tp_doc */
+    (traverseproc)PyRegion_traverse,         /* tp_traverse */
+    0,                                       /* tp_clear */
+    0,                                       /* tp_richcompare */
+    0,                                       /* tp_weaklistoffset */
+    0,                                       /* tp_iter */
+    0,                                       /* tp_iternext */
+    PyRegion_methods,                        /* tp_methods */
+    0,                                       /* tp_members */
+    0,                                       /* tp_getset */
+    0,                                       /* tp_base */
+    0,                                       /* tp_dict */
+    0,                                       /* tp_descr_get */
+    0,                                       /* tp_descr_set */
+    offsetof(PyRegionObject, dict),          /* tp_dictoffset */
+    (initproc)PyRegion_init,                 /* tp_init */
+    0,                                       /* tp_alloc */
+    PyType_GenericNew,                       /* tp_new */
+};

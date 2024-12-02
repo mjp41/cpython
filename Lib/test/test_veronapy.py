@@ -389,6 +389,128 @@ class TestWeakRef(unittest.TestCase):
         # self.assertTrue(c.val() is obj)
         self.assertIsNone(c.val())
 
+class TestRegionOwnership(unittest.TestCase):
+    class A:
+        pass
+
+    def setUp(self):
+        # This freezes A and super and meta types of A namely `type` and `object`
+        makeimmutable(self.A)
+        enableinvariant()
+
+    def test_default_ownership(self):
+        a = self.A()
+        r = Region()
+        self.assertFalse(r.owns_object(a))
+
+    def test_add_ownership(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        self.assertTrue(r.owns_object(a))
+
+    def test_remove_ownership(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        r.remove_object(a)
+        self.assertFalse(r.owns_object(a))
+
+    def test_add_ownership2(self):
+        a = self.A()
+        r1 = Region()
+        r2 = Region()
+        r1.add_object(a)
+        self.assertFalse(r2.owns_object(a))
+
+    def test_should_fail_add_ownership_twice_1(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        self.assertRaises(RuntimeError, r.add_object, a)
+
+    def test_should_fail_add_ownership_twice_2(self):
+        a = self.A()
+        r = Region()
+        r.add_object(a)
+        r2 = Region()
+        self.assertRaises(RuntimeError, r2.add_object, a)
+
+    def test_init_with_name(self):
+        r1 = Region()
+        r2 = Region("Super-name")
+        self.assertTrue("Super-name" in repr(r2))
+
+        r3_name = "Trevligt-Name"
+        r3a = Region(r3_name)
+        r3b = Region(r3_name)
+        self.assertTrue(r3_name in repr(r3a))
+        self.assertTrue(r3_name in repr(r3b))
+        self.assertTrue(isimmutable(r3_name))
+
+    def test_init_invalid_name(self):
+        self.assertRaises(TypeError, Region, 42)
+
+    def test_init_same_name(self):
+        r1 = Region("Andy")
+        r2 = Region("Andy")
+        # Check that we reach the end of the test
+        self.assertTrue(True)
+
+class TestRegionInvariance(unittest.TestCase):
+    class A:
+        pass
+
+    def setUp(self):
+        # This freezes A and super and meta types of A namely `type` and `object`
+        makeimmutable(self.A)
+        enableinvariant()
+
+    def test_invalid_point_to_local(self):
+        # Create linked objects (a) -> (b)
+        a = self.A()
+        b = self.A()
+        a.b = b
+
+        # Create a region and take ownership of a
+        r = Region()
+        # FIXME: Once the write barrier is implemented, this assert will fail.
+        # The code above should work without any errors.
+        self.assertRaises(RuntimeError, r.add_object, a)
+
+        # Check that the errors are on the appropriate objects
+        self.assertFalse(r.owns_object(b))
+        self.assertTrue(r.owns_object(a))
+        self.assertEqual(invariant_failure_src(), a)
+        self.assertEqual(invariant_failure_tgt(), b)
+
+    def test_allow_bridge_object_ref(self):
+        # Create linked objects (a) -> (b)
+        a = self.A()
+        b = Region()
+        a.b = b
+
+        # Create a region and take ownership of a
+        r = Region()
+        r.add_object(a)
+        self.assertFalse(r.owns_object(b))
+        self.assertTrue(r.owns_object(a))
+
+    def test_should_fail_external_uniqueness(self):
+        a = self.A()
+        r = Region()
+        a.f = r
+        a.g = r
+        r2 = Region()
+        try:
+            r2.add_object(a)
+        except RuntimeError:
+            # Check that the errors are on the appropriate objects
+            self.assertEqual(invariant_failure_src(), a)
+            self.assertEqual(invariant_failure_tgt(), r)
+        else:
+            self.fail("Should not reach here -- external uniqueness validated but not caught by invariant checker")
+
 # This test will make the Python environment unusable.
 # Should perhaps forbid making the frame immutable.
 # class TestStackCapture(unittest.TestCase):

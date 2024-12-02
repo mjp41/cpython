@@ -14,6 +14,15 @@ extern "C" {
 #define Py_CHECKWRITE(op) ((op) && _PyObject_CAST(op)->ob_region != _Py_IMMUTABLE)
 #define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
 
+/* This makes the given objects and all object reachable from the given
+ * object immutable. This will also move the objects into the immutable
+ * region.
+ *
+ * The argument is borrowed, meaning that it expects the calling context
+ * to handle the reference count.
+ *
+ * The function will return `Py_None` by default.
+ */
 PyObject* _Py_MakeImmutable(PyObject* obj);
 #define Py_MakeImmutable(op) _Py_MakeImmutable(_PyObject_CAST(op))
 
@@ -25,6 +34,9 @@ PyObject* _Py_InvariantTgtFailure(void);
 
 PyObject* _Py_EnableInvariant(void);
 #define Py_EnableInvariant() _Py_EnableInvariant()
+
+PyObject* _Py_ResetInvariant(void);
+#define Py_ResetInvariant() _Py_ResetInvariant()
 
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
