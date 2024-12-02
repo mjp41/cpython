@@ -194,7 +194,9 @@ struct _object {
 
     PyTypeObject *ob_type;
     // VeronaPy: Field used for tracking which region this objects is stored in.
-    // Bottom bits stolen for distinguishing types of region ptr.
+    // Stolen bottom bits:
+    // 1. Indicates the region type. A set flag indicates the immutable region.
+    // 2. This flag is used for object traversal to indicate that it was visited.
     Py_uintptr_t ob_region;
 };
 
@@ -231,8 +233,12 @@ static inline PyTypeObject* Py_TYPE(PyObject *ob) {
 #  define Py_TYPE(ob) Py_TYPE(_PyObject_CAST(ob))
 #endif
 
+// This is the mask off all used bits to indicate the region.
+// this should be used when the region pointer was requested.
+// Macros for the individual flags are defined in regions.c.
+#define Py_REGION_MASK (~((Py_uintptr_t)0x2))
 static inline Py_uintptr_t Py_REGION(PyObject *ob) {
-    return ob->ob_region;
+    return (ob->ob_region & Py_REGION_MASK);
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_REGION(ob) Py_REGION(_PyObject_CAST(ob))
@@ -271,13 +277,13 @@ static inline int Py_IS_TYPE(PyObject *ob, PyTypeObject *type) {
 
 static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
 {
-    return op->ob_region == _Py_IMMUTABLE;
+    return Py_REGION(op) == _Py_IMMUTABLE;
 }
 #define _Py_IsImmutable(op) _Py_IsImmutable(_PyObject_CAST(op))
 
 static inline Py_ALWAYS_INLINE int _Py_IsLocal(PyObject *op)
 {
-    return op->ob_region == _Py_DEFAULT_REGION;
+    return Py_REGION(op) == _Py_DEFAULT_REGION;
 }
 #define _Py_IsLocal(op) _Py_IsLocal(_PyObject_CAST(op))
 
@@ -318,13 +324,6 @@ static inline void Py_SET_REGION(PyObject *ob, Py_uintptr_t region) {
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), (region))
-#endif
-
-static inline Py_uintptr_t Py_GET_REGION(PyObject *ob) {
-    return ob->ob_region;
-}
-#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_GET_REGION(ob) Py_GET_REGION(_PyObject_CAST(ob))
 #endif
 
 

@@ -10,6 +10,15 @@
 #include "pycore_object.h"
 #include "pycore_regions.h"
 
+#define Py_REGION_VISITED_FLAG ((Py_uintptr_t)0x2)
+static inline Py_uintptr_t Py_REGION_WITH_FLAGS(PyObject *ob) {
+    return ob->ob_region;
+}
+#define Py_REGION_WITH_FLAGS(ob) Py_REGION_WITH_FLAGS(_PyObject_CAST(ob))
+#define REGION_SET_FLAG(ob, flag) (Py_REGION_WITH_FLAGS(ob) | flag)
+#define REGION_GET_FLAG(ob, flag) (Py_REGION_WITH_FLAGS(ob) & flag)
+#define REGION_CLEAR_FLAG(ob, flag) (Py_SET_REGION(ob, Py_REGION_WITH_FLAGS(ob) & (~flag)))
+
 typedef struct regionmetadata regionmetadata;
 typedef struct PyRegionObject PyRegionObject;
 
@@ -206,8 +215,8 @@ static int
 visit_invariant_check(PyObject *tgt, void *src_void)
 {
     PyObject *src = _PyObject_CAST(src_void);
-    regionmetadata* src_region = (regionmetadata*) Py_GET_REGION(src);
-    regionmetadata* tgt_region = (regionmetadata*) Py_GET_REGION(tgt);
+    regionmetadata* src_region = (regionmetadata*) Py_REGION(src);
+    regionmetadata* tgt_region = (regionmetadata*) Py_REGION(tgt);
      // Internal references are always allowed
     if (src_region == tgt_region)
         return 0;
@@ -583,7 +592,7 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
     notify_regions_in_use();
 
     if(_Py_IsImmutable(obj) && _Py_IsImmutable(Py_TYPE(obj))){
-        return obj;
+        Py_RETURN_NONE;
     }
 
     stack* frontier = stack_new();
@@ -607,9 +616,8 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
         if(_Py_IsImmutable(item)){
             // Direct access like this is not recommended, but will be removed in the future as
             // this is just for debugging purposes.
-            if(type->ob_base.ob_base.ob_region != _Py_IMMUTABLE){
+            if((type->ob_base.ob_base.ob_region & Py_REGION_MASK) != _Py_IMMUTABLE){
                // Why do we need to handle the type here, surely what ever made this immutable already did that?
-               // Log so we can investigate.
             }
             goto handle_type;
         }
@@ -671,7 +679,7 @@ next:
 }
 
 static bool is_bridge_object(PyObject *op) {
-    Py_uintptr_t region = Py_GET_REGION(op);
+    Py_uintptr_t region = Py_REGION(op);
     if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
         return false;
     }
@@ -866,7 +874,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
     }
 
     regionmetadata* md = PyRegion_get_metadata(self);
-    if (Py_GET_REGION(args) == (Py_uintptr_t) md) {
+    if (Py_REGION(args) == (Py_uintptr_t) md) {
         Py_SET_REGION(args, _Py_DEFAULT_REGION);
         Py_RETURN_NONE;
     } else {
@@ -877,7 +885,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
 
 // Return True if args object is member of self region
 static PyObject *PyRegion_owns_object(PyRegionObject *self, PyObject *args) {
-    if ((Py_uintptr_t) PyRegion_get_metadata(self) == Py_GET_REGION(args)) {
+    if ((Py_uintptr_t) PyRegion_get_metadata(self) == Py_REGION(args)) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
