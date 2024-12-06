@@ -15,6 +15,8 @@ typedef struct PyRegionObject PyRegionObject;
 
 static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
+static const char *get_region_name(PyObject* obj);
+#define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
 
 struct PyRegionObject {
     PyObject_HEAD
@@ -170,7 +172,13 @@ void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
     Py_DecRef(error_tgt);
     Py_IncRef(tgt);
     error_tgt = tgt;
-    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
+    const char *src_region_name = get_region_name(src);
+    const char *tgt_region_name = get_region_name(tgt);
+    PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
+    const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
+    PyObject *src_type_repr = PyObject_Repr(PyObject_Type(src));
+    const char *src_desc = src_type_repr ? PyUnicode_AsUTF8(src_type_repr) : "<>";
+    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s): %s\n", src, src_desc, src_region_name, tgt, tgt_desc, tgt_region_name, msg);
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
     do_region_check = false;
@@ -802,17 +810,6 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     Py_SET_REGION(self, (Py_uintptr_t) self->metadata);
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
-    // FIXME: Usually this is created on the fly. We need to do it manually to
-    // set the region and freeze the type
-    self->dict = PyDict_New();
-    if (self->dict == NULL) {
-        return -1; // Propagate memory allocation failure
-    }
-    // TODO: Once phase 2 is done, we might be able to do this statically
-    // at compile time.
-    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self->dict)));
-    PyRegion_add_object(self, self->dict);
-
     return 0;
 }
 
@@ -853,8 +850,14 @@ static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args) {
     if (_Py_IsLocal(args)) {
         Py_SET_REGION(args, (Py_uintptr_t) md);
         Py_RETURN_NONE;
+    } else if (_Py_IsImmutable(args)) {
+        // Nothing to do! Let this pass for now.
+        Py_RETURN_NONE;
     } else {
-        PyErr_SetString(PyExc_RuntimeError, "Object already had an owner or was immutable!");
+        const char *arg_region_name = get_region_name(args);
+        PyObject *src_type_repr = PyObject_Repr(PyObject_Type(args));
+        const char *src_desc = src_type_repr ? PyUnicode_AsUTF8(src_type_repr) : "<>";
+        PyErr_Format(PyExc_RuntimeError, "Object %s already had an owner (%s)!", src_desc, arg_region_name);
         return NULL;
     }
 }
@@ -959,3 +962,58 @@ PyTypeObject PyRegion_Type = {
     0,                                       /* tp_alloc */
     PyType_GenericNew,                       /* tp_new */
 };
+
+static const char *get_region_name(PyObject* obj) {
+    if (_Py_IsLocal(obj)) {
+        return "Default";
+    } else if (_Py_IsImmutable(obj)) {
+        return "Immutable";
+    } else {
+        const regionmetadata *md = Py_REGION_DATA(obj);
+        return md->bridge->name
+            ? PyUnicode_AsUTF8(md->bridge->name)
+            : "<no name>";
+    }
+}
+
+// TODO replace with write barrier code
+bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
+    if (_Py_IsImmutable(new_ref)) {
+        // Nothing to do -- adding a ref to an immutable is always permitted
+        return true;
+    }
+
+    if (Py_REGION(tgt) == Py_REGION(new_ref)) {
+        // Nothing to do -- intra-region references are always permitted
+        return true;
+    }
+
+    if (_Py_IsLocal(new_ref)) {
+        // Slurp emphemerally owned object into the region of the target object
+        fprintf(stderr, "Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+        PyRegion_add_object(((regionmetadata*) tgt->ob_region)->bridge, new_ref);
+        return true;
+    }
+
+    const char *new_ref_region_name = get_region_name(new_ref);
+    const char *tgt_region_name = get_region_name(tgt);
+    PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
+    const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
+    PyObject *new_ref_type_repr = PyObject_Repr(PyObject_Type(new_ref));
+    const char *new_ref_desc = new_ref_type_repr ? PyUnicode_AsUTF8(new_ref_type_repr) : "<>";
+    PyErr_Format(PyExc_RuntimeError, "WBError: Invalid edge %p (%s in %s) -> %p (%s in %s)\n", tgt, tgt_desc, tgt_region_name, new_ref, new_ref_desc, new_ref_region_name);
+    return true; // Illegal reference
+}
+
+bool _Pyrona_AddReferences(PyObject *tgt, int new_refc, ...) {
+    va_list args;
+    va_start(args, new_refc);
+
+    for (int i = 0; i < new_refc; i++) {
+        int res = _Pyrona_AddReference(tgt, va_arg(args, PyObject*));
+        if (!res) return false;
+    }
+
+    va_end(args);
+    return true;
+}

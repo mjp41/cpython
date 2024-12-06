@@ -396,6 +396,8 @@ class TestRegionOwnership(unittest.TestCase):
     def setUp(self):
         # This freezes A and super and meta types of A namely `type` and `object`
         makeimmutable(self.A)
+        # FIXME: remove this line when the write barrier works
+        makeimmutable(type({}))
         enableinvariant()
 
     def test_default_ownership(self):
@@ -457,6 +459,24 @@ class TestRegionOwnership(unittest.TestCase):
         # Check that we reach the end of the test
         self.assertTrue(True)
 
+    def test_region__dict__(self):
+        r = Region()
+        r.f = self.A()
+        # The above line will fail unless the region has gotten a dict
+        self.assertTrue(True)
+
+    def test_object__dict__(self):
+        r = Region()
+        a = self.A()
+        b = self.A()
+        r.add_object(b)
+        r.f = a
+        a.f = b
+        d = a.__dict__
+        self.assertTrue(r.owns_object(d))
+        self.assertTrue(r.owns_object(a))
+        self.assertTrue(r.owns_object(b))
+
 class TestRegionInvariance(unittest.TestCase):
     class A:
         pass
@@ -464,6 +484,8 @@ class TestRegionInvariance(unittest.TestCase):
     def setUp(self):
         # This freezes A and super and meta types of A namely `type` and `object`
         makeimmutable(self.A)
+        # FIXME: remove this line when the write barrier works
+        makeimmutable(type({}))
         enableinvariant()
 
     def test_invalid_point_to_local(self):

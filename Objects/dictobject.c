@@ -5505,6 +5505,7 @@ _PyObject_InitializeDict(PyObject *obj)
         return -1;
     }
     PyObject **dictptr = _PyObject_ComputedDictPointer(obj);
+    Pyrona_ADDREFERENCE(obj, dict);
     *dictptr = dict;
     return 0;
 }
@@ -5772,6 +5773,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
                     _Py_SetImmutable(dict);
                 }
                 else {
+                    Pyrona_ADDREFERENCE(obj, dict);
                     dorv_ptr->dict = dict;
                 }
             }
@@ -5785,6 +5787,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
                     _Py_SetImmutable(dict);
                 }
                 else {
+                    Pyrona_ADDREFERENCE(obj, dict);
                     dorv_ptr->dict = dict;
                 }
             }
@@ -5812,6 +5815,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
                 _Py_SetImmutable(dict);
             }
             else {
+                Pyrona_ADDREFERENCE(obj, dict);
                 *dictptr = dict;
             }
         }
@@ -5821,7 +5825,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
 
 int
 _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
-                      PyObject *key, PyObject *value)
+                      PyObject *key, PyObject *value, PyObject* owner)
 {
     PyObject *dict;
     int res;
@@ -5835,6 +5839,7 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
         if (dict == NULL) {
             dictkeys_incref(cached);
             dict = new_dict_with_shared_keys(interp, cached);
+            Pyrona_ADDREFERENCE(owner, dict);
             if (dict == NULL)
                 return -1;
             *dictptr = dict;
@@ -5843,7 +5848,12 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             res = PyDict_DelItem(dict, key);
         }
         else {
-            res = PyDict_SetItem(dict, key, value);
+            if (Pyrona_ADDREFERENCES(dict, key, value)) {
+                res = PyDict_SetItem(dict, key, value);
+            } else {
+                // Error is set inside ADDREFERENCE
+                return -1;
+            }
         }
     } else {
         dict = *dictptr;
@@ -5851,12 +5861,18 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             dict = PyDict_New();
             if (dict == NULL)
                 return -1;
+            Pyrona_ADDREFERENCE(owner, dict);
             *dictptr = dict;
         }
         if (value == NULL) {
             res = PyDict_DelItem(dict, key);
         } else {
-            res = PyDict_SetItem(dict, key, value);
+            if (Pyrona_ADDREFERENCES(dict, key, value)) {
+                res = PyDict_SetItem(dict, key, value);
+            } else {
+                // Error is set inside ADDREFERENCE
+                return -1;
+            }
         }
     }
     ASSERT_CONSISTENT(dict);
