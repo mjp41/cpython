@@ -38,6 +38,7 @@ BaseException
       │    ├── ProcessLookupError
       │    └── TimeoutError
       ├── ReferenceError
+      ├── RegionError
       ├── RuntimeError
       │    ├── NotImplementedError
       │    └── RecursionError

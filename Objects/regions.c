@@ -11,14 +11,14 @@
 #include "pycore_regions.h"
 #include "pycore_pyerrors.h"
 
-#define Py_REGION_VISITED_FLAG ((Py_uintptr_t)0x2)
-static inline Py_uintptr_t Py_REGION_WITH_FLAGS(PyObject *ob) {
+#define Py_REGION_VISITED_FLAG ((Py_region_ptr_t)0x2)
+static inline Py_region_ptr_with_tags_t Py_TAGGED_REGION(PyObject *ob) {
     return ob->ob_region;
 }
-#define Py_REGION_WITH_FLAGS(ob) Py_REGION_WITH_FLAGS(_PyObject_CAST(ob))
-#define REGION_SET_FLAG(ob, flag) (Py_SET_REGION_WITH_FLAGS(ob, Py_REGION_WITH_FLAGS(ob) | flag))
-#define REGION_GET_FLAG(ob, flag) (Py_REGION_WITH_FLAGS(ob) & flag)
-#define REGION_CLEAR_FLAG(ob, flag) (Py_SET_REGION_WITH_FLAGS(ob, Py_REGION_WITH_FLAGS(ob) & (~flag)))
+#define Py_TAGGED_REGION(ob) Py_TAGGED_REGION(_PyObject_CAST(ob))
+#define REGION_SET_TAG(ob, tag) (Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value | tag)))
+#define REGION_GET_TAG(ob, tag) (Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value & tag))
+#define REGION_CLEAR_TAG(ob, tag) (Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value & (~tag))))
 
 typedef struct regionmetadata regionmetadata;
 typedef struct PyRegionObject PyRegionObject;
@@ -42,8 +42,9 @@ bool invariant_error_occurred = false;
 
 /* This uses the given arguments to create and throw a `RegionError`
  */
-void throw_region_error(PyObject* src, PyObject* tgt,
-                        const char *format_str, PyObject *obj)
+static void throw_region_error(
+    PyObject* src, PyObject* tgt,
+    const char *format_str, PyObject *obj)
 {
     // Don't stomp existing exception
     PyThreadState *tstate = _PyThreadState_GET();
@@ -158,6 +159,7 @@ static bool stack_empty(stack* s){
     return s->head == NULL;
 }
 
+__attribute__((unused))
 static void stack_print(stack* s){
     node* n = s->head;
     while(n != NULL){
@@ -243,8 +245,8 @@ typedef struct _gc_runtime_state GCState;
 #define GC_PREV _PyGCHead_PREV
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
-#define IS_IMMUTABLE_REGION(r) ((Py_uintptr_t)r == _Py_IMMUTABLE)
-#define IS_DEFAULT_REGION(r) ((Py_uintptr_t)r == _Py_DEFAULT_REGION)
+#define IS_IMMUTABLE_REGION(r) ((Py_region_ptr_t)r == _Py_IMMUTABLE)
+#define IS_DEFAULT_REGION(r) ((Py_region_ptr_t)r == _Py_DEFAULT_REGION)
 
 /* A traversal callback for _Py_CheckRegionInvariant.
    - tgt is the target of the reference we are checking, and
@@ -776,7 +778,7 @@ typedef int (*handle_add_to_region_error)(regionerror *, void *);
  * This function borrows both arguments. The memory has to be managed
  * the caller.
  */
-static int emit_region_error(regionerror *error, void*) {
+static int emit_region_error(regionerror *error, void* ignored) {
     const char* msg = NULL;
 
     switch (error->id)
@@ -887,14 +889,8 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
 }
 
 /* This adds the given object and transitive objects to the given region.
- * Errors will be passed to the given `handle_error` function along with
- * the `handle_error_data`.
- *
- * The given region may contain flags. Objects from the local regions will
- * have their region replaced with the `flagged_region` value. This will
- * lose flags set on the local region.
  */
-static PyObject *add_to_region(PyObject *obj, Py_uintptr_t flagged_region)
+static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 {
     if (!obj) {
         Py_RETURN_NONE;
@@ -906,10 +902,6 @@ static PyObject *add_to_region(PyObject *obj, Py_uintptr_t flagged_region)
     if (_PyErr_Occurred(tstate)) {
         return NULL;
     }
-
-    // Make sure we check against the actual region and not the region
-    // plus magic flags
-    Py_uintptr_t region = flagged_region & Py_REGION_MASK;
 
     // The current implementation assumes region is a valid pointer. This
     // restriction can be lifted if needed
@@ -956,7 +948,7 @@ static PyObject *add_to_region(PyObject *obj, Py_uintptr_t flagged_region)
             // minus one for the reference we just followed
             region_data->lrc += item->ob_refcnt - 1;
             Py_SET_REGION(item, region);
-            
+
             // Add `info.src` for better error messages
             info.src = item;
 
@@ -997,7 +989,7 @@ static PyObject *add_to_region(PyObject *obj, Py_uintptr_t flagged_region)
 
 
 static bool is_bridge_object(PyObject *op) {
-    Py_uintptr_t region = Py_REGION(op);
+    Py_region_ptr_t region = Py_REGION(op);
     if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
         return false;
     }
@@ -1007,7 +999,7 @@ static bool is_bridge_object(PyObject *op) {
     // will use the properties of a bridge object. This therefore checks if
     // the object is equal to the regions bridge object rather than checking
     // that the type is `PyRegionObject`
-    return ((Py_uintptr_t)((regionmetadata*)region)->bridge == (Py_uintptr_t)op);
+    return ((Py_region_ptr_t)((regionmetadata*)region)->bridge == (Py_region_ptr_t)op);
 }
 
 __attribute__((unused))
@@ -1125,7 +1117,7 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     }
 
     // Make the region an owner of the bridge object
-    Py_SET_REGION(self, (Py_uintptr_t) self->metadata);
+    Py_SET_REGION(self, self->metadata);
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
     // FIXME: Usually this is created on the fly. We need to do it manually to
@@ -1185,7 +1177,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
     }
 
     regionmetadata* md = PyRegion_get_metadata(self);
-    if (Py_REGION(args) == (Py_uintptr_t) md) {
+    if (Py_REGION(args) == (Py_region_ptr_t) md) {
         Py_SET_REGION(args, _Py_DEFAULT_REGION);
         Py_RETURN_NONE;
     } else {

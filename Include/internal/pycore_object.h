@@ -24,11 +24,11 @@ extern "C" {
    are not supported pre-C++20. Thus, keeping an internal copy here is the most
    backwards compatible solution */
 #define _PyObject_HEAD_INIT(type) \
-    {                                     \
-        _PyObject_EXTRA_INIT              \
-        .ob_refcnt = _Py_IMMORTAL_REFCNT, \
-        .ob_type = (type),                \
-        .ob_region = _Py_DEFAULT_REGION   \
+    {                                                         \
+        _PyObject_EXTRA_INIT                                  \
+        .ob_refcnt = _Py_IMMORTAL_REFCNT,                     \
+        .ob_type = (type),                                    \
+        .ob_region = (Py_region_ptr_with_tags_t){_Py_DEFAULT_REGION} \
     },
 #define _PyVarObject_HEAD_INIT(type, size)    \
     {                                         \
@@ -96,7 +96,7 @@ static inline void _Py_ClearImmortal(PyObject *op)
 static inline void _Py_SetImmutable(PyObject *op)
 {
     if(op) {
-        op->ob_region = _Py_IMMUTABLE;
+        Py_SET_REGION(op, _Py_IMMUTABLE);
         // TODO once reference counting across regions is fully working
         // we no longer need to make all immutable objects immortal
         op->ob_refcnt = _Py_IMMORTAL_REFCNT;

@@ -11,7 +11,7 @@ extern "C" {
 
 #include "object.h"
 
-#define Py_CHECKWRITE(op) ((op) && Py_REGION(op) != _Py_IMMUTABLE)
+#define Py_CHECKWRITE(op) ((op) && !_Py_IsImmutable(op))
 #define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
 
 /* This makes the given objects and all object reachable from the given

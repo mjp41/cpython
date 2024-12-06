@@ -125,26 +125,43 @@ check by comparing the reference count field to the immortality reference count.
 #define _Py_IMMORTAL_REFCNT (UINT_MAX >> 2)
 #endif
 
-#define _Py_DEFAULT_REGION ((Py_uintptr_t)0)
-#define _Py_IMMUTABLE ((Py_uintptr_t)1)
+// This is only a typedef of `Py_uintptr_t` opposed to a custom typedef
+// to allow comparisons and make casts easier.
+typedef Py_uintptr_t Py_region_ptr_t;
+typedef struct { Py_uintptr_t value; } Py_region_ptr_with_tags_t;
+
+// This is the mask of all used bits to indicate the region.
+// this should be used when the region pointer was requested.
+// Macros for the individual flags are defined in regions.c.
+#define Py_REGION_MASK (~((Py_region_ptr_t)0x2))
+static inline Py_region_ptr_t Py_region_ptr(Py_region_ptr_with_tags_t tagged_region) {
+    return (Py_region_ptr_t)(tagged_region.value & Py_REGION_MASK);
+}
+
+static inline Py_region_ptr_with_tags_t Py_region_ptr_with_tags(Py_region_ptr_t region) {
+    return (Py_region_ptr_with_tags_t) { region };
+}
+
+#define _Py_DEFAULT_REGION ((Py_region_ptr_t)0)
+#define _Py_IMMUTABLE ((Py_region_ptr_t)1)
 
 // Make all internal uses of PyObject_HEAD_INIT immortal while preserving the
 // C-API expectation that the refcnt will be set to 1.
 #ifdef Py_BUILD_CORE
-#define PyObject_HEAD_INIT(type)    \
-    {                               \
-        _PyObject_EXTRA_INIT        \
-        { _Py_IMMORTAL_REFCNT },    \
-        (type),                     \
-        _Py_DEFAULT_REGION          \
+#define PyObject_HEAD_INIT(type)                 \
+    {                                            \
+        _PyObject_EXTRA_INIT                     \
+        { _Py_IMMORTAL_REFCNT },                 \
+        (type),                                  \
+        (Py_region_ptr_with_tags_t){_Py_DEFAULT_REGION} \
     },
 #else
-#define PyObject_HEAD_INIT(type) \
-    {                            \
-        _PyObject_EXTRA_INIT     \
-        { 1 },                   \
-        (type),                  \
-        _Py_DEFAULT_REGION       \
+#define PyObject_HEAD_INIT(type)                 \
+    {                                            \
+        _PyObject_EXTRA_INIT                     \
+        { 1 },                                   \
+        (type),                                  \
+        (Py_region_ptr_with_tags_t){_Py_DEFAULT_REGION} \
     },
 #endif /* Py_BUILD_CORE */
 
@@ -162,9 +179,6 @@ check by comparing the reference count field to the immortality reference count.
  */
 #define PyObject_VAR_HEAD      PyVarObject ob_base;
 #define Py_INVALID_SIZE (Py_ssize_t)-1
-
-typedef Py_uintptr_t Py_region_ptr;
-typedef Py_uintptr_t Py_region_ptr_with_flags;
 
 /* Nothing is actually declared to be a PyObject, but every pointer to
  * a Python object can be cast to a PyObject*.  This is inheritance built
@@ -200,7 +214,7 @@ struct _object {
     // Stolen bottom bits:
     // 1. Indicates the region type. A set flag indicates the immutable region.
     // 2. This flag is used for object traversal to indicate that it was visited.
-    Py_uintptr_t ob_region;
+    Py_region_ptr_with_tags_t ob_region;
 };
 
 /* Cast argument to PyObject* type. */
@@ -236,12 +250,9 @@ static inline PyTypeObject* Py_TYPE(PyObject *ob) {
 #  define Py_TYPE(ob) Py_TYPE(_PyObject_CAST(ob))
 #endif
 
-// This is the mask of all used bits to indicate the region.
-// this should be used when the region pointer was requested.
-// Macros for the individual flags are defined in regions.c.
-#define Py_REGION_MASK (~((Py_uintptr_t)0x2))
-static inline Py_uintptr_t Py_REGION(PyObject *ob) {
-    return (ob->ob_region & Py_REGION_MASK);
+
+static inline Py_region_ptr_t Py_REGION(PyObject *ob) {
+    return Py_region_ptr(ob->ob_region);
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_REGION(ob) Py_REGION(_PyObject_CAST(ob))
@@ -322,19 +333,18 @@ static inline void Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 #  define Py_SET_SIZE(ob, size) Py_SET_SIZE(_PyVarObject_CAST(ob), (size))
 #endif
 
-static inline void Py_SET_REGION(PyObject *ob, Py_uintptr_t region) {
-    // Retain the old flags
-    ob->ob_region = (region & Py_REGION_MASK) | (ob->ob_region & (~Py_REGION_MASK));
+static inline void Py_SET_REGION(PyObject *ob, Py_region_ptr_t region) {
+    ob->ob_region = Py_region_ptr_with_tags(region & Py_REGION_MASK);
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), (region))
+#  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), _Py_CAST(Py_region_ptr_t, (region)))
 #endif
 
-static inline void Py_SET_REGION_WITH_FLAGS(PyObject *ob, Py_uintptr_t region) {
+static inline void Py_SET_TAGGED_REGION(PyObject *ob, Py_region_ptr_with_tags_t region) {
     ob->ob_region = region;
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_SET_REGION_WITH_FLAGS(ob, region) Py_SET_REGION_WITH_FLAGS(_PyObject_CAST(ob), (region))
+#  define Py_SET_TAGGED_REGION(ob, region) Py_SET_REGION_WITH_FLAGS(_PyObject_CAST(ob), (region))
 #endif
 
 /*
