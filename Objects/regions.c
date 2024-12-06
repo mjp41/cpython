@@ -53,7 +53,7 @@ typedef struct stack_s {
     node* head;
 } stack;
 
-stack* stack_new(void){
+static stack* stack_new(void){
     stack* s = (stack*)malloc(sizeof(stack));
     if(s == NULL){
         return NULL;
@@ -64,7 +64,7 @@ stack* stack_new(void){
     return s;
 }
 
-bool stack_push(stack* s, PyObject* object){
+static bool stack_push(stack* s, PyObject* object){
     node* n = (node*)malloc(sizeof(node));
     if(n == NULL){
         Py_DECREF(object);
@@ -78,7 +78,7 @@ bool stack_push(stack* s, PyObject* object){
     return false;
 }
 
-PyObject* stack_pop(stack* s){
+static PyObject* stack_pop(stack* s){
     if(s->head == NULL){
         return NULL;
     }
@@ -91,7 +91,7 @@ PyObject* stack_pop(stack* s){
     return object;
 }
 
-void stack_free(stack* s){
+static void stack_free(stack* s){
     while(s->head != NULL){
         PyObject* op = stack_pop(s);
         Py_DECREF(op);
@@ -100,18 +100,18 @@ void stack_free(stack* s){
     free(s);
 }
 
-bool stack_empty(stack* s){
+static bool stack_empty(stack* s){
     return s->head == NULL;
 }
 
-void stack_print(stack* s){
+static void stack_print(stack* s){
     node* n = s->head;
     while(n != NULL){
         n = n->next;
     }
 }
 
-bool is_c_wrapper(PyObject* obj){
+static bool is_c_wrapper(PyObject* obj){
     return PyCFunction_Check(obj) || Py_IS_TYPE(obj, &_PyMethodWrapper_Type) || Py_IS_TYPE(obj, &PyWrapperDescr_Type);
 }
 
@@ -339,7 +339,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
     } \
 } while(0)
 
-PyObject* make_global_immutable(PyObject* globals, PyObject* name)
+static PyObject* make_global_immutable(PyObject* globals, PyObject* name)
 {
     PyObject* value = PyDict_GetItem(globals, name); // value.rc = x
 
@@ -364,7 +364,7 @@ PyObject* make_global_immutable(PyObject* globals, PyObject* name)
  * just those, and prevent those keys from being updated in the global dictionary
  * from this point onwards.
  */
-PyObject* walk_function(PyObject* op, stack* frontier)
+static PyObject* walk_function(PyObject* op, stack* frontier)
 {
     PyObject* builtins;
     PyObject* globals;
@@ -561,7 +561,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     }                                                  \
 } while(0)
 
-int _makeimmutable_visit(PyObject* obj, void* frontier)
+static int _makeimmutable_visit(PyObject* obj, void* frontier)
 {
     if(!_Py_IsImmutable(obj)){
         if(stack_push((stack*)frontier, obj)){
