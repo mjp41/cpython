@@ -2770,7 +2770,7 @@ Make 'obj' and its entire reachable object graph immutable.
 
 static PyObject *
 builtin_makeimmutable(PyObject *module, PyObject *obj)
-/*[clinic end generated code: output=4e665122542dfd24 input=21a50256fa4fb099]*/
+/*[clinic end generated code: output=4e665122542dfd24 input=bec4cf1797c848d4]*/
 {
     return Py_MakeImmutable(obj);
 }

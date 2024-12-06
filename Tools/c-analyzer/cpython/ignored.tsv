@@ -306,6 +306,8 @@ Modules/timemodule.c	init_timezone	YEAR	-
 Objects/bytearrayobject.c	-	_PyByteArray_empty_string	-
 Objects/complexobject.c	-	c_1	-
 Objects/exceptions.c	-	static_exceptions	-
+Objects/exceptions.c	-	_PyExc_NotWriteableError	-
+Objects/exceptions.c	-	PyExc_NotWriteableError	-
 Objects/genobject.c	-	ASYNC_GEN_IGNORED_EXIT_MSG	-
 Objects/genobject.c	-	NON_INIT_CORO_MSG	-
 Objects/longobject.c	-	_PyLong_DigitValue	-

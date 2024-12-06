@@ -1423,8 +1423,8 @@ PyDoc_STRVAR(builtin_makeimmutable__doc__,
 "makeimmutable($module, obj, /)\n"
 "--\n"
 "\n"
-"Make \'obj\' and its entire graph immutable.");
+"Make \'obj\' and its entire reachable object graph immutable.");
 
 #define BUILTIN_MAKEIMMUTABLE_METHODDEF    \
     {"makeimmutable", (PyCFunction)builtin_makeimmutable, METH_O, builtin_makeimmutable__doc__},
-/*[clinic end generated code: output=356f1513888beba0 input=a9049054013a1b77]*/
+/*[clinic end generated code: output=fd970a348a6896e0 input=a9049054013a1b77]*/
