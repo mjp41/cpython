@@ -36,7 +36,7 @@ struct regionmetadata {
     regionmetadata* next;
 };
 
-bool is_bridge_object(PyObject *op);
+static bool is_bridge_object(PyObject *op);
 static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
 static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj);
 
