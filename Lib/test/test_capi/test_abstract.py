@@ -116,7 +116,7 @@ class CAPITest(unittest.TestCase):
         self.assertRaises(RuntimeError, xsetattr, obj, 'evil', NULL)
 
         self.assertRaises(RuntimeError, xsetattr, obj, 'evil', 'good')
-        self.assertRaises(NotWriteableError, xsetattr, 42, 'a', 5)
+        self.assertRaises(AttributeError, xsetattr, 42, 'a', 5)
         self.assertRaises(TypeError, xsetattr, obj, 1, 5)
         # CRASHES xsetattr(obj, NULL, 5)
         # CRASHES xsetattr(NULL, 'a', 5)
@@ -136,7 +136,7 @@ class CAPITest(unittest.TestCase):
         self.assertRaises(RuntimeError, setattrstring, obj, b'evil', NULL)
 
         self.assertRaises(RuntimeError, setattrstring, obj, b'evil', 'good')
-        self.assertRaises(NotWriteableError, setattrstring, 42, b'a', 5)
+        self.assertRaises(AttributeError, setattrstring, 42, b'a', 5)
         self.assertRaises(TypeError, setattrstring, obj, 1, 5)
         self.assertRaises(UnicodeDecodeError, setattrstring, obj, b'\xff', 5)
         # CRASHES setattrstring(obj, NULL, 5)
@@ -153,7 +153,7 @@ class CAPITest(unittest.TestCase):
         xdelattr(obj, '\U0001f40d')
         self.assertFalse(hasattr(obj, '\U0001f40d'))
 
-        self.assertRaises(NotWriteableError, xdelattr, 42, 'numerator')
+        self.assertRaises(AttributeError, xdelattr, 42, 'numerator')
         self.assertRaises(RuntimeError, xdelattr, obj, 'evil')
         self.assertRaises(TypeError, xdelattr, obj, 1)
         # CRASHES xdelattr(obj, NULL)
@@ -170,7 +170,7 @@ class CAPITest(unittest.TestCase):
         delattrstring(obj, '\U0001f40d'.encode())
         self.assertFalse(hasattr(obj, '\U0001f40d'))
 
-        self.assertRaises(NotWriteableError, delattrstring, 42, b'numerator')
+        self.assertRaises(AttributeError, delattrstring, 42, b'numerator')
         self.assertRaises(RuntimeError, delattrstring, obj, b'evil')
         self.assertRaises(UnicodeDecodeError, delattrstring, obj, b'\xff')
         # CRASHES delattrstring(obj, NULL)
