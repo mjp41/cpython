@@ -714,3 +714,19 @@ Modules/expat/xmlrole.c	-	error	-
 ## other
 Modules/_io/_iomodule.c	-	_PyIO_Module	-
 Modules/_sqlite/module.c	-	_sqlite3module	-
+
+## Region Type Info this is constant
+## Why do we have three of these?  Surely it should just be in one file?
+## Probably a bug in the analysis as they are listed as extern in two of the files.
+Objects/object.c	-	PyRegion_Type	-
+Objects/regions.c	-	PyRegion_Type	-
+Python/bltinmodule.c 	-	PyRegion_Type	-
+
+## Regions Debug Info for Invariant
+## Not to remain global, and should become localised to an interpreter
+Objects/regions.c	-	do_region_check	-
+Objects/regions.c	-	error_src	-
+Objects/regions.c	-	error_tgt	-
+Objects/regions.c	-	error_occurred	-
+Objects/regions.c	-	captured	-
+
