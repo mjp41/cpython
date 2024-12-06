@@ -137,7 +137,7 @@ regionmetadata* captured = CAPTURED_SENTINEL;
 /**
  * Enable the region check.
  */
-void notify_regions_in_use(void)
+static void notify_regions_in_use(void)
 {
     // Do not re-enable, if we have detected a fault.
     if (!error_occurred)
@@ -162,7 +162,7 @@ PyObject* _Py_EnableInvariant(void)
  * Set the global variables for a failure.
  * This allows the interpreter to inspect what has failed.
  */
-void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
+static void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
 {
     Py_DecRef(error_src);
     Py_IncRef(src);
@@ -247,7 +247,7 @@ visit_invariant_check(PyObject *tgt, void *src_void)
     return 0;
 }
 
-void invariant_reset_captured_list(void) {
+static void invariant_reset_captured_list(void) {
     // Reset the captured list
     while (captured != CAPTURED_SENTINEL) {
         regionmetadata* m = captured;
@@ -670,7 +670,7 @@ next:
     Py_RETURN_NONE;
 }
 
-bool is_bridge_object(PyObject *op) {
+static bool is_bridge_object(PyObject *op) {
     Py_uintptr_t region = Py_GET_REGION(op);
     if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
         return false;
