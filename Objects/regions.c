@@ -17,8 +17,9 @@ static inline Py_region_ptr_with_tags_t Py_TAGGED_REGION(PyObject *ob) {
 }
 #define Py_TAGGED_REGION(ob) Py_TAGGED_REGION(_PyObject_CAST(ob))
 #define REGION_SET_TAG(ob, tag) (Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value | tag)))
-#define REGION_GET_TAG(ob, tag) (Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value & tag))
+#define REGION_GET_TAG(ob, tag) (Py_TAGGED_REGION(ob).value & tag)
 #define REGION_CLEAR_TAG(ob, tag) (Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value & (~tag))))
+#define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
 
 typedef struct regionmetadata regionmetadata;
 typedef struct PyRegionObject PyRegionObject;
@@ -122,6 +123,8 @@ static stack* stack_new(void){
 static bool stack_push(stack* s, PyObject* object){
     node* n = (node*)malloc(sizeof(node));
     if(n == NULL){
+        // FIXME: This DECREF should only be used by MakeImmutable, since
+        // `add_to_region` and other functions only use weak refs.
         Py_DECREF(object);
         // Should we also free the stack?
         return true;
@@ -256,8 +259,8 @@ static int
 visit_invariant_check(PyObject *tgt, void *src_void)
 {
     PyObject *src = _PyObject_CAST(src_void);
-    regionmetadata* src_region = (regionmetadata*) Py_REGION(src);
-    regionmetadata* tgt_region = (regionmetadata*) Py_REGION(tgt);
+    regionmetadata* src_region = Py_REGION_DATA(src);
+    regionmetadata* tgt_region = Py_REGION_DATA(tgt);
      // Internal references are always allowed
     if (src_region == tgt_region)
         return 0;
@@ -285,7 +288,7 @@ visit_invariant_check(PyObject *tgt, void *src_void)
         return 0;
     }
     // Forbid cycles in the region topology
-    if (regionmetadata_has_ancestor((regionmetadata*)src_region, (regionmetadata*)tgt_region)) {
+    if (regionmetadata_has_ancestor(src_region, tgt_region)) {
         emit_invariant_error(src, tgt, "Regions create a cycle with subregions");
         return 0;
     }
@@ -825,18 +828,35 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
         return 0;
     }
 
-    // If the object is already in our region, we don't need to traverse it
-    if (Py_REGION(target) == Py_REGION(info->src)) {
-        return 0;
-    }
-
     // C wrappers can propergate through the entire system and draw
     // in a lot of unwanted objects. Since c wrappers don't have mutable
     // data, we just make it immutable and have the immutability impl
     // handle it. We then have an edge from our region to an immutable
     // object which is again valid.
-    if(is_c_wrapper(target)) {
+    if (is_c_wrapper(target)) {
         _Py_MakeImmutable(target);
+        return 0;
+    }
+
+    if (_Py_IsLocal(target)) {
+        // Add reference to the object,
+        // minus one for the reference we just followed
+        Py_REGION_DATA(info->src)->lrc += target->ob_refcnt - 1;
+        Py_SET_REGION(target, Py_REGION(info->src));
+
+        if (stack_push(info->pending, target)) {
+            PyErr_NoMemory();
+            return -1;
+        }
+        return 0;
+    }
+
+    // The item was previously in the local region but has already been
+    // added to the region by a previous iteration. We therefore only need
+    // to adjust the LRC
+    if (Py_REGION(target) == Py_REGION(info->src)) {
+        // -1 for the refernce we just followed
+        Py_REGION_DATA(target)->lrc -= 1;
         return 0;
     }
 
@@ -865,7 +885,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
 
     // The target is a bridge object from another region. We now need to
     // if it already has a parent.
-    regionmetadata *target_region = _Py_CAST(regionmetadata *, Py_REGION(target));
+    regionmetadata *target_region = Py_REGION_DATA(target);
     if (target_region->parent != NULL) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_SHARED_CUSTODY};
@@ -873,8 +893,8 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     }
 
     // Make sure that the new subregion relation won't create a cycle
-    regionmetadata* region = _Py_CAST(regionmetadata*, Py_REGION(info->src));
-    if (regionmetadata_has_ancestor(target_region, region)) {
+    regionmetadata* region = Py_REGION_DATA(info->src);
+    if (regionmetadata_has_ancestor(region, target_region)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_CYCLE_CREATION};
         return ((info->handle_error)(&err, info->handle_error_data));
@@ -886,6 +906,33 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     target_region->parent = region;
 
     return 0;
+}
+
+// This function visits all outgoing reference from `item` including the
+// type. It will return `false` if the operation failed.
+static int visit_object(PyObject *item, visitproc visit, void* info) {
+    if (PyFunction_Check(item)) {
+        // FIXME: This is a temporary error. It should be replaced by
+        // proper handling of moving the function into the region
+        regionerror err = {.src = NULL,
+            .tgt = item, .id = ERR_WIP_FUNCTIONS };
+        emit_region_error(&err, NULL);
+        return false;
+    } else {
+        PyTypeObject *type = Py_TYPE(item);
+        traverseproc traverse = type->tp_traverse;
+        if (traverse != NULL) {
+            if (traverse(item, visit, info)) {
+                return false;
+            }
+        }
+    }
+
+    // Visit the type manually, since it's not included in the normal
+    // `tp_treverse`.
+    PyObject* type_ob = _PyObject_CAST(Py_TYPE(item));
+    // Visit will return 0 if everything was okayw
+    return ((visit)(type_ob, info) == 0);
 }
 
 /* This adds the given object and transitive objects to the given region.
@@ -934,51 +981,12 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
     while (!stack_empty(info.pending)) {
         PyObject *item = stack_pop(info.pending);
 
-        // The item was previously in the local region but has already been
-        // added to the region by a previous iteration. We therefore only need
-        // to adjust the LRC
-        if (Py_REGION(item) == region) {
-            // -1 for the refernce we just followed
-            region_data->lrc -= 1;
-            continue;
-        }
+        // Add `info.src` for better error messages
+        info.src = item;
 
-        if (IS_DEFAULT_REGION(Py_REGION(item))) {
-            // Add reference to the object,
-            // minus one for the reference we just followed
-            region_data->lrc += item->ob_refcnt - 1;
-            Py_SET_REGION(item, region);
-
-            // Add `info.src` for better error messages
-            info.src = item;
-
-            if (PyFunction_Check(item)) {
-                // FIXME: This is a temporary error. It should be replaced by
-                // proper handling of moving the function into the region
-                regionerror err = {.src = _PyObject_CAST(region_data->bridge),
-                    .tgt = item, .id = ERR_WIP_FUNCTIONS };
-                emit_region_error(&err, NULL);
-            } else {
-                PyTypeObject *type = Py_TYPE(item);
-                traverseproc traverse = type->tp_traverse;
-                if (traverse != NULL) {
-                    if (traverse(item, (visitproc)_add_to_region_visit, &info)) {
-                        stack_free(info.pending);
-                        return NULL;
-                    }
-                }
-            }
-
-            PyObject* type_op = _PyObject_CAST(Py_TYPE(item));
-            if (Py_REGION(type_op) != region && !_Py_IsImmutable(type_op)) {
-                if (stack_push(info.pending, type_op))
-                {
-                    stack_free(info.pending);
-                    return PyErr_NoMemory();
-                }
-            }
-
-            continue;
+        if (!visit_object(item, (visitproc)_add_to_region_visit, &info)) {
+            stack_free(info.pending);
+            return NULL;
         }
     }
 
@@ -1099,6 +1107,10 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
 
     static char *kwlist[] = {"name", NULL};
     self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
+    if (!self->metadata) {
+        PyErr_NoMemory();
+        return -1;
+    }
     self->metadata->bridge = self;
     self->name = NULL;
 

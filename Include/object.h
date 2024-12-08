@@ -344,7 +344,7 @@ static inline void Py_SET_TAGGED_REGION(PyObject *ob, Py_region_ptr_with_tags_t 
     ob->ob_region = region;
 }
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_SET_TAGGED_REGION(ob, region) Py_SET_REGION_WITH_FLAGS(_PyObject_CAST(ob), (region))
+#  define Py_SET_TAGGED_REGION(ob, region) Py_SET_TAGGED_REGION(_PyObject_CAST(ob), (region))
 #endif
 
 /*
