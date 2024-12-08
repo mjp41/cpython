@@ -2636,6 +2636,7 @@ _Py_Dealloc(PyObject *op)
 {
     PyTypeObject *type = Py_TYPE(op);
     destructor dealloc = type->tp_dealloc;
+    Py_SET_REGION(op, _Py_DEFAULT_REGION);
 #ifdef Py_DEBUG
     PyThreadState *tstate = _PyThreadState_GET();
     PyObject *old_exc = tstate != NULL ? tstate->current_exception : NULL;

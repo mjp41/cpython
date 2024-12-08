@@ -14,6 +14,18 @@ extern "C" {
 #define Py_CHECKWRITE(op) ((op) && !_Py_IsImmutable(op))
 #define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
 
+void _Py_SET_TAGGED_REGION(PyObject *ob, Py_region_ptr_with_tags_t region);
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_SET_TAGGED_REGION(ob, region) _Py_SET_TAGGED_REGION(_PyObject_CAST(ob), (region))
+#endif
+
+static inline void Py_SET_REGION(PyObject *ob, Py_region_ptr_t region) {
+    _Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(region & Py_REGION_MASK));
+}
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
+#  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), _Py_CAST(Py_region_ptr_t, (region)))
+#endif
+
 /* This makes the given objects and all object reachable from the given
  * object immutable. This will also move the objects into the immutable
  * region.

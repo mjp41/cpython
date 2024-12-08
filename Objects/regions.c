@@ -81,8 +81,12 @@ struct PyRegionObject {
 };
 
 struct regionmetadata {
-    int lrc;  // Integer field for "local reference count"
-    int osc;  // Integer field for "open subregion count"
+    // The number of references coming in from the local region.
+    PY_UINT32_T lrc;
+    // The number of open subregions.
+    PY_UINT32_T osc;
+    // The number of objects inside this region.
+    PY_UINT32_T rc;
     int is_open;
     regionmetadata* parent;
     PyRegionObject* bridge;
@@ -97,6 +101,24 @@ struct regionmetadata {
 static bool is_bridge_object(PyObject *op);
 static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
 static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj);
+static void regionmetadata_inc_rc(regionmetadata* self);
+static void regionmetadata_dec_rc(regionmetadata* self);
+
+void _Py_SET_TAGGED_REGION(PyObject *ob, Py_region_ptr_with_tags_t region) {
+    if (!(_Py_IsLocal(ob) || _Py_IsImmutable(ob))) {
+        regionmetadata* old_region = Py_REGION_DATA(ob);
+        old_region->rc -= 1;
+
+        regionmetadata_dec_rc(old_region);
+    }
+
+    ob->ob_region = region;
+
+    if (!_Py_IsLocal(ob) && !_Py_IsImmutable(ob)) {
+        regionmetadata* new_region = Py_REGION_DATA(ob);
+        regionmetadata_inc_rc(new_region);
+    }
+}
 
 /**
  * Simple implementation of stack for tracing during make immutable.
@@ -1012,6 +1034,21 @@ static bool is_bridge_object(PyObject *op) {
     return ((Py_region_ptr_t)((regionmetadata*)region)->bridge == (Py_region_ptr_t)op);
 }
 
+void regionmetadata_inc_rc(regionmetadata* self)
+{
+    self->rc += 1;
+}
+
+void regionmetadata_dec_rc(regionmetadata* self)
+{
+    self->rc -= 1;
+    if (self->rc == 0) {
+        Py_XDECREF(self->metadata->name);
+        self->metadata->name = NULL;
+        free(self);
+    }
+}
+
 __attribute__((unused))
 static void regionmetadata_inc_lrc(regionmetadata* data) {
     data->lrc += 1;
@@ -1083,9 +1120,13 @@ static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
 
 static void PyRegion_dealloc(PyRegionObject *self) {
     // Name is immutable and not in our region.
-    Py_XDECREF(self->metadata->name);
-    self->metadata->name = NULL;
+
     self->metadata->bridge = NULL;
+    regionmetadata_dec_rc(self->metadata);
+    self->metadata = NULL;
+
+    // The region should be cleared by pythons general deallocator.
+    assert(Py_REGION(self) == _Py_DEFAULT_REGION);
 
     // The dictionary can be NULL if the Region constructor crashed
     if (self->dict) {
@@ -1098,9 +1139,6 @@ static void PyRegion_dealloc(PyRegionObject *self) {
     }
 
     PyObject_GC_UnTrack((PyObject *)self);
-
-    // The lifetimes are joined for now
-    free(self->metadata);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1113,7 +1151,17 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         PyErr_NoMemory();
         return -1;
     }
+
+    // Make sure the internal reference is also counted.
+    regionmetadata_inc_rc(self->metadata);
+
     self->metadata->bridge = self;
+
+    // Make the region an owner of the bridge object
+    Py_SET_REGION(self, self->metadata);
+
+    // Freeze the region type to share it with other regions
+    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->metadata->name))
         return -1;
@@ -1128,10 +1176,6 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         // FIXME: Implicit freezing should take care of this instead
         _Py_MakeImmutable(self->metadata->name);
     }
-
-    // Make the region an owner of the bridge object
-    Py_SET_REGION(self, self->metadata);
-    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
     return 0;
 }

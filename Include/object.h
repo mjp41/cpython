@@ -338,20 +338,6 @@ static inline void Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
 #  define Py_SET_SIZE(ob, size) Py_SET_SIZE(_PyVarObject_CAST(ob), (size))
 #endif
 
-static inline void Py_SET_REGION(PyObject *ob, Py_region_ptr_t region) {
-    ob->ob_region = Py_region_ptr_with_tags(region & Py_REGION_MASK);
-}
-#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_SET_REGION(ob, region) Py_SET_REGION(_PyObject_CAST(ob), _Py_CAST(Py_region_ptr_t, (region)))
-#endif
-
-static inline void Py_SET_TAGGED_REGION(PyObject *ob, Py_region_ptr_with_tags_t region) {
-    ob->ob_region = region;
-}
-#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_SET_TAGGED_REGION(ob, region) Py_SET_TAGGED_REGION(_PyObject_CAST(ob), (region))
-#endif
-
 /*
 Type objects contain a string containing the type name (to help somewhat
 in debugging), the allocation parameters (see PyObject_New() and
