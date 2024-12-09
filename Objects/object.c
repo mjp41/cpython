@@ -1918,7 +1918,7 @@ PyObject _Py_NoneStruct = {
     _PyObject_EXTRA_INIT
     { _Py_IMMORTAL_REFCNT },
     &_PyNone_Type,
-    _Py_IMMUTABLE
+    (Py_region_ptr_with_tags_t){_Py_IMMUTABLE}
 };
 
 /* NotImplemented is an object that can be used to signal that an

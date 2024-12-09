@@ -272,6 +272,7 @@ SYMBOL_NAMES = (
     "PyExc_ProcessLookupError",
     "PyExc_RecursionError",
     "PyExc_ReferenceError",
+    "PyExc_RegionError",
     "PyExc_ResourceWarning",
     "PyExc_RuntimeError",
     "PyExc_RuntimeWarning",

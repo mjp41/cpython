@@ -2409,3 +2409,5 @@
 
 [data.PyExc_NotWriteableError]
     added = '4.0'
+[data.PyExc_RegionError]
+    added = '4.0'

@@ -138,6 +138,7 @@ PYTHON2_EXCEPTIONS = (
     "UserWarning",
     "ValueError",
     "NotWriteableError",
+    "RegionError",
     "Warning",
     "ZeroDivisionError",
 )

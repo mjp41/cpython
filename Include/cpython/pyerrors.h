@@ -82,6 +82,12 @@ typedef struct {
     PyObject *name;
 } PyAttributeErrorObject;
 
+typedef struct {
+    PyException_HEAD
+    PyObject *source;
+    PyObject *target;
+} PyRegionErrorObject;
+
 /* Compatibility typedefs */
 typedef PyOSErrorObject PyEnvironmentErrorObject;
 #ifdef MS_WINDOWS

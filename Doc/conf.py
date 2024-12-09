@@ -200,6 +200,7 @@ nitpick_ignore += [
     ('c:data', 'PyExc_ProcessLookupError'),
     ('c:data', 'PyExc_RecursionError'),
     ('c:data', 'PyExc_ReferenceError'),
+    ('c:data', 'PyExc_RegionError'),
     ('c:data', 'PyExc_RuntimeError'),
     ('c:data', 'PyExc_StopAsyncIteration'),
     ('c:data', 'PyExc_StopIteration'),
