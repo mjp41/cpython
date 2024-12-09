@@ -119,9 +119,11 @@ As a consequence of this, split keys have a maximum size of 16.
 #include "pycore_dict.h"          // PyDictKeysObject
 #include "pycore_gc.h"            // _PyObject_GC_IS_TRACKED()
 #include "pycore_object.h"        // _PyObject_GC_TRACK()
+#include "pycore_regions.h"        // _PyObject_GC_TRACK()
 #include "pycore_pyerrors.h"      // _PyErr_GetRaisedException()
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "stringlib/eq.h"         // unicode_eq()
+#include "regions.h"              // Py_IsImmutable()
 
 #include <stdbool.h>
 
@@ -5769,7 +5771,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
             dict = make_dict_from_instance_attributes(
                     interp, CACHED_KEYS(tp), values);
             if (dict != NULL) {
-                if (_Py_IsImmutable(obj)) {
+                if (Py_IsImmutable(obj)) {
                     _Py_SetImmutable(dict);
                 }
                 else {
@@ -5783,7 +5785,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
             if (dict == NULL) {
                 dictkeys_incref(CACHED_KEYS(tp));
                 dict = new_dict_with_shared_keys(interp, CACHED_KEYS(tp));
-                if (_Py_IsImmutable(obj)) {
+                if (Py_IsImmutable(obj)) {
                     _Py_SetImmutable(dict);
                 }
                 else {
@@ -5811,7 +5813,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
             else {
                 dict = PyDict_New();
             }
-            if (_Py_IsImmutable(obj)) {
+            if (Py_IsImmutable(obj)) {
                 _Py_SetImmutable(dict);
             }
             else {

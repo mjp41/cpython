@@ -211,9 +211,6 @@ struct _object {
 
     PyTypeObject *ob_type;
     // VeronaPy: Field used for tracking which region this objects is stored in.
-    // Stolen bottom bits:
-    // 1. Indicates the region type. A set flag indicates the immutable region.
-    // 2. This flag is used for object traversal to indicate that it was visited.
     Py_region_ptr_with_tags_t ob_region;
 };
 
@@ -251,13 +248,6 @@ static inline PyTypeObject* Py_TYPE(PyObject *ob) {
 #endif
 
 
-static inline Py_region_ptr_t Py_REGION(PyObject *ob) {
-    return Py_region_ptr(ob->ob_region);
-}
-#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
-#  define Py_REGION(ob) Py_REGION(_PyObject_CAST(ob))
-#endif
-
 PyAPI_DATA(PyTypeObject) PyLong_Type;
 PyAPI_DATA(PyTypeObject) PyBool_Type;
 
@@ -288,24 +278,6 @@ static inline int Py_IS_TYPE(PyObject *ob, PyTypeObject *type) {
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_IS_TYPE(ob, type) Py_IS_TYPE(_PyObject_CAST(ob), (type))
 #endif
-
-static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
-{
-    return Py_REGION(op) == _Py_IMMUTABLE;
-}
-#define _Py_IsImmutable(op) _Py_IsImmutable(_PyObject_CAST(op))
-
-static inline Py_ALWAYS_INLINE int _Py_IsLocal(PyObject *op)
-{
-    return Py_REGION(op) == _Py_LOCAL_REGION;
-}
-#define _Py_IsLocal(op) _Py_IsLocal(_PyObject_CAST(op))
-
-static inline Py_ALWAYS_INLINE int _Py_IsCown(PyObject *op)
-{
-    return 0; // TODO: implement this when cowns are added
-}
-#define _Py_IsCown(op) _Py_IsCown(_PyObject_CAST(op))
 
 static inline void Py_SET_REFCNT(PyObject *ob, Py_ssize_t refcnt) {
     // This immortal check is for code that is unaware of immortal objects.

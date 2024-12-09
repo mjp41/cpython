@@ -11,8 +11,9 @@
 #include "pycore_pystate.h"       // _PyThreadState_GET()
 #include "pycore_tuple.h"         // _PyTuple_FromArray()
 #include "pycore_ceval.h"         // _PyEval_Vector()
-#include "pycore_regions.h"      // _Py_IMMUTABLE
+#include "pycore_regions.h"       // _Py_IMMUTABLE, PY_REGION()
 #include "pycore_dict.h"          // _PyDict_SetGlobalImmutable()
+#include "regions.h"              // Py_IsImmutable()
 
 #include "clinic/bltinmodule.c.h"
 
@@ -2755,7 +2756,7 @@ builtin_isimmutable(PyObject *module, PyObject *obj)
     _Py_VPYDBG("isimmutable(");
     _Py_VPYDBGPRINT(obj);
     _Py_VPYDBG(") region: %lu\n", Py_REGION(obj));
-    return PyBool_FromLong(_Py_IsImmutable(obj));
+    return PyBool_FromLong(Py_IsImmutable(obj));
 }
 
 
