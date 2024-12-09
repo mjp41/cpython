@@ -121,7 +121,6 @@ PyAPI_DATA(PyObject *) PyExc_UnicodeDecodeError;
 PyAPI_DATA(PyObject *) PyExc_UnicodeTranslateError;
 PyAPI_DATA(PyObject *) PyExc_ValueError;
 PyAPI_DATA(PyObject *) PyExc_ZeroDivisionError;
-PyAPI_DATA(PyObject *) PyExc_NotWriteableError;
 
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 >= 0x03030000
 PyAPI_DATA(PyObject *) PyExc_BlockingIOError;
@@ -141,6 +140,12 @@ PyAPI_DATA(PyObject *) PyExc_ProcessLookupError;
 PyAPI_DATA(PyObject *) PyExc_TimeoutError;
 #endif
 
+/* Pyrona Exceptions */
+PyAPI_DATA(PyObject *) PyExc_NotWriteableError;
+// FIXME(xFrednet): We probably want finer error granualrity
+// to destinqush the kind of error and if the system is in a
+// valid state after the execption.
+PyAPI_DATA(PyObject *) PyExc_RegionError;
 
 /* Compatibility aliases */
 PyAPI_DATA(PyObject *) PyExc_EnvironmentError;

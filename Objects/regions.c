@@ -9,6 +9,17 @@
 #include "pycore_interp.h"
 #include "pycore_object.h"
 #include "pycore_regions.h"
+#include "pycore_pyerrors.h"
+
+#define Py_REGION_VISITED_FLAG ((Py_region_ptr_t)0x2)
+static inline Py_region_ptr_with_tags_t Py_TAGGED_REGION(PyObject *ob) {
+    return ob->ob_region;
+}
+#define Py_TAGGED_REGION(ob) Py_TAGGED_REGION(_PyObject_CAST(ob))
+#define REGION_SET_TAG(ob, tag) (Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value | tag)))
+#define REGION_GET_TAG(ob, tag) (Py_TAGGED_REGION(ob).value & tag)
+#define REGION_CLEAR_TAG(ob, tag) (Py_SET_TAGGED_REGION(ob, Py_region_ptr_with_tags(Py_TAGGED_REGION(ob).value & (~tag))))
+#define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
 
 typedef struct regionmetadata regionmetadata;
 typedef struct PyRegionObject PyRegionObject;
@@ -17,6 +28,51 @@ static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
 static const char *get_region_name(PyObject* obj);
 #define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
+
+/**
+ * Global status for performing the region check.
+ */
+bool invariant_do_region_check = false;
+
+// The src object for an edge that invalidated the invariant.
+PyObject* invariant_error_src = Py_None;
+
+// The tgt object for an edge that invalidated the invariant.
+PyObject* invariant_error_tgt = Py_None;
+
+// Once an error has occurred this is used to surpress further checking
+bool invariant_error_occurred = false;
+
+/* This uses the given arguments to create and throw a `RegionError`
+ */
+static void throw_region_error(
+    PyObject* src, PyObject* tgt,
+    const char *format_str, PyObject *obj)
+{
+    // Don't stomp existing exception
+    PyThreadState *tstate = _PyThreadState_GET();
+    assert(tstate && "_PyThreadState_GET documentation says it's not safe, when?");
+    if (_PyErr_Occurred(tstate)) {
+        return;
+    }
+
+    // This disables the invariance check, as it could otherwise emit a runtime
+    // error before the emitted `RegionError` could be handled.
+    invariant_do_region_check = false;
+    invariant_error_occurred = true;
+
+    // Create the error, this sets the error value in `tstate`
+    PyErr_Format(PyExc_RegionError, format_str, obj);
+
+    // Set source and target fields
+    PyRegionErrorObject* exc = _Py_CAST(PyRegionErrorObject*,
+                                        PyErr_GetRaisedException());
+    Py_XINCREF(src);
+    exc->source = src;
+    Py_XINCREF(tgt);
+    exc->target = tgt;
+    PyErr_SetRaisedException(_PyObject_CAST(exc));
+}
 
 struct PyRegionObject {
     PyObject_HEAD
@@ -38,7 +94,7 @@ struct regionmetadata {
     regionmetadata* next;
 };
 
-bool is_bridge_object(PyObject *op);
+static bool is_bridge_object(PyObject *op);
 static int regionmetadata_has_ancestor(regionmetadata* data, regionmetadata* other);
 static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj);
 
@@ -55,7 +111,7 @@ typedef struct stack_s {
     node* head;
 } stack;
 
-stack* stack_new(void){
+static stack* stack_new(void){
     stack* s = (stack*)malloc(sizeof(stack));
     if(s == NULL){
         return NULL;
@@ -66,9 +122,11 @@ stack* stack_new(void){
     return s;
 }
 
-bool stack_push(stack* s, PyObject* object){
+static bool stack_push(stack* s, PyObject* object){
     node* n = (node*)malloc(sizeof(node));
     if(n == NULL){
+        // FIXME: This DECREF should only be used by MakeImmutable, since
+        // `add_to_region` and other functions only use weak refs.
         Py_DECREF(object);
         // Should we also free the stack?
         return true;
@@ -80,7 +138,7 @@ bool stack_push(stack* s, PyObject* object){
     return false;
 }
 
-PyObject* stack_pop(stack* s){
+static PyObject* stack_pop(stack* s){
     if(s->head == NULL){
         return NULL;
     }
@@ -93,7 +151,7 @@ PyObject* stack_pop(stack* s){
     return object;
 }
 
-void stack_free(stack* s){
+static void stack_free(stack* s){
     while(s->head != NULL){
         PyObject* op = stack_pop(s);
         Py_DECREF(op);
@@ -102,34 +160,21 @@ void stack_free(stack* s){
     free(s);
 }
 
-bool stack_empty(stack* s){
+static bool stack_empty(stack* s){
     return s->head == NULL;
 }
 
-void stack_print(stack* s){
+__attribute__((unused))
+static void stack_print(stack* s){
     node* n = s->head;
     while(n != NULL){
         n = n->next;
     }
 }
 
-bool is_c_wrapper(PyObject* obj){
+static bool is_c_wrapper(PyObject* obj){
     return PyCFunction_Check(obj) || Py_IS_TYPE(obj, &_PyMethodWrapper_Type) || Py_IS_TYPE(obj, &PyWrapperDescr_Type);
 }
-
-/**
- * Global status for performing the region check.
- */
-bool do_region_check = false;
-
-// The src object for an edge that invalidated the invariant.
-PyObject* error_src = Py_None;
-
-// The tgt object for an edge that invalidated the invariant.
-PyObject* error_tgt = Py_None;
-
-// Once an error has occurred this is used to surpress further checking
-bool error_occurred = false;
 
 // Start of a linked list of bridge objects used to check for external uniqueness
 // Bridge objects appear in this list if they are captured
@@ -139,24 +184,24 @@ regionmetadata* captured = CAPTURED_SENTINEL;
 /**
  * Enable the region check.
  */
-void notify_regions_in_use(void)
+static void notify_regions_in_use(void)
 {
     // Do not re-enable, if we have detected a fault.
-    if (!error_occurred)
-        do_region_check = true;
+    if (!invariant_error_occurred)
+        invariant_do_region_check = true;
 }
 
 PyObject* _Py_EnableInvariant(void)
 {
     // Disable failure as program has explicitly requested invariant to be checked again.
-    error_occurred = false;
+    invariant_error_occurred = false;
     // Re-enable region check
-    do_region_check = true;
+    invariant_do_region_check = true;
     // Reset the error state
-    Py_DecRef(error_src);
-    error_src = Py_None;
-    Py_DecRef(error_tgt);
-    error_tgt = Py_None;
+    Py_DecRef(invariant_error_src);
+    invariant_error_src = Py_None;
+    Py_DecRef(invariant_error_tgt);
+    invariant_error_tgt = Py_None;
     return Py_None;
 }
 
@@ -164,35 +209,43 @@ PyObject* _Py_EnableInvariant(void)
  * Set the global variables for a failure.
  * This allows the interpreter to inspect what has failed.
  */
-void set_failed_edge(PyObject* src, PyObject* tgt, const char* msg)
+static void emit_invariant_error(PyObject* src, PyObject* tgt, const char* msg)
 {
-    Py_DecRef(error_src);
+    Py_DecRef(invariant_error_src);
     Py_IncRef(src);
-    error_src = src;
-    Py_DecRef(error_tgt);
+    invariant_error_src = src;
+    Py_DecRef(invariant_error_tgt);
     Py_IncRef(tgt);
-    error_tgt = tgt;
+    invariant_error_tgt = tgt;
+
+    /* Don't stomp existing exception */
+    PyThreadState *tstate = _PyThreadState_GET();
+    assert(tstate && "_PyThreadState_GET documentation says it's not safe, when?");
+    if (_PyErr_Occurred(tstate)) {
+        return;
+    }
     const char *src_region_name = get_region_name(src);
     const char *tgt_region_name = get_region_name(tgt);
     PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
     const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
     PyObject *src_type_repr = PyObject_Repr(PyObject_Type(src));
     const char *src_desc = src_type_repr ? PyUnicode_AsUTF8(src_type_repr) : "<>";
+
     PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s): %s\n", src, src_desc, src_region_name, tgt, tgt_desc, tgt_region_name, msg);
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
-    do_region_check = false;
-    error_occurred = true;
+    invariant_do_region_check = false;
+    invariant_error_occurred = true;
 }
 
 PyObject* _Py_InvariantSrcFailure(void)
 {
-    return Py_NewRef(error_src);
+    return Py_NewRef(invariant_error_src);
 }
 
 PyObject* _Py_InvariantTgtFailure(void)
 {
-    return Py_NewRef(error_tgt);
+    return Py_NewRef(invariant_error_tgt);
 }
 
 
@@ -203,8 +256,8 @@ typedef struct _gc_runtime_state GCState;
 #define GC_PREV _PyGCHead_PREV
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
-#define IS_IMMUTABLE_REGION(r) ((Py_uintptr_t)r == _Py_IMMUTABLE)
-#define IS_DEFAULT_REGION(r) ((Py_uintptr_t)r == _Py_DEFAULT_REGION)
+#define IS_IMMUTABLE_REGION(r) ((Py_region_ptr_t)r == _Py_IMMUTABLE)
+#define IS_DEFAULT_REGION(r) ((Py_region_ptr_t)r == _Py_DEFAULT_REGION)
 
 /* A traversal callback for _Py_CheckRegionInvariant.
    - tgt is the target of the reference we are checking, and
@@ -214,8 +267,8 @@ static int
 visit_invariant_check(PyObject *tgt, void *src_void)
 {
     PyObject *src = _PyObject_CAST(src_void);
-    regionmetadata* src_region = (regionmetadata*) Py_GET_REGION(src);
-    regionmetadata* tgt_region = (regionmetadata*) Py_GET_REGION(tgt);
+    regionmetadata* src_region = Py_REGION_DATA(src);
+    regionmetadata* tgt_region = Py_REGION_DATA(tgt);
      // Internal references are always allowed
     if (src_region == tgt_region)
         return 0;
@@ -227,24 +280,24 @@ visit_invariant_check(PyObject *tgt, void *src_void)
         return 0;
     // Since tgt is not immutable, src also may not be as immutable may not point to mutable
     if (IS_IMMUTABLE_REGION(src_region)) {
-        set_failed_edge(src, tgt, "Reference from immutable object to mutable target");
+        emit_invariant_error(src, tgt, "Reference from immutable object to mutable target");
         return 0;
     }
 
     // Cross-region references must be to a bridge
     if (!is_bridge_object(tgt)) {
-        set_failed_edge(src, tgt, "Reference from object in one region into another region");
+        emit_invariant_error(src, tgt, "Reference from object in one region into another region");
         return 0;
     }
     // Check if region is already added to captured list
     if (tgt_region->next != NULL) {
         // Bridge object was already captured
-        set_failed_edge(src, tgt, "Reference to bridge is not externally unique");
+        emit_invariant_error(src, tgt, "Reference to bridge is not externally unique");
         return 0;
     }
     // Forbid cycles in the region topology
-    if (regionmetadata_has_ancestor((regionmetadata*)src_region, (regionmetadata*)tgt_region)) {
-        set_failed_edge(src, tgt, "Regions create a cycle with subreagions");
+    if (regionmetadata_has_ancestor(src_region, tgt_region)) {
+        emit_invariant_error(src, tgt, "Regions create a cycle with subregions");
         return 0;
     }
 
@@ -255,7 +308,7 @@ visit_invariant_check(PyObject *tgt, void *src_void)
     return 0;
 }
 
-void invariant_reset_captured_list(void) {
+static void invariant_reset_captured_list(void) {
     // Reset the captured list
     while (captured != CAPTURED_SENTINEL) {
         regionmetadata* m = captured;
@@ -281,7 +334,7 @@ void invariant_reset_captured_list(void) {
 int _Py_CheckRegionInvariant(PyThreadState *tstate)
 {
     // Check if we should perform the region invariant check
-    if(!do_region_check){
+    if(!invariant_do_region_check){
         return 0;
     }
 
@@ -327,7 +380,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
             // write too much.
             // TODO: The first error might not be the most useful.
             // So might not need to build all error edges as a structure.
-            if (error_occurred) {
+            if (invariant_error_occurred) {
                 invariant_reset_captured_list();
                 return 1;
             }
@@ -347,7 +400,7 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate)
     } \
 } while(0)
 
-PyObject* make_global_immutable(PyObject* globals, PyObject* name)
+static PyObject* make_global_immutable(PyObject* globals, PyObject* name)
 {
     PyObject* value = PyDict_GetItem(globals, name); // value.rc = x
 
@@ -372,7 +425,7 @@ PyObject* make_global_immutable(PyObject* globals, PyObject* name)
  * just those, and prevent those keys from being updated in the global dictionary
  * from this point onwards.
  */
-PyObject* walk_function(PyObject* op, stack* frontier)
+static PyObject* make_function_immutable(PyObject* op, stack* frontier)
 {
     PyObject* builtins;
     PyObject* globals;
@@ -569,7 +622,7 @@ PyObject* walk_function(PyObject* op, stack* frontier)
     }                                                  \
 } while(0)
 
-int _makeimmutable_visit(PyObject* obj, void* frontier)
+static int _makeimmutable_visit(PyObject* obj, void* frontier)
 {
     if(!_Py_IsImmutable(obj)){
         if(stack_push((stack*)frontier, obj)){
@@ -590,8 +643,11 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
     // We have started using regions, so notify to potentially enable checks.
     notify_regions_in_use();
 
+    // Some built-in objects are direclty created immutable. However, their types
+    // might be created in a mutable state. This therefore requres an additional
+    // check to see if the type is also immutable.
     if(_Py_IsImmutable(obj) && _Py_IsImmutable(Py_TYPE(obj))){
-        return obj;
+        Py_RETURN_NONE;
     }
 
     stack* frontier = stack_new();
@@ -615,9 +671,8 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
         if(_Py_IsImmutable(item)){
             // Direct access like this is not recommended, but will be removed in the future as
             // this is just for debugging purposes.
-            if(type->ob_base.ob_base.ob_region != _Py_IMMUTABLE){
+            if (Py_REGION(&type->ob_base.ob_base) != _Py_IMMUTABLE) {
                // Why do we need to handle the type here, surely what ever made this immutable already did that?
-               // Log so we can investigate.
             }
             goto handle_type;
         }
@@ -630,7 +685,7 @@ PyObject* _Py_MakeImmutable(PyObject* obj)
         }
 
         if(PyFunction_Check(item)){
-            _Py_MAKEIMMUTABLE_CALL(walk_function, item, frontier);
+            _Py_MAKEIMMUTABLE_CALL(make_function_immutable, item, frontier);
             goto handle_type;
         }
 
@@ -678,8 +733,279 @@ next:
     Py_RETURN_NONE;
 }
 
-bool is_bridge_object(PyObject *op) {
-    Py_uintptr_t region = Py_GET_REGION(op);
+typedef enum region_error_id {
+    /* Adding this object to a region or creating this reference would
+     * create a reference that points to a contained(non-bridge object)
+     * inside another region.
+     */
+    ERR_CONTAINED_OBJ_REF,
+    /* Adding this object to a region or creating this reference would
+     * create a cycle in the region topology.
+     */
+    ERR_CYCLE_CREATION,
+    /* Adding this object to a region or creating this reference would
+     * isn't possible as the referenced bridge object already has a parent
+     * region.
+     */
+    ERR_SHARED_CUSTODY,
+    /* Functions can reference to global variables. That's why they need
+     * special handling, as can be seen in `_Py_MakeImmutable`.
+     * For now an error is emitted to see when this comes up and if
+     * `make_function_immutable` can be reused.
+     */
+    ERR_WIP_FUNCTIONS,
+} region_error_id;
+
+/* An error that occurred in `add_to_region`. The struct contains all
+ * informaiton needed to construct an error message or handle the error
+ * differently.
+ */
+typedef struct regionerror {
+    /* The source of the reference that created the region error.
+     *
+     * A weak reference, can be made into a strong reference with `Py_INCREF`
+     */
+    PyObject* src;
+    /* The target of the reference that created the region error.
+     *
+     * A weak reference, can be made into a strong reference with `Py_INCREF`
+     */
+    PyObject* tgt;
+    /* This ID indicates what kind of error occurred.
+     */
+    region_error_id id;
+} regionerror;
+
+/* Used by `_add_to_region_visit` to handle errors. The first argument is
+ * the error information. The second argument is supplementary data
+ * passed along by `add_to_region`.
+ */
+typedef int (*handle_add_to_region_error)(regionerror *, void *);
+
+/* This takes the region error and emits it as a `RegionError` to the
+ * user. This function will always return `false` to stop the propagation
+ * from `add_to_region`
+ *
+ * This function borrows both arguments. The memory has to be managed
+ * the caller.
+ */
+static int emit_region_error(regionerror *error, void* ignored) {
+    const char* msg = NULL;
+
+    switch (error->id)
+    {
+    case ERR_CONTAINED_OBJ_REF:
+        msg = "References to objects in other regions are forbidden";
+        break;
+    case ERR_CYCLE_CREATION:
+        msg = "Regions are not allowed to create cycles";
+        break;
+    case ERR_SHARED_CUSTODY:
+        msg = "Regions can only have one parent at a time";
+        break;
+    case ERR_WIP_FUNCTIONS:
+        msg = "WIP: Functions in regions are not supported yet";
+        break;
+    default:
+        assert(false && "unreachable?");
+        break;
+    }
+    throw_region_error(error->src, error->tgt, msg, NULL);
+
+    // We never want to continue once an error has been emitted.
+    return -1;
+}
+
+typedef struct addtoregionvisitinfo {
+    stack* pending;
+    // The source object of the reference. This is used to create
+    // better error message
+    PyObject* src;
+    handle_add_to_region_error handle_error;
+    void* handle_error_data;
+} addtoregionvisitinfo;
+
+static int _add_to_region_visit(PyObject* target, void* info_void)
+{
+    addtoregionvisitinfo *info = _Py_CAST(addtoregionvisitinfo *, info_void);
+
+    // Region objects are allowed to reference immutable objects. Immutable
+    // objects are only allowed to reference other immutable objects and cowns.
+    // we therefore don't need to traverse them.
+    if (_Py_IsImmutable(target)) {
+        return 0;
+    }
+
+    // C wrappers can propergate through the entire system and draw
+    // in a lot of unwanted objects. Since c wrappers don't have mutable
+    // data, we just make it immutable and have the immutability impl
+    // handle it. We then have an edge from our region to an immutable
+    // object which is again valid.
+    if (is_c_wrapper(target)) {
+        _Py_MakeImmutable(target);
+        return 0;
+    }
+
+    if (_Py_IsLocal(target)) {
+        // Add reference to the object,
+        // minus one for the reference we just followed
+        Py_REGION_DATA(info->src)->lrc += target->ob_refcnt - 1;
+        Py_SET_REGION(target, Py_REGION(info->src));
+
+        if (stack_push(info->pending, target)) {
+            PyErr_NoMemory();
+            return -1;
+        }
+        return 0;
+    }
+
+    // The item was previously in the local region but has already been
+    // added to the region by a previous iteration. We therefore only need
+    // to adjust the LRC
+    if (Py_REGION(target) == Py_REGION(info->src)) {
+        // -1 for the refernce we just followed
+        Py_REGION_DATA(target)->lrc -= 1;
+        return 0;
+    }
+
+    // We push it onto the stack to be added to the region and traversed.
+    // The actual addition of the object is done in `add_to_region`. We keep
+    // it in the local region, to indicate to `add_to_region` that the object
+    // should actually be processed.
+    if (IS_DEFAULT_REGION(Py_REGION(target))) {
+        // The actual region update and write checks are done in the
+        // main body of `add_to_region`
+        if (stack_push(info->pending, target)) {
+            PyErr_NoMemory();
+            return -1;
+        }
+        return 0;
+    }
+
+    // At this point, we know that target is in another region.
+    // If target is in a different region, it has to be a bridge object.
+    // References to contained objects are forbidden.
+    if (!is_bridge_object(target)) {
+        regionerror err = {.src = info->src, .tgt = target,
+                           .id = ERR_CONTAINED_OBJ_REF };
+        return ((info->handle_error)(&err, info->handle_error_data));
+    }
+
+    // The target is a bridge object from another region. We now need to
+    // if it already has a parent.
+    regionmetadata *target_region = Py_REGION_DATA(target);
+    if (target_region->parent != NULL) {
+        regionerror err = {.src = info->src, .tgt = target,
+                           .id = ERR_SHARED_CUSTODY};
+        return ((info->handle_error)(&err, info->handle_error_data));
+    }
+
+    // Make sure that the new subregion relation won't create a cycle
+    regionmetadata* region = Py_REGION_DATA(info->src);
+    if (regionmetadata_has_ancestor(region, target_region)) {
+        regionerror err = {.src = info->src, .tgt = target,
+                           .id = ERR_CYCLE_CREATION};
+        return ((info->handle_error)(&err, info->handle_error_data));
+    }
+
+    // From the previous checks we know that `target` is the bridge object
+    // of a free region. Thus we can make it a sub region and allow the
+    // reference.
+    target_region->parent = region;
+
+    return 0;
+}
+
+// This function visits all outgoing reference from `item` including the
+// type. It will return `false` if the operation failed.
+static int visit_object(PyObject *item, visitproc visit, void* info) {
+    if (PyFunction_Check(item)) {
+        // FIXME: This is a temporary error. It should be replaced by
+        // proper handling of moving the function into the region
+        regionerror err = {.src = NULL,
+            .tgt = item, .id = ERR_WIP_FUNCTIONS };
+        emit_region_error(&err, NULL);
+        return false;
+    } else {
+        PyTypeObject *type = Py_TYPE(item);
+        traverseproc traverse = type->tp_traverse;
+        if (traverse != NULL) {
+            if (traverse(item, visit, info)) {
+                return false;
+            }
+        }
+    }
+
+    // Visit the type manually, since it's not included in the normal
+    // `tp_treverse`.
+    PyObject* type_ob = _PyObject_CAST(Py_TYPE(item));
+    // Visit will return 0 if everything was okayw
+    return ((visit)(type_ob, info) == 0);
+}
+
+/* This adds the given object and transitive objects to the given region.
+ */
+static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
+{
+    if (!obj) {
+        Py_RETURN_NONE;
+    }
+
+    // Make sure there are no pending exceptions that would be overwritten
+    // by us.
+    PyThreadState *tstate = _PyThreadState_GET();
+    if (_PyErr_Occurred(tstate)) {
+        return NULL;
+    }
+
+    // The current implementation assumes region is a valid pointer. This
+    // restriction can be lifted if needed
+    assert(!IS_DEFAULT_REGION(region) || !IS_IMMUTABLE_REGION(region));
+    regionmetadata *region_data = _Py_CAST(regionmetadata *, region);
+
+    // Early return if the object is already in the region or immutable
+    if (Py_REGION(obj) == region || _Py_IsImmutable(obj)) {
+        Py_RETURN_NONE;
+    }
+
+    addtoregionvisitinfo info = {
+        .pending = stack_new(),
+        // `src` is reassigned each iteration
+        .src = _PyObject_CAST(region_data->bridge),
+        .handle_error = emit_region_error,
+        .handle_error_data = NULL,
+    };
+    if (info.pending == NULL) {
+        return PyErr_NoMemory();
+    }
+
+    // The visit call is used to correctly add the object or
+    // add it to the pending stack, for further processing.
+    if (_add_to_region_visit(obj, &info)) {
+        stack_free(info.pending);
+        return NULL;
+    }
+
+    while (!stack_empty(info.pending)) {
+        PyObject *item = stack_pop(info.pending);
+
+        // Add `info.src` for better error messages
+        info.src = item;
+
+        if (!visit_object(item, (visitproc)_add_to_region_visit, &info)) {
+            stack_free(info.pending);
+            return NULL;
+        }
+    }
+
+    stack_free(info.pending);
+
+    Py_RETURN_NONE;
+}
+
+
+static bool is_bridge_object(PyObject *op) {
+    Py_region_ptr_t region = Py_REGION(op);
     if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
         return false;
     }
@@ -689,7 +1015,7 @@ bool is_bridge_object(PyObject *op) {
     // will use the properties of a bridge object. This therefore checks if
     // the object is equal to the regions bridge object rather than checking
     // that the type is `PyRegionObject`
-    return ((Py_uintptr_t)((regionmetadata*)region)->bridge == (Py_uintptr_t)op);
+    return ((Py_region_ptr_t)((regionmetadata*)region)->bridge == (Py_region_ptr_t)op);
 }
 
 __attribute__((unused))
@@ -789,6 +1115,10 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
 
     static char *kwlist[] = {"name", NULL};
     self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
+    if (!self->metadata) {
+        PyErr_NoMemory();
+        return -1;
+    }
     self->metadata->bridge = self;
     self->name = NULL;
 
@@ -807,7 +1137,7 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     }
 
     // Make the region an owner of the bridge object
-    Py_SET_REGION(self, (Py_uintptr_t) self->metadata);
+    Py_SET_REGION(self, self->metadata);
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
     return 0;
@@ -846,20 +1176,7 @@ static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args) {
         Py_RETURN_NONE;
     }
 
-    regionmetadata* md = PyRegion_get_metadata(self);
-    if (_Py_IsLocal(args)) {
-        Py_SET_REGION(args, (Py_uintptr_t) md);
-        Py_RETURN_NONE;
-    } else if (_Py_IsImmutable(args)) {
-        // Nothing to do! Let this pass for now.
-        Py_RETURN_NONE;
-    } else {
-        const char *arg_region_name = get_region_name(args);
-        PyObject *src_type_repr = PyObject_Repr(PyObject_Type(args));
-        const char *src_desc = src_type_repr ? PyUnicode_AsUTF8(src_type_repr) : "<>";
-        PyErr_Format(PyExc_RuntimeError, "Object %s already had an owner (%s)!", src_desc, arg_region_name);
-        return NULL;
-    }
+    return add_to_region(args, Py_REGION(self));
 }
 
 // Remove args object to self region
@@ -869,7 +1186,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
     }
 
     regionmetadata* md = PyRegion_get_metadata(self);
-    if (Py_GET_REGION(args) == (Py_uintptr_t) md) {
+    if (Py_REGION(args) == (Py_region_ptr_t) md) {
         Py_SET_REGION(args, _Py_DEFAULT_REGION);
         Py_RETURN_NONE;
     } else {
@@ -880,7 +1197,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
 
 // Return True if args object is member of self region
 static PyObject *PyRegion_owns_object(PyRegionObject *self, PyObject *args) {
-    if ((Py_uintptr_t) PyRegion_get_metadata(self) == Py_GET_REGION(args)) {
+    if (Py_REGION(self) == Py_REGION(args)) {
         Py_RETURN_TRUE;
     } else {
         Py_RETURN_FALSE;
@@ -991,7 +1308,7 @@ bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
     if (_Py_IsLocal(new_ref)) {
         // Slurp emphemerally owned object into the region of the target object
         fprintf(stderr, "Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
-        PyRegion_add_object(((regionmetadata*) tgt->ob_region)->bridge, new_ref);
+        add_to_region(new_ref, Py_REGION(tgt));
         return true;
     }
 

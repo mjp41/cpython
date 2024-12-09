@@ -1076,7 +1076,7 @@ order (MRO) for bases """
 
         class MyInt(int):
             __slots__ = ()
-        with self.assertRaises(NotWriteableError):
+        with self.assertRaises(TypeError):
             (1).__class__ = MyInt
 
         class MyFloat(float):
@@ -1091,7 +1091,7 @@ order (MRO) for bases """
 
         class MyStr(str):
             __slots__ = ()
-        with self.assertRaises(NotWriteableError):
+        with self.assertRaises(TypeError):
             "a".__class__ = MyStr
 
         class MyBytes(bytes):

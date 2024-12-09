@@ -306,6 +306,10 @@ Modules/timemodule.c	init_timezone	YEAR	-
 Objects/bytearrayobject.c	-	_PyByteArray_empty_string	-
 Objects/complexobject.c	-	c_1	-
 Objects/exceptions.c	-	static_exceptions	-
+Objects/exceptions.c	-	_PyExc_NotWriteableError	-
+Objects/exceptions.c	-	PyExc_NotWriteableError	-
+Objects/exceptions.c	-	_PyExc_RegionError	-
+Objects/exceptions.c	-	PyExc_RegionError	-
 Objects/genobject.c	-	ASYNC_GEN_IGNORED_EXIT_MSG	-
 Objects/genobject.c	-	NON_INIT_CORO_MSG	-
 Objects/longobject.c	-	_PyLong_DigitValue	-
@@ -712,3 +716,19 @@ Modules/expat/xmlrole.c	-	error	-
 ## other
 Modules/_io/_iomodule.c	-	_PyIO_Module	-
 Modules/_sqlite/module.c	-	_sqlite3module	-
+
+## Region Type Info this is constant
+## Why do we have three of these?  Surely it should just be in one file?
+## Probably a bug in the analysis as they are listed as extern in two of the files.
+Objects/object.c	-	PyRegion_Type	-
+Objects/regions.c	-	PyRegion_Type	-
+Python/bltinmodule.c 	-	PyRegion_Type	-
+
+## Regions Debug Info for Invariant
+## Not to remain global, and should become localised to an interpreter
+Objects/regions.c	-	invariant_do_region_check	-
+Objects/regions.c	-	invariant_error_src	-
+Objects/regions.c	-	invariant_error_tgt	-
+Objects/regions.c	-	invariant_error_occurred	-
+Objects/regions.c	-	captured	-
+

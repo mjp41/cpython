@@ -3430,9 +3430,63 @@ PyObject *PyExc_MemoryError = (PyObject *) &_PyExc_MemoryError;
  */
 SimpleExtendsException(PyExc_Exception, BufferError, "Buffer error.");
 
+/* Pyrona Exceptions */
 
+/*
+ *    NotWriteableError extends Exception
+ */
 SimpleExtendsException(PyExc_Exception, NotWriteableError, "Object is not writeable.");
 
+static int RegionError_init(PyRegionErrorObject *self, PyObject *args, PyObject *kwds) {
+    PyObject *source = NULL;
+    PyObject *target = NULL;
+    if (!PyArg_ParseTuple(args, "|OO", &source, &target)) {
+        return -1;
+    }
+    Py_XSETREF(self->source, Py_XNewRef(source));
+    Py_XSETREF(self->target, Py_XNewRef(target));
+    return 0;
+}
+
+static int
+RegionError_clear(PyRegionErrorObject *self)
+{
+    Py_CLEAR(self->source);
+    Py_CLEAR(self->target);
+    return BaseException_clear((PyBaseExceptionObject *)self);
+}
+
+static void
+RegionError_dealloc(PyRegionErrorObject *self)
+{
+    _PyObject_GC_UNTRACK(self);
+    RegionError_clear(self);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static int
+RegionError_traverse(PyRegionErrorObject *self, visitproc visit, void *arg)
+{
+    Py_VISIT(self->source);
+    Py_VISIT(self->target);
+    return BaseException_traverse((PyBaseExceptionObject *)self, visit, arg);
+}
+
+static PyMemberDef RegionError_members[] = {
+        {"source", T_OBJECT, offsetof(PyRegionErrorObject, source), 0, PyDoc_STR("source")},
+        {"target", T_OBJECT, offsetof(PyRegionErrorObject, target), 0, PyDoc_STR("target")},
+        {NULL}  /* Sentinel */
+};
+
+static PyMethodDef RegionError_methods[] = {
+        {NULL}  /* Sentinel */
+};
+
+ComplexExtendsException(PyExc_Exception, RegionError,
+                        RegionError, 0,
+                        RegionError_methods, RegionError_members,
+                        0, BaseException_str,
+                        "A reference violates the rules of ownership");
 
 /* Warning category docstrings */
 
@@ -3620,6 +3674,7 @@ static struct static_exception static_exceptions[] = {
     ITEM(ValueError),
     ITEM(NotWriteableError),
     ITEM(Warning),
+    ITEM(RegionError),
 
     // Level 4: ArithmeticError(Exception) subclasses
     ITEM(FloatingPointError),
