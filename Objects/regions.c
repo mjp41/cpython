@@ -943,8 +943,7 @@ static int visit_object(PyObject *item, visitproc visit, void* info) {
     return ((visit)(type_ob, info) == 0);
 }
 
-/* This adds the given object and transitive objects to the given region.
- */
+// Add the transitive closure of objets in the local region reachable from obj to region
 static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 {
     if (!obj) {
@@ -1295,19 +1294,21 @@ static const char *get_region_name(PyObject* obj) {
 
 // TODO replace with write barrier code
 bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
-    if (_Py_IsImmutable(new_ref)) {
-        // Nothing to do -- adding a ref to an immutable is always permitted
-        return true;
-    }
-
     if (Py_REGION(tgt) == Py_REGION(new_ref)) {
         // Nothing to do -- intra-region references are always permitted
         return true;
     }
 
+    if (_Py_IsImmutable(new_ref) || _Py_IsCown(new_ref)) {
+        // Nothing to do -- adding a ref to an immutable or a cown is always permitted
+        return true;
+    }
+
     if (_Py_IsLocal(new_ref)) {
         // Slurp emphemerally owned object into the region of the target object
+#ifdef NDEBUG
         fprintf(stderr, "Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+#endif
         add_to_region(new_ref, Py_REGION(tgt));
         return true;
     }
@@ -1322,6 +1323,7 @@ bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
     return true; // Illegal reference
 }
 
+// Convenience function for moving multiple references into tgt at once
 bool _Pyrona_AddReferences(PyObject *tgt, int new_refc, ...) {
     va_list args;
     va_start(args, new_refc);
