@@ -57,7 +57,6 @@ bool _Pyrona_AddReferences(PyObject* target, int new_refc, ...);
 #endif
 
 int _Py_CheckRegionInvariant(PyThreadState *tstate);
-void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg);
 
 #ifdef __cplusplus
 }

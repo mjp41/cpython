@@ -27,6 +27,7 @@ typedef struct PyRegionObject PyRegionObject;
 static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
 static const char *get_region_name(PyObject* obj);
+static void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg);
 #define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
 
 /**
