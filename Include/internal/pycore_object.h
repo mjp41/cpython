@@ -13,7 +13,7 @@ extern "C" {
 #include "pycore_interp.h"        // PyInterpreterState.gc
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 #include "pycore_runtime.h"       // _PyRuntime
-#include "pycore_regions.h"      // _Py_DEFAULT_REGION
+#include "pycore_regions.h"      // _Py_LOCAL_REGION
 
 /* We need to maintain an internal copy of Py{Var}Object_HEAD_INIT to avoid
    designated initializer conflicts in C++20. If we use the deinition in
@@ -28,7 +28,7 @@ extern "C" {
         _PyObject_EXTRA_INIT                                  \
         .ob_refcnt = _Py_IMMORTAL_REFCNT,                     \
         .ob_type = (type),                                    \
-        .ob_region = (Py_region_ptr_with_tags_t){_Py_DEFAULT_REGION} \
+        .ob_region = (Py_region_ptr_with_tags_t){_Py_LOCAL_REGION} \
     },
 #define _PyVarObject_HEAD_INIT(type, size)    \
     {                                         \
@@ -177,7 +177,7 @@ _PyObject_Init(PyObject *op, PyTypeObject *typeobj)
 {
     assert(op != NULL);
     Py_SET_TYPE(op, typeobj);
-    Py_SET_REGION(op, _Py_DEFAULT_REGION);
+    Py_SET_REGION(op, _Py_LOCAL_REGION);
     if (_PyType_HasFeature(typeobj, Py_TPFLAGS_HEAPTYPE)) {
         Py_INCREF(typeobj);
     }

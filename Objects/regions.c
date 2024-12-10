@@ -257,7 +257,7 @@ typedef struct _gc_runtime_state GCState;
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
 #define IS_IMMUTABLE_REGION(r) ((Py_region_ptr_t)r == _Py_IMMUTABLE)
-#define IS_DEFAULT_REGION(r) ((Py_region_ptr_t)r == _Py_DEFAULT_REGION)
+#define IS_LOCAL_REGION(r) ((Py_region_ptr_t)r == _Py_LOCAL_REGION)
 
 /* A traversal callback for _Py_CheckRegionInvariant.
    - tgt is the target of the reference we are checking, and
@@ -276,7 +276,7 @@ visit_invariant_check(PyObject *tgt, void *src_void)
     if (IS_IMMUTABLE_REGION(tgt_region))
         return 0;
     // Borrowed references are unrestricted
-    if (IS_DEFAULT_REGION(src_region))
+    if (IS_LOCAL_REGION(src_region))
         return 0;
     // Since tgt is not immutable, src also may not be as immutable may not point to mutable
     if (IS_IMMUTABLE_REGION(src_region)) {
@@ -872,7 +872,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     // The actual addition of the object is done in `add_to_region`. We keep
     // it in the local region, to indicate to `add_to_region` that the object
     // should actually be processed.
-    if (IS_DEFAULT_REGION(Py_REGION(target))) {
+    if (IS_LOCAL_REGION(Py_REGION(target))) {
         // The actual region update and write checks are done in the
         // main body of `add_to_region`
         if (stack_push(info->pending, target)) {
@@ -960,7 +960,7 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 
     // The current implementation assumes region is a valid pointer. This
     // restriction can be lifted if needed
-    assert(!IS_DEFAULT_REGION(region) || !IS_IMMUTABLE_REGION(region));
+    assert(!IS_LOCAL_REGION(region) || !IS_IMMUTABLE_REGION(region));
     regionmetadata *region_data = _Py_CAST(regionmetadata *, region);
 
     // Early return if the object is already in the region or immutable
@@ -1006,7 +1006,7 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 
 static bool is_bridge_object(PyObject *op) {
     Py_region_ptr_t region = Py_REGION(op);
-    if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
+    if (IS_LOCAL_REGION(region) || IS_IMMUTABLE_REGION(region)) {
         return false;
     }
 
@@ -1187,7 +1187,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
 
     regionmetadata* md = PyRegion_get_metadata(self);
     if (Py_REGION(args) == (Py_region_ptr_t) md) {
-        Py_SET_REGION(args, _Py_DEFAULT_REGION);
+        Py_SET_REGION(args, _Py_LOCAL_REGION);
         Py_RETURN_NONE;
     } else {
         PyErr_SetString(PyExc_RuntimeError, "Object not a member of region!");
