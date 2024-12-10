@@ -5867,6 +5867,7 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
         if (value == NULL) {
             res = PyDict_DelItem(dict, key);
         } else {
+            // TODO: remove this once we merge Matt P's changeset to dictionary object
             if (Pyrona_ADDREFERENCES(dict, key, value)) {
                 res = PyDict_SetItem(dict, key, value);
             } else {

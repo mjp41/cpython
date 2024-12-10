@@ -43,8 +43,7 @@ PyObject* invariant_error_tgt = Py_None;
 // Once an error has occurred this is used to surpress further checking
 bool invariant_error_occurred = false;
 
-/* This uses the given arguments to create and throw a `RegionError`
- */
+// This uses the given arguments to create and throw a `RegionError`
 static void throw_region_error(
     PyObject* src, PyObject* tgt,
     const char *format_str, PyObject *obj)
@@ -77,7 +76,6 @@ static void throw_region_error(
 struct PyRegionObject {
     PyObject_HEAD
     regionmetadata* metadata;
-    PyObject *name;   // Optional string field for "name"
     PyObject *dict;
 };
 
@@ -87,6 +85,7 @@ struct regionmetadata {
     int is_open;
     regionmetadata* parent;
     PyRegionObject* bridge;
+    PyObject *name;   // Optional string field for "name"
     // TODO: Currently only used for invariant checking. If it's not used for other things
     // it might make sense to make this conditional in debug builds (or something)
     //
@@ -224,14 +223,9 @@ static void emit_invariant_error(PyObject* src, PyObject* tgt, const char* msg)
     if (_PyErr_Occurred(tstate)) {
         return;
     }
-    const char *src_region_name = get_region_name(src);
-    const char *tgt_region_name = get_region_name(tgt);
-    PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
-    const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
-    PyObject *src_type_repr = PyObject_Repr(PyObject_Type(src));
-    const char *src_desc = src_type_repr ? PyUnicode_AsUTF8(src_type_repr) : "<>";
 
-    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s): %s\n", src, src_desc, src_region_name, tgt, tgt_desc, tgt_region_name, msg);
+    _PyErr_Region(src, tgt, msg);
+
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
     invariant_do_region_check = false;
@@ -1088,8 +1082,8 @@ static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
 
 static void PyRegion_dealloc(PyRegionObject *self) {
     // Name is immutable and not in our region.
-    Py_XDECREF(self->name);
-    self->name = NULL;
+    Py_XDECREF(self->metadata->name);
+    self->metadata->name = NULL;
     self->metadata->bridge = NULL;
 
     // The dictionary can be NULL if the Region constructor crashed
@@ -1119,12 +1113,11 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         return -1;
     }
     self->metadata->bridge = self;
-    self->name = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->name))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->metadata->name))
         return -1;
-    if (self->name) {
-        Py_XINCREF(self->name);
+    if (self->metadata->name) {
+        Py_XINCREF(self->metadata->name);
         // Freeze the name and it's type. Short strings in Python are interned
         // by default. This means that `id("AB") == id("AB")`. We therefore
         // need to either clone the name object or freeze it to share it
@@ -1132,7 +1125,7 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         // operators return new strings and keep the old one intact
         //
         // FIXME: Implicit freezing should take care of this instead
-        _Py_MakeImmutable(self->name);
+        _Py_MakeImmutable(self->metadata->name);
     }
 
     // Make the region an owner of the bridge object
@@ -1143,7 +1136,7 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
 }
 
 static int PyRegion_traverse(PyRegionObject *self, visitproc visit, void *arg) {
-    Py_VISIT(self->name);
+    Py_VISIT(self->metadata->name);
     Py_VISIT(self->dict);
     return 0;
 }
@@ -1211,14 +1204,14 @@ static PyObject *PyRegion_repr(PyRegionObject *self) {
         "Region(lrc=%d, osc=%d, name=%S, is_open=%d)",
         data->lrc,
         data->osc,
-        self->name ? self->name : Py_None,
+        self->metadata->name ? self->metadata->name : Py_None,
         data->is_open
     );
 #else
     // Normal mode: simple representation
     return PyUnicode_FromFormat(
         "Region(name=%S, is_open=%d)",
-        self->name ? self->name : Py_None,
+        self->metadata->name ? self->metadata->name : Py_None,
         data->is_open
     );
 #endif
@@ -1279,6 +1272,16 @@ PyTypeObject PyRegion_Type = {
     PyType_GenericNew,                       /* tp_new */
 };
 
+void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg) {
+    const char *new_ref_region_name = get_region_name(new_ref);
+    const char *tgt_region_name = get_region_name(tgt);
+    PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
+    const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
+    PyObject *new_ref_type_repr = PyObject_Repr(PyObject_Type(new_ref));
+    const char *new_ref_desc = new_ref_type_repr ? PyUnicode_AsUTF8(new_ref_type_repr) : "<>";
+    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s) %s\n", tgt, tgt_desc, tgt_region_name, new_ref, new_ref_desc, new_ref_region_name, msg);
+}
+
 static const char *get_region_name(PyObject* obj) {
     if (_Py_IsLocal(obj)) {
         return "Default";
@@ -1286,8 +1289,8 @@ static const char *get_region_name(PyObject* obj) {
         return "Immutable";
     } else {
         const regionmetadata *md = Py_REGION_DATA(obj);
-        return md->bridge->name
-            ? PyUnicode_AsUTF8(md->bridge->name)
+        return md->name
+            ? PyUnicode_AsUTF8(md->name)
             : "<no name>";
     }
 }
@@ -1306,21 +1309,15 @@ bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
 
     if (_Py_IsLocal(new_ref)) {
         // Slurp emphemerally owned object into the region of the target object
-#ifdef NDEBUG
-        fprintf(stderr, "Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+#ifndef NDEBUG
+        _Py_VPYDBG("Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
 #endif
         add_to_region(new_ref, Py_REGION(tgt));
         return true;
     }
 
-    const char *new_ref_region_name = get_region_name(new_ref);
-    const char *tgt_region_name = get_region_name(tgt);
-    PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
-    const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
-    PyObject *new_ref_type_repr = PyObject_Repr(PyObject_Type(new_ref));
-    const char *new_ref_desc = new_ref_type_repr ? PyUnicode_AsUTF8(new_ref_type_repr) : "<>";
-    PyErr_Format(PyExc_RuntimeError, "WBError: Invalid edge %p (%s in %s) -> %p (%s in %s)\n", tgt, tgt_desc, tgt_region_name, new_ref, new_ref_desc, new_ref_region_name);
-    return true; // Illegal reference
+    _PyErr_Region(tgt, new_ref, "(in WB/add_ref)");
+    return false; // Illegal reference
 }
 
 // Convenience function for moving multiple references into tgt at once
