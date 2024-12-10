@@ -63,7 +63,7 @@ extern PyObject *_PyDict_SetKeyImmutable(PyDictObject *mp, PyObject *key);
 
 /* Consumes references to key and value */
 extern int _PyDict_SetItem_Take2(PyDictObject *op, PyObject *key, PyObject *value);
-extern int _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr, PyObject *name, PyObject *value);
+extern int _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr, PyObject *name, PyObject *value, PyObject* owner);
 
 extern PyObject *_PyDict_Pop_KnownHash(PyObject *, PyObject *, Py_hash_t, PyObject *);
 

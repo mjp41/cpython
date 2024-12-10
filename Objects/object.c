@@ -1267,6 +1267,7 @@ _PyObject_GetDictPtr(PyObject *obj)
             PyErr_Clear();
             return NULL;
         }
+        Pyrona_ADDREFERENCE(obj, dict);
         dorv_ptr->dict = dict;
     }
     return &dorv_ptr->dict;
@@ -1466,6 +1467,7 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
                         res = NULL;
                         goto done;
                     }
+                    Pyrona_ADDREFERENCE(obj, dict);
                     dorv_ptr->dict = dict;
                 }
             }
@@ -1596,7 +1598,7 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
             goto done;
         }
         else {
-            res = _PyObjectDict_SetItem(tp, dictptr, name, value);
+            res = _PyObjectDict_SetItem(tp, dictptr, name, value, obj);
         }
     }
     else {

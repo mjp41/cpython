@@ -142,7 +142,7 @@ static inline Py_region_ptr_with_tags_t Py_region_ptr_with_tags(Py_region_ptr_t 
     return (Py_region_ptr_with_tags_t) { region };
 }
 
-#define _Py_DEFAULT_REGION ((Py_region_ptr_t)0)
+#define _Py_LOCAL_REGION ((Py_region_ptr_t)0)
 #define _Py_IMMUTABLE ((Py_region_ptr_t)1)
 
 // Make all internal uses of PyObject_HEAD_INIT immortal while preserving the
@@ -153,7 +153,7 @@ static inline Py_region_ptr_with_tags_t Py_region_ptr_with_tags(Py_region_ptr_t 
         _PyObject_EXTRA_INIT                     \
         { _Py_IMMORTAL_REFCNT },                 \
         (type),                                  \
-        (Py_region_ptr_with_tags_t){_Py_DEFAULT_REGION} \
+        (Py_region_ptr_with_tags_t){_Py_LOCAL_REGION} \
     },
 #else
 #define PyObject_HEAD_INIT(type)                 \
@@ -161,7 +161,7 @@ static inline Py_region_ptr_with_tags_t Py_region_ptr_with_tags(Py_region_ptr_t 
         _PyObject_EXTRA_INIT                     \
         { 1 },                                   \
         (type),                                  \
-        (Py_region_ptr_with_tags_t){_Py_DEFAULT_REGION} \
+        (Py_region_ptr_with_tags_t){_Py_LOCAL_REGION} \
     },
 #endif /* Py_BUILD_CORE */
 
@@ -297,10 +297,15 @@ static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
 
 static inline Py_ALWAYS_INLINE int _Py_IsLocal(PyObject *op)
 {
-    return Py_REGION(op) == _Py_DEFAULT_REGION;
+    return Py_REGION(op) == _Py_LOCAL_REGION;
 }
 #define _Py_IsLocal(op) _Py_IsLocal(_PyObject_CAST(op))
 
+static inline Py_ALWAYS_INLINE int _Py_IsCown(PyObject *op)
+{
+    return 0; // TODO: implement this when cowns are added
+}
+#define _Py_IsCown(op) _Py_IsCown(_PyObject_CAST(op))
 
 static inline void Py_SET_REFCNT(PyObject *ob, Py_ssize_t refcnt) {
     // This immortal check is for code that is unaware of immortal objects.

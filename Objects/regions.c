@@ -26,6 +26,9 @@ typedef struct PyRegionObject PyRegionObject;
 
 static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
+static const char *get_region_name(PyObject* obj);
+static void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg);
+#define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
 
 /**
  * Global status for performing the region check.
@@ -41,8 +44,7 @@ PyObject* invariant_error_tgt = Py_None;
 // Once an error has occurred this is used to surpress further checking
 bool invariant_error_occurred = false;
 
-/* This uses the given arguments to create and throw a `RegionError`
- */
+// This uses the given arguments to create and throw a `RegionError`
 static void throw_region_error(
     PyObject* src, PyObject* tgt,
     const char *format_str, PyObject *obj)
@@ -75,7 +77,6 @@ static void throw_region_error(
 struct PyRegionObject {
     PyObject_HEAD
     regionmetadata* metadata;
-    PyObject *name;   // Optional string field for "name"
     PyObject *dict;
 };
 
@@ -85,6 +86,7 @@ struct regionmetadata {
     int is_open;
     regionmetadata* parent;
     PyRegionObject* bridge;
+    PyObject *name;   // Optional string field for "name"
     // TODO: Currently only used for invariant checking. If it's not used for other things
     // it might make sense to make this conditional in debug builds (or something)
     //
@@ -223,7 +225,8 @@ static void emit_invariant_error(PyObject* src, PyObject* tgt, const char* msg)
         return;
     }
 
-    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p -> %p: %s\n", src, tgt, msg);
+    _PyErr_Region(src, tgt, msg);
+
     // We have discovered a failure.
     // Disable region check, until the program switches it back on.
     invariant_do_region_check = false;
@@ -249,7 +252,7 @@ typedef struct _gc_runtime_state GCState;
 #define FROM_GC(g) ((PyObject *)(((char *)(g))+sizeof(PyGC_Head)))
 
 #define IS_IMMUTABLE_REGION(r) ((Py_region_ptr_t)r == _Py_IMMUTABLE)
-#define IS_DEFAULT_REGION(r) ((Py_region_ptr_t)r == _Py_DEFAULT_REGION)
+#define IS_LOCAL_REGION(r) ((Py_region_ptr_t)r == _Py_LOCAL_REGION)
 
 /* A traversal callback for _Py_CheckRegionInvariant.
    - tgt is the target of the reference we are checking, and
@@ -268,7 +271,7 @@ visit_invariant_check(PyObject *tgt, void *src_void)
     if (IS_IMMUTABLE_REGION(tgt_region))
         return 0;
     // Borrowed references are unrestricted
-    if (IS_DEFAULT_REGION(src_region))
+    if (IS_LOCAL_REGION(src_region))
         return 0;
     // Since tgt is not immutable, src also may not be as immutable may not point to mutable
     if (IS_IMMUTABLE_REGION(src_region)) {
@@ -864,7 +867,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     // The actual addition of the object is done in `add_to_region`. We keep
     // it in the local region, to indicate to `add_to_region` that the object
     // should actually be processed.
-    if (IS_DEFAULT_REGION(Py_REGION(target))) {
+    if (IS_LOCAL_REGION(Py_REGION(target))) {
         // The actual region update and write checks are done in the
         // main body of `add_to_region`
         if (stack_push(info->pending, target)) {
@@ -935,8 +938,7 @@ static int visit_object(PyObject *item, visitproc visit, void* info) {
     return ((visit)(type_ob, info) == 0);
 }
 
-/* This adds the given object and transitive objects to the given region.
- */
+// Add the transitive closure of objets in the local region reachable from obj to region
 static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 {
     if (!obj) {
@@ -952,7 +954,7 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 
     // The current implementation assumes region is a valid pointer. This
     // restriction can be lifted if needed
-    assert(!IS_DEFAULT_REGION(region) || !IS_IMMUTABLE_REGION(region));
+    assert(!IS_LOCAL_REGION(region) || !IS_IMMUTABLE_REGION(region));
     regionmetadata *region_data = _Py_CAST(regionmetadata *, region);
 
     // Early return if the object is already in the region or immutable
@@ -998,7 +1000,7 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 
 static bool is_bridge_object(PyObject *op) {
     Py_region_ptr_t region = Py_REGION(op);
-    if (IS_DEFAULT_REGION(region) || IS_IMMUTABLE_REGION(region)) {
+    if (IS_LOCAL_REGION(region) || IS_IMMUTABLE_REGION(region)) {
         return false;
     }
 
@@ -1081,8 +1083,8 @@ static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
 
 static void PyRegion_dealloc(PyRegionObject *self) {
     // Name is immutable and not in our region.
-    Py_XDECREF(self->name);
-    self->name = NULL;
+    Py_XDECREF(self->metadata->name);
+    self->metadata->name = NULL;
     self->metadata->bridge = NULL;
 
     // The dictionary can be NULL if the Region constructor crashed
@@ -1112,12 +1114,11 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         return -1;
     }
     self->metadata->bridge = self;
-    self->name = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->name))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|U", kwlist, &self->metadata->name))
         return -1;
-    if (self->name) {
-        Py_XINCREF(self->name);
+    if (self->metadata->name) {
+        Py_XINCREF(self->metadata->name);
         // Freeze the name and it's type. Short strings in Python are interned
         // by default. This means that `id("AB") == id("AB")`. We therefore
         // need to either clone the name object or freeze it to share it
@@ -1125,29 +1126,18 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
         // operators return new strings and keep the old one intact
         //
         // FIXME: Implicit freezing should take care of this instead
-        _Py_MakeImmutable(self->name);
+        _Py_MakeImmutable(self->metadata->name);
     }
 
     // Make the region an owner of the bridge object
     Py_SET_REGION(self, self->metadata);
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
 
-    // FIXME: Usually this is created on the fly. We need to do it manually to
-    // set the region and freeze the type
-    self->dict = PyDict_New();
-    if (self->dict == NULL) {
-        return -1; // Propagate memory allocation failure
-    }
-    // TODO: Once phase 2 is done, we might be able to do this statically
-    // at compile time.
-    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self->dict)));
-    PyRegion_add_object(self, self->dict);
-
     return 0;
 }
 
 static int PyRegion_traverse(PyRegionObject *self, visitproc visit, void *arg) {
-    Py_VISIT(self->name);
+    Py_VISIT(self->metadata->name);
     Py_VISIT(self->dict);
     return 0;
 }
@@ -1190,7 +1180,7 @@ static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args) {
 
     regionmetadata* md = PyRegion_get_metadata(self);
     if (Py_REGION(args) == (Py_region_ptr_t) md) {
-        Py_SET_REGION(args, _Py_DEFAULT_REGION);
+        Py_SET_REGION(args, _Py_LOCAL_REGION);
         Py_RETURN_NONE;
     } else {
         PyErr_SetString(PyExc_RuntimeError, "Object not a member of region!");
@@ -1215,14 +1205,14 @@ static PyObject *PyRegion_repr(PyRegionObject *self) {
         "Region(lrc=%d, osc=%d, name=%S, is_open=%d)",
         data->lrc,
         data->osc,
-        self->name ? self->name : Py_None,
+        self->metadata->name ? self->metadata->name : Py_None,
         data->is_open
     );
 #else
     // Normal mode: simple representation
     return PyUnicode_FromFormat(
         "Region(name=%S, is_open=%d)",
-        self->name ? self->name : Py_None,
+        self->metadata->name ? self->metadata->name : Py_None,
         data->is_open
     );
 #endif
@@ -1282,3 +1272,65 @@ PyTypeObject PyRegion_Type = {
     0,                                       /* tp_alloc */
     PyType_GenericNew,                       /* tp_new */
 };
+
+void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg) {
+    const char *new_ref_region_name = get_region_name(new_ref);
+    const char *tgt_region_name = get_region_name(tgt);
+    PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
+    const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
+    PyObject *new_ref_type_repr = PyObject_Repr(PyObject_Type(new_ref));
+    const char *new_ref_desc = new_ref_type_repr ? PyUnicode_AsUTF8(new_ref_type_repr) : "<>";
+    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s) %s\n", tgt, tgt_desc, tgt_region_name, new_ref, new_ref_desc, new_ref_region_name, msg);
+}
+
+static const char *get_region_name(PyObject* obj) {
+    if (_Py_IsLocal(obj)) {
+        return "Default";
+    } else if (_Py_IsImmutable(obj)) {
+        return "Immutable";
+    } else {
+        const regionmetadata *md = Py_REGION_DATA(obj);
+        return md->name
+            ? PyUnicode_AsUTF8(md->name)
+            : "<no name>";
+    }
+}
+
+// TODO replace with write barrier code
+bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
+    if (Py_REGION(tgt) == Py_REGION(new_ref)) {
+        // Nothing to do -- intra-region references are always permitted
+        return true;
+    }
+
+    if (_Py_IsImmutable(new_ref) || _Py_IsCown(new_ref)) {
+        // Nothing to do -- adding a ref to an immutable or a cown is always permitted
+        return true;
+    }
+
+    if (_Py_IsLocal(new_ref)) {
+        // Slurp emphemerally owned object into the region of the target object
+#ifndef NDEBUG
+        _Py_VPYDBG("Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+#endif
+        add_to_region(new_ref, Py_REGION(tgt));
+        return true;
+    }
+
+    _PyErr_Region(tgt, new_ref, "(in WB/add_ref)");
+    return false; // Illegal reference
+}
+
+// Convenience function for moving multiple references into tgt at once
+bool _Pyrona_AddReferences(PyObject *tgt, int new_refc, ...) {
+    va_list args;
+    va_start(args, new_refc);
+
+    for (int i = 0; i < new_refc; i++) {
+        int res = _Pyrona_AddReference(tgt, va_arg(args, PyObject*));
+        if (!res) return false;
+    }
+
+    va_end(args);
+    return true;
+}
