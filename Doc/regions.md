@@ -454,6 +454,54 @@ The local reference count for the `region` is modified in the following way.
 Thus, the resulting change is to increase the LRC by 5, and then reduce it by 3. 
 
 
+#### Strict region calculation
+
+This approach is to intercept changes to the object graph and maintain the LRC correctly at this point.
+We might be able to realise this in Python by modifying every call to `Py_INCREF` and `Py_DECREF` to take an additional parameter of the source of the reference.
+
+
+* `Py_INCREF2(target, source)` is a function that increments the reference count of `target` by 1.
+
+   - If `source` is a local object, and `target` is in a region, then it also increases the `target` regions reference count.
+   - If `source` is in a region, and `target` is a local object, then it promotes the local object to be in the region.
+   - If `source` is in a region, and `target` is in a different region, then it raises an error.
+   - [TODO deal with nested regions]
+
+* `Py_DECREF2(target, source)` is a function that decrements the reference count of `target` by 1.
+
+   - If `source` is a local object, and `target` is in a region, then it also decreases the `target` regions reference count.
+   - [TODO deal with nested regions]
+
+This approach is the most efficient, but it requires modifying the runtime to intercept all writes to the object graph.
+
+#### Lazy region calculation
+
+An alternative is to not maintain the LRC or the region property, but to check it on calls to `send`.
+By traversing a region starting at the entry point we can determine if it has any external references. 
+We calculate the total RC of the region in by a DFS traversal,
+and then subtract the number of references followed by the DFS that are not to immutable objects.
+
+If this results in a non-zero count, then there are references into the region from outside.
+This is an error, and we should report it.
+Otherwise, it is safe to send the region.
+
+The lazy approach is much better for compability with existing code as it only requires the types involved to support the `tp_traverse` operation.
+
+It may perform worse if a region is sent multiple times.
+Each `send` requires an O(region size) operation, but the actual access to the region may be considerably smaller.  
+
+
+#### Hybrid approach
+
+We can combine the two approaches.
+Effectively, if the code run on an interpreter is using the new `PY_INCREF2` and `PY_DECREF2` API, then we do not need to perform the lazy calculation on `send`.
+However, if any code uses the legacy API, then we need to perform the lazy calculation on `send`. 
+
+Effectively `Py_INCREF` and `PY_DECREF` will mark the interpreter as "dirty", and then `send` will check if the interpreter is dirty, and perform the lazy calculation if it is.
+This allows for a gradual migration of the codebase to the new API.
+
+An interpreter can be unmarked once it begins a new concurrent behaviour.
+
 ### Immutable objects
 
 To share objects between behaviours, we need to ensure that the object is not mutated.
