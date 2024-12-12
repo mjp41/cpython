@@ -547,5 +547,18 @@ class TestGlobalDictMutation(unittest.TestCase):
         self.assertTrue(isimmutable(f1))
         self.assertRaises(NotWriteableError, f1)
 
+class TestPoolAllocation(unittest.TestCase):
+    # If pooling does not reset region between allocations,
+    # then the second call to f will result in `a` being owned by
+    # the first region that no has been deallocated.  This
+    # will result in a UAF that ASAN can detect.
+    def test_pool_allocation(self):
+        def f():
+            r = Region()
+            a = {}
+            r.add_object(a)
+        f()
+        f()
+
 if __name__ == '__main__':
     unittest.main()
