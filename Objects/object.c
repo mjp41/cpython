@@ -2233,6 +2233,7 @@ _Py_NewReference(PyObject *op)
     reftotal_increment(_PyInterpreterState_GET());
 #endif
     new_reference(op);
+    Py_SET_REGION(op, _Py_LOCAL_REGION);
 }
 
 void

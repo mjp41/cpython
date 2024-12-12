@@ -177,7 +177,6 @@ _PyObject_Init(PyObject *op, PyTypeObject *typeobj)
 {
     assert(op != NULL);
     Py_SET_TYPE(op, typeobj);
-    Py_SET_REGION(op, _Py_LOCAL_REGION);
     if (_PyType_HasFeature(typeobj, Py_TPFLAGS_HEAPTYPE)) {
         Py_INCREF(typeobj);
     }
