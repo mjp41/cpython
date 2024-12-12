@@ -142,8 +142,12 @@ static inline Py_region_ptr_with_tags_t Py_region_ptr_with_tags(Py_region_ptr_t 
     return (Py_region_ptr_with_tags_t) { region };
 }
 
+int _Py_is_bridge_object(PyObject *op);
+#define Py_is_bridge_object(op) (_Py_is_bridge_object(_PyObject_CAST(op)))
+
 #define _Py_LOCAL_REGION ((Py_region_ptr_t)0)
-#define _Py_IMMUTABLE ((Py_region_ptr_t)1)
+#define _Py_IMMUTABLE    ((Py_region_ptr_t)1)
+#define _Py_COWN         ((Py_region_ptr_t)4)
 
 // Make all internal uses of PyObject_HEAD_INIT immortal while preserving the
 // C-API expectation that the refcnt will be set to 1.
@@ -278,6 +282,8 @@ static inline int Py_IS_TYPE(PyObject *ob, PyTypeObject *type) {
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 < 0x030b0000
 #  define Py_IS_TYPE(ob, type) Py_IS_TYPE(_PyObject_CAST(ob), (type))
 #endif
+
+void _Py_notify_regions_in_use(void);
 
 static inline void Py_SET_REFCNT(PyObject *ob, Py_ssize_t refcnt) {
     // This immortal check is for code that is unaware of immortal objects.

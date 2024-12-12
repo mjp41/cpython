@@ -2045,6 +2045,7 @@ extern PyTypeObject _PyLineIterator;
 extern PyTypeObject _PyPositionsIterator;
 extern PyTypeObject _PyLegacyEventHandler_Type;
 extern PyTypeObject PyRegion_Type;
+extern PyTypeObject PyCown_Type;
 
 static PyTypeObject* static_types[] = {
     // The two most important base types: must be initialized first and
@@ -2168,6 +2169,8 @@ static PyTypeObject* static_types[] = {
 
     // Pyrona Region:
     &PyRegion_Type,
+    // Pyrona Cown:
+    &PyCown_Type,
 };
 
 

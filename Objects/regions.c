@@ -5,11 +5,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "object.h"
+#include "regions.h"
 #include "pycore_dict.h"
 #include "pycore_interp.h"
 #include "pycore_object.h"
 #include "pycore_regions.h"
 #include "pycore_pyerrors.h"
+#include "pyerrors.h"
 
 // This tag indicates that the `regionmetadata` object has been merged
 // with another region. The `parent` pointer points to the region it was
@@ -32,7 +34,8 @@ static inline Py_region_ptr_with_tags_t Py_TAGGED_REGION(PyObject *ob) {
 
 #define IS_IMMUTABLE_REGION(r) (REGION_PTR_CAST(r) == _Py_IMMUTABLE)
 #define IS_LOCAL_REGION(r) (REGION_PTR_CAST(r) == _Py_LOCAL_REGION)
-#define HAS_METADATA(r) (!IS_LOCAL_REGION(r) && !IS_IMMUTABLE_REGION(r))
+#define IS_COWN_REGION(r) (REGION_PTR_CAST(r) == _Py_COWN)
+#define HAS_METADATA(r) (!IS_LOCAL_REGION(r) && !IS_IMMUTABLE_REGION(r) && !IS_COWN_REGION(r))
 
 typedef struct regionmetadata regionmetadata;
 typedef struct PyRegionObject PyRegionObject;
@@ -118,6 +121,7 @@ struct regionmetadata {
     //
     // Intrinsic list for invariant checking
     regionmetadata* next;
+    PyObject* cown; // To be able to release a cown; to be integrated with parent
 };
 
 static Py_region_ptr_t regionmetadata_get_merge_tree_root(Py_region_ptr_t self)
@@ -147,7 +151,7 @@ static void regionmetadata_open(regionmetadata* self) {
 }
 
 static bool regionmetadata_is_open(Py_region_ptr_t self) {
-    if (!HAS_METADATA(self)) {
+    if (HAS_METADATA(self)) {
         return REGION_DATA_CAST(self)->is_open;
     }
 
@@ -379,6 +383,10 @@ int _Py_IsImmutable(PyObject *op)
 {
     return IS_IMMUTABLE_REGION(Py_REGION(op));
 }
+int _Py_IsCown(PyObject *op)
+{
+    return Py_REGION(op) == _Py_COWN;
+}
 
 Py_region_ptr_t _Py_REGION(PyObject *ob) {
     if (!ob) {
@@ -500,7 +508,7 @@ regionmetadata* captured = CAPTURED_SENTINEL;
 /**
  * Enable the region check.
  */
-static void notify_regions_in_use(void)
+void _Py_notify_regions_in_use(void)
 {
     // Do not re-enable, if we have detected a fault.
     if (!invariant_error_occurred)
@@ -595,8 +603,14 @@ visit_invariant_check(PyObject *tgt, void *src_void)
     }
 
     // Cross-region references must be to a bridge
-    if (!is_bridge_object(tgt)) {
+    if (!_Py_is_bridge_object(tgt)) {
         emit_invariant_error(src, tgt, "Reference from object in one region into another region");
+        return 0;
+    }
+
+    regionmetadata* src_region = REGION_DATA_CAST(src_region_ptr);
+    // Region objects may be stored in cowns
+    if (IS_COWN_REGION(src_region)) {
         return 0;
     }
 
@@ -608,7 +622,7 @@ visit_invariant_check(PyObject *tgt, void *src_void)
         return 0;
     }
     // Forbid cycles in the region topology
-    if (regionmetadata_has_ancestor(REGION_DATA_CAST(src_region_ptr), tgt_region)) {
+    if (regionmetadata_has_ancestor(src_region, tgt_region)) {
         emit_invariant_error(src, tgt, "Regions create a cycle with subregions");
         return 0;
     }
@@ -948,12 +962,12 @@ static int _makeimmutable_visit(PyObject* obj, void* frontier)
 
 PyObject* _Py_MakeImmutable(PyObject* obj)
 {
-    if (!obj) {
+    if (!obj || _Py_IsCown(obj)) {
         Py_RETURN_NONE;
     }
 
     // We have started using regions, so notify to potentially enable checks.
-    notify_regions_in_use();
+    _Py_notify_regions_in_use();
 
     // Some built-in objects are direclty created immutable. However, their types
     // might be created in a mutable state. This therefore requres an additional
@@ -1198,7 +1212,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     // At this point, we know that target is in another region.
     // If target is in a different region, it has to be a bridge object.
     // References to contained objects are forbidden.
-    if (!is_bridge_object(target)) {
+    if (!_Py_is_bridge_object(target)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_CONTAINED_OBJ_REF };
         return ((info->handle_error)(&err, info->handle_error_data));
@@ -1256,10 +1270,10 @@ static int visit_object(PyObject *item, visitproc visit, void* info) {
     return ((visit)(type_ob, info) == 0);
 }
 
-// Add the transitive closure of objets in the local region reachable from obj to region
+// Add the transitive closure of objects in the local region reachable from obj to region
 static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 {
-    if (!obj) {
+    if (!obj || _Py_IsCown(obj)) {
         Py_RETURN_NONE;
     }
 
@@ -1315,6 +1329,48 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
     Py_RETURN_NONE;
 }
 
+int _Py_is_bridge_object(PyObject *op) {
+    Py_region_ptr_t region = Py_REGION(op);
+    if (IS_LOCAL_REGION(region) || IS_IMMUTABLE_REGION(region)) {
+        return false;
+    }
+
+    // It's not yet clear how immutability will interact with region objects.
+    // It's likely that the object will remain in the object topology but
+    // will use the properties of a bridge object. This therefore checks if
+    // the object is equal to the regions bridge object rather than checking
+    // that the type is `PyRegionObject`
+    return ((Py_region_ptr_t)((regionmetadata*)region)->bridge == (Py_region_ptr_t)op);
+}
+
+__attribute__((unused))
+static void regionmetadata_inc_lrc(regionmetadata* data) {
+    data->lrc += 1;
+}
+
+__attribute__((unused))
+static void regionmetadata_dec_lrc(regionmetadata* data) {
+    data->lrc -= 1;
+}
+
+static void regionmetadata_close(regionmetadata* data) {
+    data->is_open = 0;
+}
+
+__attribute__((unused))
+static void regionmetadata_unparent(regionmetadata* data) {
+    regionmetadata_set_parent(data, NULL);
+}
+
+__attribute__((unused))
+static int regionmetadata_is_root(regionmetadata* data) {
+    return regionmetadata_has_parent(data);
+}
+
+static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
+    return obj->metadata;
+}
+
 static void PyRegion_dealloc(PyRegionObject *self) {
     // Name is immutable and not in our region.
 
@@ -1327,25 +1383,31 @@ static void PyRegion_dealloc(PyRegionObject *self) {
         regionmetadata_dec_rc(data);
     }
 
-    // The region should be cleared by pythons general deallocator.
-    assert(Py_REGION(self) == _Py_LOCAL_REGION);
-
-    // The dictionary can be NULL if the Region constructor crashed
+    PyTypeObject *tp = Py_TYPE(self);
+    PyObject_GC_UnTrack(_PyObject_CAST(self));
+    Py_TRASHCAN_BEGIN(self, PyRegion_dealloc);
     if (self->dict) {
         // We need to clear the ownership, since this dictionary might be
         // returned to an object pool rather than freed. This would result
         // in an error if the dictionary has the previous region.
+        // TODO: revisit in #16
         Py_SET_REGION(self->dict, _Py_LOCAL_REGION);
-        Py_DECREF(self->dict);
-        self->dict = NULL;
+        Py_CLEAR(self->dict);
     }
 
-    PyObject_GC_UnTrack((PyObject *)self);
-    Py_TYPE(self)->tp_free((PyObject *)self);
+    PyObject_GC_Del(self);
+    Py_DECREF(tp);
+    Py_TRASHCAN_END
 }
 
 static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
-    notify_regions_in_use();
+    // TODO: should not be needed in the future
+    _Py_notify_regions_in_use();
+    _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
+
+#ifndef NDEBUG
+    fprintf(stderr, "Region created (%p)\n", self);
+#endif
 
     static char *kwlist[] = {"name", NULL};
     self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
@@ -1388,6 +1450,12 @@ static int PyRegion_traverse(PyRegionObject *self, visitproc visit, void *arg) {
     return 0;
 }
 
+static int PyRegion_clear(PyRegionObject *self) {
+    Py_CLEAR(self->metadata->name);
+    Py_CLEAR(self->dict);
+    return 0;
+}
+
 // is_open method (returns True if the region is open, otherwise False)
 static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *args) {
     // FIXME: What is the behavior of a `PyRegionObject` that has been merged into another region?
@@ -1406,10 +1474,28 @@ static PyObject *PyRegion_open(PyRegionObject *self, PyObject *args) {
     Py_RETURN_NONE;  // Return None (standard for methods with no return value)
 }
 
-// try_close method (Attempts to close the region)
-static PyObject *PyRegion_try_close(PyRegionObject *self, PyObject *args) {
-    // Not implemented for now. Return NULL to get an error
-    return NULL;
+int _PyRegion_is_closed(PyObject* self) {
+    return PyRegion_is_open((PyRegionObject *)self, NULL) == Py_False;
+}
+
+// Close method (attempts to set the region to "closed")
+// TODO: integrate with #19 and associated PRs
+static PyObject *PyRegion_close(PyRegionObject *self, PyObject *args) {
+    regionmetadata* const md = REGION_DATA_CAST(Py_REGION(self));
+    if (regionmetadata_is_open(md)) {
+        regionmetadata_close(md);  // Mark as closed
+
+        // Check if in a cown -- if so, release cown
+        if (md->cown) {
+            if (_PyCown_release(md->cown) != 0) {
+                // Propagate error from release
+                return NULL;
+            }
+        }
+        Py_RETURN_NONE; // Return None (standard for methods with no return value)
+    } else {
+        Py_RETURN_NONE; // Double close is OK
+    }
 }
 
 // Adds args object to self region
@@ -1451,18 +1537,18 @@ static PyObject *PyRegion_repr(PyRegionObject *self) {
 #ifdef NDEBUG
     // Debug mode: include detailed representation
     return PyUnicode_FromFormat(
-        "Region(lrc=%d, osc=%d, name=%S, is_open=%d)",
+        "Region(lrc=%d, osc=%d, name=%S, is_open=%s)",
         data->lrc,
         data->osc,
         data->name ? data->name : Py_None,
-        data->is_open
+        data->is_open ? "yes" : "no"
     );
 #else
     // Normal mode: simple representation
     return PyUnicode_FromFormat(
-        "Region(name=%S, is_open=%d)",
+        "Region(name=%S, is_open=%s)",
         data->name ? data->name : Py_None,
-        data->is_open
+        data->is_open ? "yes" : "no"
     );
 #endif
 }
@@ -1470,7 +1556,7 @@ static PyObject *PyRegion_repr(PyRegionObject *self) {
 // Define the RegionType with methods
 static PyMethodDef PyRegion_methods[] = {
     {"open", (PyCFunction)PyRegion_open, METH_NOARGS, "Open the region."},
-    {"try_close", (PyCFunction)PyRegion_try_close, METH_NOARGS, "Attempt to close the region."},
+    {"close", (PyCFunction)PyRegion_close, METH_NOARGS, "Attempt to close the region."},
     {"is_open", (PyCFunction)PyRegion_is_open, METH_NOARGS, "Check if the region is open."},
     // Temporary methods for testing. These will be removed or at least renamed once
     // the write barrier is done.
@@ -1504,7 +1590,7 @@ PyTypeObject PyRegion_Type = {
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, /* tp_flags */
     "TODO =^.^=",                            /* tp_doc */
     (traverseproc)PyRegion_traverse,         /* tp_traverse */
-    0,                                       /* tp_clear */
+    (inquiry)PyRegion_clear,                 /* tp_clear */
     0,                                       /* tp_richcompare */
     0,                                       /* tp_weaklistoffset */
     0,                                       /* tp_iter */
@@ -1537,6 +1623,8 @@ static const char *get_region_name(PyObject* obj) {
         return "Default";
     } else if (Py_IsImmutable(obj)) {
         return "Immutable";
+    } else if (_Py_IsCown(obj)) {
+        return "Cown";
     } else {
         const regionmetadata *md = Py_REGION_DATA(obj);
         return md->name
@@ -1580,4 +1668,10 @@ bool _Pyrona_AddReferences(PyObject *tgt, int new_refc, ...) {
 
     va_end(args);
     return true;
+}
+
+void _PyRegion_set_cown_parent(PyObject* region, PyObject* cown) {
+    regionmetadata* md = PyRegion_get_metadata((PyRegionObject*) region);
+    Py_XINCREF(cown);
+    Py_XSETREF(md->cown, cown);
 }

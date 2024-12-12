@@ -284,6 +284,7 @@ static const char* _Py_stdlib_module_names[] = {
 "unicodedata",
 "unittest",
 "urllib",
+"using",
 "uu",
 "uuid",
 "venv",

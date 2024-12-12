@@ -131,6 +131,7 @@
     <ClCompile Include="..\Objects\classobject.c" />
     <ClCompile Include="..\Objects\codeobject.c" />
     <ClCompile Include="..\Objects\complexobject.c" />
+    <ClCompile Include="..\Objects\cown.c" />
     <ClCompile Include="..\Objects\descrobject.c" />
     <ClCompile Include="..\Objects\dictobject.c" />
     <ClCompile Include="..\Objects\enumobject.c" />

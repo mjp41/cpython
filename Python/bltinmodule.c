@@ -3164,6 +3164,7 @@ static struct PyModuleDef builtinsmodule = {
 };
 
 extern PyTypeObject PyRegion_Type;
+extern PyTypeObject PyCown_Type;
 
 PyObject *
 _PyBuiltin_Init(PyInterpreterState *interp)
@@ -3226,6 +3227,7 @@ _PyBuiltin_Init(PyInterpreterState *interp)
     SETBUILTIN("type",                  &PyType_Type);
     SETBUILTIN("zip",                   &PyZip_Type);
     SETBUILTIN("Region",                &PyRegion_Type);
+    SETBUILTIN("Cown",                  &PyCown_Type);
 
     debug = PyBool_FromLong(config->optimization_level == 0);
     if (PyDict_SetItemString(dict, "__debug__", debug) < 0) {
