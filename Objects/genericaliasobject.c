@@ -596,7 +596,8 @@ set_orig_class(PyObject *obj, PyObject *self)
     if (obj != NULL) {
         if (PyObject_SetAttr(obj, &_Py_ID(__orig_class__), self) < 0) {
             if (!PyErr_ExceptionMatches(PyExc_AttributeError) &&
-                !PyErr_ExceptionMatches(PyExc_TypeError))
+                !PyErr_ExceptionMatches(PyExc_TypeError) &&
+                !PyErr_ExceptionMatches(PyExc_NotWriteableError))
             {
                 Py_DECREF(obj);
                 return NULL;
