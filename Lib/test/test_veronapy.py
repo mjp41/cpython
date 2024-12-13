@@ -560,5 +560,15 @@ class TestPoolAllocation(unittest.TestCase):
         f()
         f()
 
+class TestGenericAliasBug(unittest.TestCase):
+    # The code inside generic alias attempts to set
+    # __orig_class__ on the empty tuple, which is not
+    # allowed. The make immutable means this can fail
+    # NotWriteableError rather than the TypeError or 
+    # AttributeError that would be raised otherwise.
+    def test_generic_alias_bug(self):
+        c = makeimmutable(())
+        tuple[int]()
+
 if __name__ == '__main__':
     unittest.main()
