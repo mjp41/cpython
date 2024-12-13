@@ -28,7 +28,7 @@ extern "C" {
         _PyObject_EXTRA_INIT                                  \
         .ob_refcnt = _Py_IMMORTAL_REFCNT,                     \
         .ob_type = (type),                                    \
-        .ob_region = (Py_region_ptr_with_tags_t){_Py_LOCAL_REGION} \
+        .ob_region = (Py_region_ptr_with_tags_t){_Py_IMMUTABLE} \
     },
 #define _PyVarObject_HEAD_INIT(type, size)    \
     {                                         \

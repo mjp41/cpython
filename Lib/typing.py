@@ -2388,7 +2388,7 @@ def no_type_check(arg):
                 no_type_check(obj)
     try:
         arg.__no_type_check__ = True
-    except TypeError:  # built-in classes
+    except NotWriteableError:  # built-in classes
         pass
     return arg
 
@@ -2507,7 +2507,7 @@ def final(f):
     """
     try:
         f.__final__ = True
-    except (AttributeError, TypeError):
+    except (AttributeError, TypeError, NotWriteableError):
         # Skip the attribute silently if it is not writable.
         # AttributeError happens if the object has __slots__ or a
         # read-only property, TypeError if it's a builtin class.
