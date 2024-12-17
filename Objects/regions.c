@@ -1103,7 +1103,7 @@ typedef int (*handle_add_to_region_error)(regionerror *, void *);
  * This function borrows both arguments. The memory has to be managed
  * the caller.
  */
-static int emit_region_error(regionerror *error, void* ignored) {
+static int emit_region_error(regionerror *error) {
     const char* msg = NULL;
 
     switch (error->id)
@@ -1135,8 +1135,6 @@ typedef struct addtoregionvisitinfo {
     // The source object of the reference. This is used to create
     // better error message
     PyObject* src;
-    handle_add_to_region_error handle_error;
-    void* handle_error_data;
 } addtoregionvisitinfo;
 
 static int _add_to_region_visit(PyObject* target, void* info_void)
@@ -1209,7 +1207,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (!_Py_is_bridge_object(target)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_CONTAINED_OBJ_REF };
-        return ((info->handle_error)(&err, info->handle_error_data));
+        return emit_region_error(&err);
     }
 
     // The target is a bridge object from another region. We now need to
@@ -1218,7 +1216,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (regionmetadata_has_parent(target_region)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_SHARED_CUSTODY};
-        return ((info->handle_error)(&err, info->handle_error_data));
+        return emit_region_error(&err);
     }
 
     // Make sure that the new subregion relation won't create a cycle
@@ -1226,7 +1224,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (regionmetadata_has_ancestor(region, target_region)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_CYCLE_CREATION};
-        return ((info->handle_error)(&err, info->handle_error_data));
+        return emit_region_error(&err);
     }
 
     // From the previous checks we know that `target` is the bridge object
@@ -1245,7 +1243,7 @@ static int visit_object(PyObject *item, visitproc visit, void* info) {
         // proper handling of moving the function into the region
         regionerror err = {.src = NULL,
             .tgt = item, .id = ERR_WIP_FUNCTIONS };
-        emit_region_error(&err, NULL);
+        emit_region_error(&err);
         return false;
     } else {
         PyTypeObject *type = Py_TYPE(item);
@@ -1292,8 +1290,6 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
         .pending = stack_new(),
         // `src` is reassigned each iteration
         .src = _PyObject_CAST(region_data->bridge),
-        .handle_error = emit_region_error,
-        .handle_error_data = NULL,
     };
     if (info.pending == NULL) {
         return PyErr_NoMemory();
