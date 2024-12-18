@@ -152,7 +152,7 @@ class TestSuite(BaseTestSuite):
         failed = False
         try:
             currentClass._classSetupFailed = False
-        except TypeError:
+        except NotWriteableError:
             # test may actually be a function
             # so its class will be a builtin-type
             pass

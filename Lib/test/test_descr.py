@@ -1076,7 +1076,7 @@ order (MRO) for bases """
 
         class MyInt(int):
             __slots__ = ()
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             (1).__class__ = MyInt
 
         class MyFloat(float):
@@ -1091,17 +1091,17 @@ order (MRO) for bases """
 
         class MyStr(str):
             __slots__ = ()
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             "a".__class__ = MyStr
 
         class MyBytes(bytes):
             __slots__ = ()
-        with self.assertRaises(TypeError):
+        with self.assertRaises((TypeError, NotWriteableError)):
             b"a".__class__ = MyBytes
 
         class MyTuple(tuple):
             __slots__ = ()
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             ().__class__ = MyTuple
 
         class MyFrozenSet(frozenset):
@@ -4082,7 +4082,7 @@ order (MRO) for bases """
 
         try:
             list.__bases__ = (dict,)
-        except TypeError:
+        except NotWriteableError:
             pass
         else:
             self.fail("shouldn't be able to assign to list.__bases__")

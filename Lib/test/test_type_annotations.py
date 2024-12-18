@@ -32,9 +32,9 @@ class TypeAnnotationTests(unittest.TestCase):
         # builtin types don't have __annotations__ (yet!)
         with self.assertRaises(AttributeError):
             print(float.__annotations__)
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             float.__annotations__ = {}
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             del float.__annotations__
 
         # double delete

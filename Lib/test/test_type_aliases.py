@@ -232,7 +232,7 @@ class TypeAliasConstructorTest(unittest.TestCase):
 
 class TypeAliasTypeTest(unittest.TestCase):
     def test_immutable(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(NotWriteableError):
             TypeAliasType.whatever = "not allowed"
 
     def test_no_subclassing(self):

@@ -153,7 +153,7 @@ static inline Py_region_ptr_with_tags_t Py_region_ptr_with_tags(Py_region_ptr_t 
         _PyObject_EXTRA_INIT                     \
         { _Py_IMMORTAL_REFCNT },                 \
         (type),                                  \
-        (Py_region_ptr_with_tags_t){_Py_LOCAL_REGION} \
+        (Py_region_ptr_with_tags_t){_Py_IMMUTABLE} \
     },
 #else
 #define PyObject_HEAD_INIT(type)                 \
