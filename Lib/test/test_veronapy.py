@@ -522,6 +522,25 @@ class TestRegionOwnership(unittest.TestCase):
         else:
             self.fail("Should not reach here -- a can't be owned by two objects")
 
+class TestTryCloseRegion(unittest.TestCase):
+    class A:
+        pass
+
+    def setUp(self):
+        # This freezes A and super and meta types of A namely `type` and `object`
+        makeimmutable(self.A)
+        # FIXME: remove this line when the write barrier works
+        makeimmutable(type({}))
+
+    def test_try_close_fail(self):
+        a = self.A()
+        r1 = Region("r1")
+        
+        # This creates a reference into the region
+        r1.a = a
+        self.assertFalse(r1.try_close())
+
+
 # This test will make the Python environment unusable.
 # Should perhaps forbid making the frame immutable.
 # class TestStackCapture(unittest.TestCase):
