@@ -1316,7 +1316,7 @@ bool _Pyrona_AddReference(PyObject *src, PyObject *tgt) {
 
     // Try slurp emphemerally owned object into the region of the target object
     // _Py_VPYDBG("Added owning ref %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
-    add_to_region(tgt, Py_REGION(src));
+    return add_to_region(tgt, Py_REGION(src));
 }
 
 // Convenience function for moving multiple references into tgt at once
