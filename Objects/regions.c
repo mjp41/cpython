@@ -1296,29 +1296,27 @@ static const char *get_region_name(PyObject* obj) {
     }
 }
 
-// TODO replace with write barrier code
-bool _Pyrona_AddReference(PyObject *tgt, PyObject *new_ref) {
-    if (Py_REGION(tgt) == Py_REGION(new_ref)) {
+// x.f = y ==> _Pyrona_AddReference(src=x, tgt=y)
+bool _Pyrona_AddReference(PyObject *src, PyObject *tgt) {
+    if (Py_REGION(src) == Py_REGION(tgt)) {
         // Nothing to do -- intra-region references are always permitted
         return true;
     }
 
-    if (_Py_IsImmutable(new_ref) || _Py_IsCown(new_ref)) {
+    if (_Py_IsImmutable(tgt) || _Py_IsCown(tgt)) {
         // Nothing to do -- adding a ref to an immutable or a cown is always permitted
         return true;
     }
 
-    if (_Py_IsLocal(new_ref)) {
+    if (_Py_IsLocal(src)) {
         // Slurp emphemerally owned object into the region of the target object
-#ifndef NDEBUG
-        _Py_VPYDBG("Added %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
-#endif
-        add_to_region(new_ref, Py_REGION(tgt));
+        // _Py_VPYDBG("Added borrowed ref %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
         return true;
     }
 
-    _PyErr_Region(tgt, new_ref, "(in WB/add_ref)");
-    return false; // Illegal reference
+    // Try slurp emphemerally owned object into the region of the target object
+    // _Py_VPYDBG("Added owning ref %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+    return add_to_region(tgt, Py_REGION(src)) == Py_None;
 }
 
 // Convenience function for moving multiple references into tgt at once
