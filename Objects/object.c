@@ -2023,7 +2023,8 @@ PyTypeObject _PyNotImplemented_Type = {
 PyObject _Py_NotImplementedStruct = {
     _PyObject_EXTRA_INIT
     { _Py_IMMORTAL_REFCNT },
-    &_PyNotImplemented_Type
+    &_PyNotImplemented_Type,
+    (Py_region_ptr_with_tags_t) {_Py_IMMUTABLE}
 };
 
 
@@ -2233,7 +2234,10 @@ _Py_NewReference(PyObject *op)
     reftotal_increment(_PyInterpreterState_GET());
 #endif
     new_reference(op);
-    Py_SET_REGION(op, _Py_LOCAL_REGION);
+    // This uses an assignment opposed to `Py_SET_REGION` since that
+    // function expects the previous value to be a valid object but newly
+    // created objects never had this value initilized.
+    op->ob_region = Py_region_ptr_with_tags(_Py_LOCAL_REGION);
 }
 
 void
@@ -2636,6 +2640,7 @@ _Py_Dealloc(PyObject *op)
 {
     PyTypeObject *type = Py_TYPE(op);
     destructor dealloc = type->tp_dealloc;
+    Py_SET_REGION(op, _Py_LOCAL_REGION);
 #ifdef Py_DEBUG
     PyThreadState *tstate = _PyThreadState_GET();
     PyObject *old_exc = tstate != NULL ? tstate->current_exception : NULL;

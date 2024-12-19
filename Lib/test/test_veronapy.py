@@ -426,7 +426,7 @@ class TestRegionOwnership(unittest.TestCase):
         self.assertFalse(r2.owns_object(a))
 
     def test_add_object_is_deep(self):
-        # Create linked objects (a) -> (b)
+        # Create linked objects (a) -> (b) -> (c)
         a = self.A()
         b = self.A()
         c = self.A()

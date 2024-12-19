@@ -19,13 +19,15 @@
 PyObject _PyInstrumentation_DISABLE =
 {
     .ob_refcnt = _Py_IMMORTAL_REFCNT,
-    .ob_type = &PyBaseObject_Type
+    .ob_type = &PyBaseObject_Type,
+    .ob_region = (Py_region_ptr_with_tags_t){_Py_IMMUTABLE}
 };
 
 PyObject _PyInstrumentation_MISSING =
 {
     .ob_refcnt = _Py_IMMORTAL_REFCNT,
-    .ob_type = &PyBaseObject_Type
+    .ob_type = &PyBaseObject_Type,
+    .ob_region = (Py_region_ptr_with_tags_t){_Py_IMMUTABLE}
 };
 
 static const int8_t EVENT_FOR_OPCODE[256] = {

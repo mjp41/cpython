@@ -2,6 +2,8 @@
 #  error "this header file must not be included directly"
 #endif
 
+#include "regions.h" // Py_IsImmutable
+
 typedef struct {
     PyObject_VAR_HEAD
     /* Vector of pointers to list elements.  list[0] is ob_item[0], etc. */
@@ -40,7 +42,7 @@ static inline Py_ssize_t PyList_GET_SIZE(PyObject *op) {
 
 static inline void
 PyList_SET_ITEM(PyObject *op, Py_ssize_t index, PyObject *value) {
-    if(_Py_IsImmutable(op)){ // _Py_CHECKWRITE(op) is not available
+    if(Py_IsImmutable(op)){ // _Py_CHECKWRITE(op) is not available
         // TODO this should be replaced with a _PyObject_ASSERT_MSG
         // when veronpy implementation is complete
         _PyObject_ASSERT_FAILED_MSG(op, "cannot modify immutable object");
