@@ -396,8 +396,6 @@ class TestRegionOwnership(unittest.TestCase):
     def setUp(self):
         # This freezes A and super and meta types of A namely `type` and `object`
         makeimmutable(self.A)
-        # FIXME: remove this line when the write barrier works
-        makeimmutable(type({}))
         enableinvariant()
 
     def test_default_ownership(self):
@@ -529,16 +527,258 @@ class TestTryCloseRegion(unittest.TestCase):
     def setUp(self):
         # This freezes A and super and meta types of A namely `type` and `object`
         makeimmutable(self.A)
-        # FIXME: remove this line when the write barrier works
-        makeimmutable(type({}))
 
-    def test_try_close_fail(self):
-        a = self.A()
+    def test_new_region_is_closed(self):
         r1 = Region("r1")
-        
-        # This creates a reference into the region
-        r1.a = a
+        self.assertFalse(r1.is_open())
+        self.assertTrue(r1.try_close())
+        # Check it remained closed after the `try_close` call
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_with_bridge_ref(self):
+        r1 = Region("r1")
+
+        # Create a local reference
+        r1_ref = r1
+
+        # The region is still marked as closed since the write barrier
+        # doesn't catch the new `r1_ref` reference
+        self.assertFalse(r1.is_open(), "Should fail once WB on the Frame is in place")
+
+        # Closing the region fails due to `r1_ref`
         self.assertFalse(r1.try_close())
+        # The open status was now updated
+        self.assertTrue(r1.is_open())
+
+        # Remove the local reference
+        r1_ref = None
+
+        # Closing the region should now succeed
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_with_bridge_ref_owned_by_region(self):
+        r1 = Region("r1")
+        r1.r2 = Region("r2")
+
+        # Create a local reference
+        r2_ref = r1.r2
+
+        # The region is still marked as closed since the write barrier
+        # doesn't catch the new `r1_ref` reference
+        self.assertFalse(r1.r2.is_open(), "Should fail once WB on the Frame is in place")
+
+        # Closing the region fails due to `r1_ref`
+        self.assertFalse(r1.r2.try_close())
+        # The open status was now updated
+        self.assertTrue(r1.r2.is_open())
+
+        # Remove the local reference
+        r2_ref = None
+
+        # Closing the region should now succeed
+        self.assertTrue(r1.r2.try_close())
+        self.assertFalse(r1.r2.is_open())
+
+    def test_try_close_with_bridge_ref_owned_by_cown(self):
+        r1 = Region("r1")
+        r1.a = self.A()
+
+        # Create a local reference
+        r1_ref = r1
+
+        # r1 should be open here
+        self.assertTrue(r1.is_open())
+
+        # Create a new cown which isn't released yet
+        c = Cown(r1)
+
+        # Closing the region fails due to `r1_ref`
+        self.assertFalse(c.get().try_close())
+
+        # Remove local references
+        r1 = None
+        r1_ref = None
+
+        print("Checkout 3")
+        # Closing the region should now succeed
+        self.assertTrue(c.get().try_close())
+
+        print("Checkout 5")
+        # Check that the cown has been released
+        self.assertRaises(RegionError, lambda _ : c.get(), c)
+
+    def test_try_close_with_contained_ref(self):
+        r1 = Region("r1")
+        r1.a = self.A()
+
+        # The region is now open, since we added something to it
+        # (This is temporary, while the write barrier is not sufficient)
+        self.assertTrue(r1.is_open())
+
+        # Create a local reference
+        a = r1.a
+
+        # Closing the region fails due to `a`
+        self.assertFalse(r1.try_close())
+        self.assertTrue(r1.is_open())
+
+        # Remove the local reference
+        a = None
+
+        # Closing the region should now succeed
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_sub_region_contained_ref(self):
+        r1 = Region("r1")
+        r1.a = self.A()
+        r1.a.r2 = Region("r2")
+        r1.a.r2.b = self.A()
+
+        # The regions are now open, since we added something to them
+        self.assertTrue(r1.is_open())
+        self.assertTrue(r1.a.r2.is_open())
+
+        # Create a local reference
+        b = r1.a.r2.b
+
+        # Closing the regions fails due to `b`
+        self.assertFalse(r1.try_close())
+        self.assertTrue(r1.is_open())
+
+        # Remove the local reference
+        b = None
+
+        # Closing the regions succeed now
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_sub_sub_region_contained_ref(self):
+        r1 = Region("region")
+        r1.r2 = Region("sub-region")
+        r1.r2.r3 = Region("sub-sub-region")
+        r1.r2.r3.a = self.A()
+
+        # Create a local reference to a contained object
+        a = r1.r2.r3.a
+
+        # The region is now open
+        self.assertTrue(r1.is_open())
+
+        # Closing the regions fails due to `a`
+        self.assertFalse(r1.try_close())
+        self.assertTrue(r1.is_open())
+
+        # Kill the local reference
+        a = None
+
+        # Closing the regions succeed now
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_sub_sub_region_bridge_ref(self):
+        r1 = Region("region")
+        r1.r2 = Region("sub-region")
+        r1.r2.r3 = Region("sub-sub-region")
+        r1.r2.r3.a = self.A()
+
+        # The region is now open
+        self.assertTrue(r1.is_open())
+
+        # Closing r3 should succeeed and propagate to r1
+        self.assertTrue(r1.r2.r3.try_close())
+        self.assertFalse(r1.is_open())
+
+        # Create a local reference to a bridge
+        r3 = r1.r2.r3
+
+        # Manually open r2, while the WB is missing on attributes
+        r1.r2.a = self.A()
+        self.assertTrue(r1.r2.is_open())
+
+        # r3 is still marked as closed due to the missing WB on the frame
+        # This test should become irrelevant once the WB is in place and
+        # the open status is correctly tracked.
+        self.assertFalse(r1.r2.r3.is_open(), "Should fail once WB on the Frame is in place")
+
+        # Closing the regions fails due to `r3`
+        self.assertFalse(r1.try_close())
+        self.assertTrue(r1.is_open())
+
+        # Kill the local reference
+        r3 = None
+
+        # Closing the regions succeed now
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_with_contained_cycle(self):
+        r1 = Region("r1")
+        r1.a = self.A()
+        r1.a.self = r1.a
+        r1.a.region = r1
+
+        # Create a local reference
+        a = r1.a
+
+        # The region is now open
+        self.assertTrue(r1.is_open())
+
+        # Closing the regions fails due to `a`
+        self.assertFalse(r1.try_close())
+        self.assertTrue(r1.is_open())
+
+        # Remove the local reference
+        a = None
+
+        # Closing the regions succeed now
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+
+    def test_try_close_banish_unreachable_contained(self):
+        r1 = Region("r1")
+        r1.a = self.A()
+
+        # Create a small tree we can later detach
+        b = self.A()
+        b.c = self.A()
+        r1.add_object(b) # TODO: Remove once the write barrier on objects works
+        r1.a.b = b
+
+        # Check that r1 owns the objects now
+        self.assertTrue(r1.owns_object(b))
+        self.assertTrue(r1.owns_object(b.c))
+
+        # Make `b` and `c` unreachable from the bridge
+        r1.a.b = None
+
+        # `b` and `c` should remain members of r1
+        self.assertTrue(r1.owns_object(b))
+        self.assertTrue(r1.owns_object(b.c))
+
+        # Closing the regions should succeed but kickout `b` and `c`
+        self.assertTrue(r1.try_close())
+        self.assertFalse(r1.is_open())
+        self.assertFalse(r1.owns_object(b))
+        self.assertFalse(r1.owns_object(b.c))
+
+        # A new region could now take ownership of `b` and `c`
+        r2 = Region("r2")
+        r2.c = b.c
+        self.assertTrue(r2.owns_object(b.c))
+
+        # Closing the regions fails since the local `b` points to `c`
+        self.assertFalse(r2.try_close())
+        self.assertTrue(r2.is_open())
+
+        # Remove the local reference
+        b = None
+
+        # Closing the regions succeed now
+        self.assertTrue(r2.try_close())
+        self.assertFalse(r2.is_open())
+
 
 
 # This test will make the Python environment unusable.

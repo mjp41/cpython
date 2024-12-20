@@ -81,9 +81,9 @@ class UsingTest(unittest.TestCase):
         r.open()
         self.assertTrue(r.is_open())
         c = Cown(r)
+        r = None
         self.assertTrue(self.hacky_state_check(c, "pending-release"))
-        r.close()
-        self.assertFalse(r.is_open())
+        c.get().close()
         self.assertTrue(self.hacky_state_check(c, "released"))
 
     def test_acquire(self):
@@ -94,9 +94,9 @@ class UsingTest(unittest.TestCase):
             r = c.get()
             r.open()
             self.assertTrue(self.hacky_state_check(c, "acquired"))
-            r.close()
+            r = None
+            c.get().close()
             self.assertTrue(self.hacky_state_check(c, "released"))
-            self.assertFalse(r.is_open())
         self.assertTrue(self.hacky_state_check(c, "released"))
 
     def test_region_cown_ptr(self):

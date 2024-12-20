@@ -170,7 +170,7 @@ int _PyCown_is_released(PyObject *self) {
 // The ignored argument is required for this function's type to be
 // compatible with PyCFunction
 static PyObject *PyCown_get(PyCownObject *self, PyObject *ignored) {
-    BAIL_UNLESS_ACQUIRED(self, "Attempt to get value of unacquired cown");
+    BAIL_UNLESS_OWNED(self, "Attempt to get value of unacquired cown");
 
     if (self->value) {
         return Py_NewRef(self->value);
