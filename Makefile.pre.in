@@ -452,6 +452,7 @@ OBJECT_OBJS=	\
 		Objects/classobject.o \
 		Objects/codeobject.o \
 		Objects/complexobject.o \
+		Objects/cown.o \
 		Objects/descrobject.o \
 		Objects/enumobject.o \
 		Objects/exceptions.o \

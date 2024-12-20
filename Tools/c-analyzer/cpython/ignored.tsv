@@ -719,10 +719,13 @@ Modules/_sqlite/module.c	-	_sqlite3module	-
 
 ## Region Type Info this is constant
 ## Why do we have three of these?  Surely it should just be in one file?
-## Probably a bug in the analysis as they are listed as extern in two of the files.
 Objects/object.c	-	PyRegion_Type	-
 Objects/regions.c	-	PyRegion_Type	-
+Objects/cown.c	-	PyRegion_Type	-
 Python/bltinmodule.c 	-	PyRegion_Type	-
+Objects/object.c	-	PyCown_Type	-
+Objects/cown.c	-	PyCown_Type	-
+Python/bltinmodule.c 	-	PyCown_Type	-
 
 ## Regions Debug Info for Invariant
 ## Not to remain global, and should become localised to an interpreter

@@ -32,12 +32,6 @@ static inline void _Py_SET_REGION(PyObject *ob, Py_region_ptr_t region) {
 #  define Py_SET_REGION(ob, region) (_Py_SET_REGION(_PyObject_CAST(ob), _Py_CAST(Py_region_ptr_t, (region))))
 #endif
 
-static inline Py_ALWAYS_INLINE int _Py_IsCown(PyObject *op)
-{
-    return 0; // TODO: implement this when cowns are added
-}
-#define _Py_IsCown(op) _Py_IsCown(_PyObject_CAST(op))
-
 /* This makes the given objects and all object reachable from the given
  * object immutable. This will also move the objects into the immutable
  * region.
@@ -65,6 +59,7 @@ PyObject* _Py_ResetInvariant(void);
 // Invariant placeholder
 bool _Pyrona_AddReference(PyObject* target, PyObject* new_ref);
 #define Pyrona_ADDREFERENCE(a, b) _Pyrona_AddReference(a, b)
+#define Pyrona_REMOVEREFERENCE(a, b) // TODO
 // Helper macros to count the number of arguments
 #define _COUNT_ARGS(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
 #define COUNT_ARGS(...) _COUNT_ARGS(__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
@@ -81,6 +76,12 @@ bool _Pyrona_AddReferences(PyObject* target, int new_refc, ...);
 #endif
 
 int _Py_CheckRegionInvariant(PyThreadState *tstate);
+// Set a cown as parent of a region
+void _PyRegion_set_cown_parent(PyObject* region, PyObject* cown);
+// Check whether a region is closed
+int _PyRegion_is_closed(PyObject* region);
+int _PyCown_release(PyObject *self);
+int _PyCown_is_released(PyObject *self);
 
 #ifdef __cplusplus
 }
