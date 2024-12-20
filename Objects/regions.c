@@ -581,6 +581,9 @@ visit_invariant_check(PyObject *tgt, void *src_void)
     // Borrowed references are unrestricted
     if (Py_IsLocal(src))
         return 0;
+    // References to cowns are unrestricted
+    if (Py_IsCown(tgt))
+        return 0;
     // Since tgt is not immutable, src also may not be as immutable may not point to mutable
     if (Py_IsImmutable(src)) {
         emit_invariant_error(src, tgt, "Reference from immutable object to mutable target");
@@ -1147,6 +1150,12 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
         return 0;
     }
 
+    // References to cowns are unrestricted; cowns are opaque so
+    // do not need travsersing.
+    if (Py_IsCown(target)) {
+        return 0;
+    }
+
     // C wrappers can propergate through the entire system and draw
     // in a lot of unwanted objects. Since c wrappers don't have mutable
     // data, we just make it immutable and have the immutability impl
@@ -1316,7 +1325,7 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
 
 int _Py_is_bridge_object(PyObject *op) {
     Py_region_ptr_t region = Py_REGION(op);
-    if (IS_LOCAL_REGION(region) || IS_IMMUTABLE_REGION(region)) {
+    if (IS_LOCAL_REGION(region) || IS_IMMUTABLE_REGION(region) || IS_COWN_REGION(region)) {
         return false;
     }
 
