@@ -360,21 +360,6 @@ static PyObject* regionmetadata_merge(regionmetadata* self, Py_region_ptr_t othe
 #define regionmetadata_merge(self, other) \
   (regionmetadata_merge(self, REGION_PTR_CAST(other)));
 
-static bool is_bridge_object(PyObject *op) {
-    Py_region_ptr_t region = Py_REGION(op);
-    // The local and immutable region (represented as NULL) never have a bridge object.
-    if (!HAS_METADATA(region)) {
-        return false;
-    }
-
-    // It's not yet clear how immutability will interact with region objects.
-    // It's likely that the object will remain in the object topology but
-    // will use the properties of a bridge object. This therefore checks if
-    // the object is equal to the regions bridge object rather than checking
-    // that the type is `PyRegionObject`
-    return _PyObject_CAST(REGION_DATA_CAST(region)->bridge) == op;
-}
-
 int _Py_IsLocal(PyObject *op) {
     return IS_LOCAL_REGION(Py_REGION(op));
 }
@@ -1343,28 +1328,8 @@ int _Py_is_bridge_object(PyObject *op) {
     return ((Py_region_ptr_t)((regionmetadata*)region)->bridge == (Py_region_ptr_t)op);
 }
 
-__attribute__((unused))
-static void regionmetadata_inc_lrc(regionmetadata* data) {
-    data->lrc += 1;
-}
-
-__attribute__((unused))
-static void regionmetadata_dec_lrc(regionmetadata* data) {
-    data->lrc -= 1;
-}
-
 static void regionmetadata_close(regionmetadata* data) {
     data->is_open = 0;
-}
-
-__attribute__((unused))
-static void regionmetadata_unparent(regionmetadata* data) {
-    regionmetadata_set_parent(data, NULL);
-}
-
-__attribute__((unused))
-static int regionmetadata_is_root(regionmetadata* data) {
-    return regionmetadata_has_parent(data);
 }
 
 static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
@@ -1404,10 +1369,6 @@ static int PyRegion_init(PyRegionObject *self, PyObject *args, PyObject *kwds) {
     // TODO: should not be needed in the future
     _Py_notify_regions_in_use();
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
-
-#ifndef NDEBUG
-    fprintf(stderr, "Region created (%p)\n", self);
-#endif
 
     static char *kwlist[] = {"name", NULL};
     self->metadata = (regionmetadata*)calloc(1, sizeof(regionmetadata));
@@ -1457,7 +1418,9 @@ static int PyRegion_clear(PyRegionObject *self) {
 }
 
 // is_open method (returns True if the region is open, otherwise False)
-static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *args) {
+// The ignored argument is required for this function's type to be
+// compatible with PyCFunction
+static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *ignored) {
     // FIXME: What is the behavior of a `PyRegionObject` that has been merged into another region?
     if (regionmetadata_is_open(self->metadata)) {
         Py_RETURN_TRUE;  // Return True if the region is open
@@ -1467,7 +1430,9 @@ static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *args) {
 }
 
 // Open method (sets the region to "open")
-static PyObject *PyRegion_open(PyRegionObject *self, PyObject *args) {
+// The ignored argument is required for this function's type to be
+// compatible with PyCFunction
+static PyObject *PyRegion_open(PyRegionObject *self, PyObject *ignored) {
     // `Py_REGION()` will fetch the root region of the merge tree.
     // this might be different from the region in `self->metadata`.
     regionmetadata_open(Py_REGION_DATA(self));
@@ -1480,7 +1445,9 @@ int _PyRegion_is_closed(PyObject* self) {
 
 // Close method (attempts to set the region to "closed")
 // TODO: integrate with #19 and associated PRs
-static PyObject *PyRegion_close(PyRegionObject *self, PyObject *args) {
+// The ignored argument is required for this function's type to be
+// compatible with PyCFunction
+static PyObject *PyRegion_close(PyRegionObject *self, PyObject *ignored) {
     regionmetadata* const md = REGION_DATA_CAST(Py_REGION(self));
     if (regionmetadata_is_open(md)) {
         regionmetadata_close(md);  // Mark as closed

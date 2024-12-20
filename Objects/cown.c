@@ -35,8 +35,8 @@ typedef struct PyCownObject {
 
 static PyObject *PyCown_set_unchecked(PyCownObject *self, PyObject *arg);
 static PyObject *PyCown_set(PyCownObject *self, PyObject *arg);
-static PyObject *PyCown_get(PyCownObject *self);
-static PyObject *PyCown_acquire(PyCownObject *self);
+static PyObject *PyCown_get(PyCownObject *self, PyObject *ignored);
+static PyObject *PyCown_acquire(PyCownObject *self, PyObject *ignored);
 
 #define POSIX_FAIL_GUARD(exp) \
     if ((exp)) {              \
@@ -121,7 +121,9 @@ static int PyCown_traverse(PyCownObject *self, visitproc visit, void *arg) {
     BAIL_UNLESS_OWNED(o, msg) \
     BAIL_UNLESS_IN_STATE(o, Cown_ACQUIRED, msg)
 
-static PyObject *PyCown_acquire(PyCownObject *self) {
+// The ignored argument is required for this function's type to be
+// compatible with PyCFunction
+static PyObject *PyCown_acquire(PyCownObject *self, PyObject *ignored) {
     int expected = Cown_RELEASED;
 
     // TODO: eventually replace this with something from pycore_atomic (nothing there now)
@@ -138,7 +140,9 @@ static PyObject *PyCown_acquire(PyCownObject *self) {
     Py_RETURN_NONE;
 }
 
-static PyObject *PyCown_release(PyCownObject *self) {
+// The ignored argument is required for this function's type to be
+// compatible with PyCFunction
+static PyObject *PyCown_release(PyCownObject *self, PyObject *ignored) {
     if (STATE(self) == Cown_RELEASED) {
         BAIL_IF_OWNED(self, "BUG: Released cown had owning thread: %p");
         Py_RETURN_NONE;
@@ -154,7 +158,7 @@ static PyObject *PyCown_release(PyCownObject *self) {
 }
 
 int _PyCown_release(PyObject *self) {
-    PyObject* res = PyCown_release((PyCownObject *)self);
+    PyObject* res = PyCown_release((PyCownObject *)self, NULL);
     return res == Py_None ? 0 : -1;
 }
 
@@ -163,7 +167,9 @@ int _PyCown_is_released(PyObject *self) {
     return STATE(cown) == Cown_RELEASED;
 }
 
-static PyObject *PyCown_get(PyCownObject *self) {
+// The ignored argument is required for this function's type to be
+// compatible with PyCFunction
+static PyObject *PyCown_get(PyCownObject *self, PyObject *ignored) {
     BAIL_UNLESS_ACQUIRED(self, "Attempt to get value of unacquired cown");
 
     if (self->value) {
@@ -195,18 +201,15 @@ static PyObject *PyCown_set_unchecked(PyCownObject *self, PyObject *arg) {
         if (is_region_object) {
             _PyRegion_set_cown_parent(arg, _PyObject_CAST(self));
             if (_PyRegion_is_closed(arg)) {
-                PyCown_release(self);
+                PyCown_release(self, NULL);
             } else {
                 _Py_atomic_store(&self->state, Cown_PENDING_RELEASE);
-                // TODO: do we need an owning thread for this?
                 PyThreadState *tstate = PyThreadState_Get();
                 self->owning_thread = tstate->thread_id;
             }
         } else {
             // We can release this cown immediately
-            // _Py_atomic_store(&self->state, Cown_RELEASED);
-            // self->owning_thread = 0;
-            PyCown_release(self);
+            PyCown_release(self, NULL);
         }
 
         return old ? old : Py_None;
