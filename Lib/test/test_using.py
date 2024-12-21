@@ -86,12 +86,20 @@ class UsingTest(unittest.TestCase):
         self.assertFalse(r.is_open())
         self.assertTrue(self.hacky_state_check(c, "released"))
 
-    def _test_acquire(self):
+    def test_acquire(self):
         c = Cown(Region())
+        self.assertTrue(self.hacky_state_check(c, "released"))
         @using(c)
         def _():
+            r = c.get()
+            r.open()
             self.assertTrue(self.hacky_state_check(c, "acquired"))
-            c.get().close()
+            r.close()
             self.assertTrue(self.hacky_state_check(c, "released"))
-            self.assertTrue(c.get().is_closed())
+            self.assertFalse(r.is_open())
         self.assertTrue(self.hacky_state_check(c, "released"))
+
+    def test_region_cown_ptr(self):
+        r = Region()
+        r.f = Cown()
+        self.assertTrue(True)
