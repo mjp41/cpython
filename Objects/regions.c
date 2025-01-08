@@ -1925,8 +1925,9 @@ bool _Py_RegionAddReference(PyObject *src, PyObject *tgt) {
     }
 
     if (_Py_IsLocal(src)) {
-        // Slurp emphemerally owned object into the region of the target object
+        // Record the borrowed reference in the LRC of the target region
         // _Py_VPYDBG("Added borrowed ref %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+        Py_REGION_DATA(tgt)->lrc += 1;
         return true;
     }
 
