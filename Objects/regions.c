@@ -45,7 +45,6 @@ static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
 static const char *get_region_name(PyObject* obj);
 static void _PyErr_Region(PyObject *src, PyObject *tgt, const char *msg);
-#define Py_REGION_DATA(ob) (_Py_CAST(regionmetadata*, Py_REGION(ob)))
 
 /**
  * Global status for performing the region check.
@@ -1972,20 +1971,22 @@ void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
         return;
     }
 
+    regionmetadata* tgt_md = Py_REGION_DATA(tgt);
     if (_Py_IsLocal(src)) {
         // Dec LRC of the previously referenced region
-        regionmetadata_dec_lrc(Py_REGION_DATA(tgt));
+        // TODO should this decrement be a function, if it hits zero,
+        // then a region could become unreachable.
+        tgt_md->lrc -= 1;
         return;
     }
 
     // This must be a parent reference, so we need to remove the parent reference.
-    regionmetadata* tgt_md = Py_REGION_DATA(tgt);
     regionmetadata* src_md = Py_REGION_DATA(src);
-    if (tgt_md->parent == src_md) {
-        // Unparent the region.
-        regionmetadata_set_parent(tgt_md, _Py_LOCAL_REGION);
-    } else {
+    if (Py_region_ptr(tgt_md->parent) != src_md) {
         // TODO: Could `dirty` mean this isn't an error?
         _PyErr_Region(src, tgt, "(in WB/remove_ref)");
     }
+
+    // Unparent the region.
+    regionmetadata_set_parent(tgt_md, _Py_LOCAL_REGION);
 }
