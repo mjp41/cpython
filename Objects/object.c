@@ -1267,7 +1267,7 @@ _PyObject_GetDictPtr(PyObject *obj)
             PyErr_Clear();
             return NULL;
         }
-        Pyrona_ADDREFERENCE(obj, dict);
+        Py_REGIONADDREFERENCE(obj, dict);
         dorv_ptr->dict = dict;
     }
     return &dorv_ptr->dict;
@@ -1467,7 +1467,7 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
                         res = NULL;
                         goto done;
                     }
-                    Pyrona_ADDREFERENCE(obj, dict);
+                    Py_REGIONADDREFERENCE(obj, dict);
                     dorv_ptr->dict = dict;
                 }
             }
