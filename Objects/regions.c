@@ -107,6 +107,10 @@ struct regionmetadata {
     // The number of references to this object
     Py_ssize_t rc;
     bool is_open;
+    // Indicates if the LRC value can be trusted or not.
+    //
+    // FIXME: Only a single bit is needed, this can be integrated into another field
+    bool is_dirty;
     // This field might either point to the parent region or another region
     // that this one was merged into. The `Py_METADATA_MERGE_TAG` tag is used
     // to indicate this points to a merged region.
@@ -145,18 +149,87 @@ static Py_region_ptr_t regionmetadata_get_merge_tree_root(Py_region_ptr_t self)
 #define regionmetadata_get_merge_tree_root(self) \
     regionmetadata_get_merge_tree_root(REGION_PTR_CAST(self))
 
+static void regionmetadata_mark_as_dirty(Py_region_ptr_t self_ptr) {
+    if (!HAS_METADATA(self_ptr)) {
+        return;
+    }
+
+    REGION_DATA_CAST(self_ptr)->is_dirty = true;
+}
+# define regionmetadata_mark_as_dirty(data) \
+    (regionmetadata_mark_as_dirty(REGION_PTR_CAST(data)))
+
+static void regionmetadata_mark_as_not_dirty(Py_region_ptr_t self_ptr) {
+    if (!HAS_METADATA(self_ptr)) {
+        return;
+    }
+
+    REGION_DATA_CAST(self_ptr)->is_dirty = false;
+}
+# define regionmetadata_mark_as_not_dirty(data) \
+    (regionmetadata_mark_as_not_dirty(REGION_PTR_CAST(data)))
+
+static bool regionmetadata_is_dirty(Py_region_ptr_t self_ptr) {
+    if (!HAS_METADATA(self_ptr)) {
+        return false;
+    }
+
+    return REGION_DATA_CAST(self_ptr)->is_dirty;
+}
+# define regionmetadata_is_dirty(data) \
+    (regionmetadata_is_dirty(REGION_PTR_CAST(data)))
+
+static void regionmetadata_inc_osc(Py_region_ptr_t self_ptr);
+static int regionmetadata_dec_osc(Py_region_ptr_t self_ptr);
 static void regionmetadata_open(regionmetadata* self) {
     assert(HAS_METADATA(self));
+    if (self->is_open) {
+        return;
+    }
     self->is_open = true;
+    regionmetadata_inc_osc(REGION_PTR_CAST(regionmetadata_get_parent(self)));
+}
+
+/// This function marks the region as closed and propagartes the status to
+/// the parent region or owning cown.
+///
+/// It returns `0` if the close was successful. It should only fails, if the
+/// system is in an inconsistent state and this close attempted to release a
+/// cown which is currently not owned by the current thread.
+static int regionmetadata_close(regionmetadata* self) {
+    // The LRC might be 1 or 2, if the owning references is a local and the
+    // bridge object was used as an argument.
+    assert(self->lrc <= 2 && "Attempting to close a region with an LRC > 2");
+    assert(self->osc == 0 && "Attempting to close a region with an OSC != 0");
+    if (!self->is_open) {
+        return 0;
+    }
+
+    self->is_open = false;
+
+    Py_region_ptr_t parent = REGION_PTR_CAST(regionmetadata_get_parent(self));
+    if (HAS_METADATA(parent)) {
+        // Cowns and parents are mutually exclusive this can therefore return directly
+        return regionmetadata_dec_osc(parent);
+    }
+
+    // Check if in a cown -- if so, release cown
+    if (self->cown) {
+        // Propagate error from release
+        return _PyCown_release(self->cown);
+    }
+
+    // Everything is a-okay
+    return 0;
 }
 
 static bool regionmetadata_is_open(Py_region_ptr_t self) {
-    if (HAS_METADATA(self)) {
-        return REGION_DATA_CAST(self)->is_open;
+    if (!HAS_METADATA(self)) {
+        // The immutable and local region are open by default and can't be closed.
+        return true;
     }
 
-    // The immutable and local region are open by default and can't be closed.
-    return true;
+    return REGION_DATA_CAST(self)->is_open;
 }
 #define regionmetadata_is_open(self) \
     regionmetadata_is_open(REGION_PTR_CAST(self))
@@ -174,13 +247,26 @@ static void regionmetadata_inc_osc(Py_region_ptr_t self_ptr)
 #define regionmetadata_inc_osc(self) \
     (regionmetadata_inc_osc(REGION_PTR_CAST(self)))
 
-static void regionmetadata_dec_osc(Py_region_ptr_t self_ptr)
+/// Decrements the OSC of the region. This might close the region if the LRC
+/// and ORC both hit zero and the region is not marked as dirty.
+///
+/// Returns `0` on success. An error might come from closing the region
+/// see `regionmetadata_close` for potential errors.
+static int regionmetadata_dec_osc(Py_region_ptr_t self_ptr)
 {
     if (!HAS_METADATA(self_ptr)) {
-        return;
+        return 0;
     }
 
-    REGION_DATA_CAST(self_ptr)->osc -= 1;
+    regionmetadata* self = REGION_DATA_CAST(self_ptr);
+    self->osc -= 1;
+
+    // Check if the OSC decrease has closed this region as well.
+    if (self->osc == 0 && self->lrc == 0 && !regionmetadata_is_dirty(self)) {
+        return regionmetadata_close(self);
+    }
+
+    return 0;
 }
 #define regionmetadata_dec_osc(self) \
     (regionmetadata_dec_osc(REGION_PTR_CAST(self)))
@@ -194,33 +280,38 @@ static void regionmetadata_inc_rc(Py_region_ptr_t self)
 #define regionmetadata_inc_rc(self) \
     (regionmetadata_inc_rc(REGION_PTR_CAST(self)))
 
-static void regionmetadata_dec_rc(Py_region_ptr_t self_ptr)
+static int regionmetadata_dec_rc(Py_region_ptr_t self_ptr)
 {
     if (!HAS_METADATA(self_ptr)) {
-        return;
+        return 0;
     }
 
     // Update RC
     regionmetadata* self = REGION_DATA_CAST(self_ptr);
     self->rc -= 1;
     if (self->rc != 0) {
-        return;
+        return 0;
     }
 
     // Sort out the funeral by informing everyone about the future freeing
     Py_CLEAR(self->name);
 
+    // Buffer the results since we don't want to leak any memory if this fails.
+    // OSC decreases in this function should also be safe.
+    int result = 0;
     if (regionmetadata_is_open(self)) {
-        regionmetadata_dec_osc(regionmetadata_get_parent(self));
+        result |= regionmetadata_dec_osc(regionmetadata_get_parent(self));
     }
 
     // This access the parent directly to update the rc.
     // It also doesn't matter if the parent pointer is a
     // merge or subregion relation, since both cases have
     // increased the rc.
-    regionmetadata_dec_rc(Py_region_ptr(self->parent));
+    result |= regionmetadata_dec_rc(Py_region_ptr(self->parent));
 
     free(self);
+
+    return result;
 }
 #define regionmetadata_dec_rc(self) \
     (regionmetadata_dec_rc(REGION_PTR_CAST(self)))
@@ -292,7 +383,6 @@ static bool regionmetadata_has_ancestor(regionmetadata* self, regionmetadata* ot
 // it's parent.
 //
 // This function expects `self` to be a valid object.
-__attribute__((unused))
 static PyObject* regionmetadata_merge(regionmetadata* self, Py_region_ptr_t other) {
     assert(HAS_METADATA(self) && "The immutable and local region can't be merged into another region");
     assert(REGION_PTR_CAST(self) == regionmetadata_get_merge_tree_root(self) && "Sanity Check");
@@ -300,7 +390,7 @@ static PyObject* regionmetadata_merge(regionmetadata* self, Py_region_ptr_t othe
     // If `other` is the parent of `self` we can merge it. We unset the the
     // parent which will also update the rc and other counts.
     regionmetadata* self_parent = regionmetadata_get_parent(self);
-    if (REGION_PTR_CAST(self_parent) == other) {
+    if (self_parent && REGION_PTR_CAST(self_parent) == other) {
         assert(HAS_METADATA(self_parent) && "The immutable and local region can never have children");
 
         regionmetadata_set_parent(self, NULL);
@@ -337,18 +427,20 @@ static PyObject* regionmetadata_merge(regionmetadata* self, Py_region_ptr_t othe
 
     regionmetadata_inc_rc(other);
 
-    // Move LRC and OSC into the root.
+    // Merge state into the root.
     if (HAS_METADATA(other)) {
-        // Move information into the merge root
         regionmetadata* other_data = REGION_DATA_CAST(other);
         other_data->lrc += self->lrc;
         other_data->osc += self->osc;
         other_data->is_open |= self->is_open;
-        // remove information from self
-        self->lrc = 0;
-        self->osc = 0;
-        self->is_open = false;
+        other_data->is_dirty |= self->is_dirty;
     }
+
+    // remove information from self
+    self->lrc = 0;
+    self->osc = 0;
+    self->is_open = false;
+    self->is_dirty = false;
 
     self->parent = Py_region_ptr_with_tags(other);
     REGION_PTR_SET_TAG(self->parent, Py_METADATA_MERGE_TAG);
@@ -1103,7 +1195,7 @@ typedef int (*handle_add_to_region_error)(regionerror *, void *);
  * This function borrows both arguments. The memory has to be managed
  * the caller.
  */
-static int emit_region_error(regionerror *error, void* ignored) {
+static int emit_region_error(regionerror *error) {
     const char* msg = NULL;
 
     switch (error->id)
@@ -1132,13 +1224,20 @@ static int emit_region_error(regionerror *error, void* ignored) {
 
 typedef struct addtoregionvisitinfo {
     stack* pending;
+    // An optional stack to collect newly added subregions
+    stack* new_sub_regions;
     // The source object of the reference. This is used to create
     // better error message
     PyObject* src;
-    handle_add_to_region_error handle_error;
-    void* handle_error_data;
 } addtoregionvisitinfo;
 
+/// Adds the `target` object to the region of the `src` object stored
+/// in the `addtoregionvisitinfo*` instance provided via `info_void`.
+///
+/// This function can fail:
+/// - If no memory is available to push nodes on the stacks of
+///   `addtoregionvisitinfo`.
+/// - If it's not possible to add the object to the region.
 static int _add_to_region_visit(PyObject* target, void* info_void)
 {
     addtoregionvisitinfo *info = _Py_CAST(addtoregionvisitinfo *, info_void);
@@ -1170,7 +1269,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (Py_IsLocal(target)) {
         // Add reference to the object,
         // minus one for the reference we just followed
-        source_region->lrc += target->ob_refcnt - 1;
+        source_region->lrc += Py_REFCNT(target) - 1;
         Py_SET_REGION(target, source_region);
 
         if (stack_push(info->pending, target)) {
@@ -1209,7 +1308,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (!_Py_is_bridge_object(target)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_CONTAINED_OBJ_REF };
-        return ((info->handle_error)(&err, info->handle_error_data));
+        return emit_region_error(&err);
     }
 
     // The target is a bridge object from another region. We now need to
@@ -1218,7 +1317,7 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (regionmetadata_has_parent(target_region)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_SHARED_CUSTODY};
-        return ((info->handle_error)(&err, info->handle_error_data));
+        return emit_region_error(&err);
     }
 
     // Make sure that the new subregion relation won't create a cycle
@@ -1226,26 +1325,38 @@ static int _add_to_region_visit(PyObject* target, void* info_void)
     if (regionmetadata_has_ancestor(region, target_region)) {
         regionerror err = {.src = info->src, .tgt = target,
                            .id = ERR_CYCLE_CREATION};
-        return ((info->handle_error)(&err, info->handle_error_data));
+        return emit_region_error(&err);
     }
 
     // From the previous checks we know that `target` is the bridge object
     // of a free region. Thus we can make it a sub region and allow the
     // reference.
+    //
+    // `set_parent` will also ensure that the `osc` counter is updated.
     regionmetadata_set_parent(target_region, region);
+    if (info->new_sub_regions) {
+        if (stack_push(info->new_sub_regions, target)) {
+            PyErr_NoMemory();
+            return -1;
+        }
+    }
 
     return 0;
 }
 
 // This function visits all outgoing reference from `item` including the
-// type. It will return `false` if the operation failed.
+// type.
+//
+// It will return `false` if the given `visit` function fails.
+// (Or if it's called on a function, this is a limitation of the current
+// implementation which should be lifted soon-ish)
 static int visit_object(PyObject *item, visitproc visit, void* info) {
     if (PyFunction_Check(item)) {
         // FIXME: This is a temporary error. It should be replaced by
         // proper handling of moving the function into the region
         regionerror err = {.src = NULL,
             .tgt = item, .id = ERR_WIP_FUNCTIONS };
-        emit_region_error(&err, NULL);
+        emit_region_error(&err);
         return false;
     } else {
         PyTypeObject *type = Py_TYPE(item);
@@ -1281,19 +1392,21 @@ static PyObject *add_to_region(PyObject *obj, Py_region_ptr_t region)
     // The current implementation assumes region is a valid pointer. This
     // restriction can be lifted if needed
     assert(HAS_METADATA(region));
-    regionmetadata *region_data = _Py_CAST(regionmetadata *, region);
+    regionmetadata *region_data = REGION_DATA_CAST(region);
 
     // Early return if the object is already in the region or immutable
     if (Py_REGION(obj) == region || Py_IsImmutable(obj)) {
         Py_RETURN_NONE;
     }
 
+    // Mark the region as open, since we're adding stuff to it.
+    regionmetadata_open(region_data);
+
     addtoregionvisitinfo info = {
         .pending = stack_new(),
+        .new_sub_regions = NULL,
         // `src` is reassigned each iteration
         .src = _PyObject_CAST(region_data->bridge),
-        .handle_error = emit_region_error,
-        .handle_error_data = NULL,
     };
     if (info.pending == NULL) {
         return PyErr_NoMemory();
@@ -1337,12 +1450,188 @@ int _Py_is_bridge_object(PyObject *op) {
     return ((Py_region_ptr_t)((regionmetadata*)region)->bridge == (Py_region_ptr_t)op);
 }
 
-static void regionmetadata_close(regionmetadata* data) {
-    data->is_open = 0;
-}
+/// This function attempts to close a region. It does this, by first merging
+/// it into the local region and then reconstructing the region from the
+/// given bridge object. All reachable objects will be added to the region,
+/// similar to how `add_to_region` works.
+///
+/// This function will also attempt to close open subregions, as that's
+/// needed to close the given region. Closed subregions will remain closed
+/// if possible.
+///
+/// This function returns `-1` if any errors occurred. This can be due to
+/// memory problems, region errors or problems with releasing cowns not owned
+/// by the current thread. `0` only indicates that the function didn't error.
+/// `regionmetadata_is_open()` should be used to check the region status.
+static int try_close(PyRegionObject *root_bridge) {
+    addtoregionvisitinfo info = {
+        .pending = stack_new(),
+        .new_sub_regions = stack_new(),
+        // `src` is reassigned each iteration
+        .src = NULL,
+    };
+    if (!info.pending || !info.new_sub_regions) {
+        goto fail;
+    }
 
-static regionmetadata* PyRegion_get_metadata(PyRegionObject* obj) {
-    return obj->metadata;
+    if (stack_push(info.new_sub_regions, _PyObject_CAST(root_bridge))) {
+        PyErr_NoMemory();
+        goto fail;
+    }
+
+    // The root region can have to have two local references, one from the
+    // owning reference and one from the `self` argument
+    Py_ssize_t root_region_lrc_limit;
+    regionmetadata *root_data = Py_REGION_DATA(root_bridge);
+    if (regionmetadata_has_parent(root_data) || root_data->cown) {
+        root_region_lrc_limit = 1;
+    } else {
+        root_region_lrc_limit = 2;
+    }
+
+    while (!stack_empty(info.new_sub_regions)) {
+        PyObject *bridge = stack_pop(info.new_sub_regions);
+        assert(Py_is_bridge_object(bridge));
+        regionmetadata* old_data = Py_REGION_DATA(bridge);
+
+        // One from the owning reference
+        Py_ssize_t rc_limit = 1;
+        Py_ssize_t lrc_limit = 0;
+
+        // The root bridge has different limits since it's currently used
+        // as an argument for this method.
+        if (bridge == _PyObject_CAST(root_bridge)) {
+            rc_limit += 1;
+            lrc_limit = root_region_lrc_limit;
+        }
+
+        // The *LRC* and *is_open* status is currently not updated when references
+        // to the bridge are created. This means that the bridge might have multiple
+        // unknown references.
+        //
+        // Using the object RC is an over approximation, since internal cycles from
+        // objects to the bridge object will also increase the RC thereby tricking
+        // this check into opening it again.
+        if (Py_REFCNT(bridge) > rc_limit) {
+            regionmetadata_open(Py_REGION_DATA(bridge));
+        }
+
+        // If it's closed there is nothing we need to do.
+        if (!regionmetadata_is_open(old_data)) {
+            continue;
+        }
+
+        // Create the new `regionmetadata*`
+        regionmetadata* new_data = (regionmetadata*)calloc(1, sizeof(regionmetadata));
+        if (!new_data) {
+            PyErr_NoMemory();
+            goto fail;
+        }
+
+        PyRegionObject* bridge_obj = _Py_CAST(PyRegionObject *, bridge);
+        // Increase the RC for the reference given to the `metadata` field of the
+        // `PyRegionObject` object.
+        //
+        // The RC of the old value is directly decreased. The RC of `old_data`
+        // will remain `>= 1` until the region field of the bridge object is
+        // updated by `Py_SET_REGION(bridge, new_data);` This ensures that
+        // `old_data` stays valid while all the data is transferred to `new_data`
+        regionmetadata_dec_rc(bridge_obj->metadata);
+        bridge_obj->metadata = new_data;
+        regionmetadata_inc_rc(new_data);
+
+        new_data->bridge = bridge_obj;
+        Py_XSETREF(new_data->name, old_data->name);
+        regionmetadata_open(new_data);
+        regionmetadata_set_parent(new_data, regionmetadata_get_parent(old_data));
+        new_data->cown = old_data->cown;
+        old_data->cown = NULL;
+
+        // Merge the old region data into local. This has to be done after the
+        // created of the `new_data` to prevent the parent from closing
+        // premeturely when the old data gets detached from it.
+        regionmetadata_set_parent(old_data, NULL);
+        regionmetadata_merge(old_data, _Py_LOCAL_REGION);
+        old_data = NULL;
+
+        // This region update also triggers an RC decrease on `old_data`.
+        // afterwards it might be deallocated. This has to happen after
+        // all data has been transferred.
+        Py_SET_REGION(bridge, new_data);
+        new_data->lrc += Py_REFCNT(bridge);
+        // Only subtract 1 from the LRC if the reference comes from a parent.
+        // Owning references from the local region should still count towards
+        // the LRC.
+        if (regionmetadata_has_parent(new_data) || new_data->cown) {
+            new_data->lrc -= 1;
+        }
+
+        if (stack_push(info.pending, bridge)) {
+            // No more memory, make sure the region is marked as dirty thereby
+            // preventing it from being closed in an inconsitent state.
+            regionmetadata_mark_as_dirty(Py_REGION_DATA(root_bridge));
+            goto fail;
+        }
+
+        // Re-add everything to the current region
+        while (!stack_empty(info.pending)) {
+            PyObject *item = stack_pop(info.pending);
+
+            // Add `info.src` for better error messages
+            info.src = item;
+
+            if (!visit_object(item, (visitproc)_add_to_region_visit, &info)) {
+                // The system is out of memory, or an object couldn't be added
+                // to the region.
+                //
+                // Either way, this means that the LRC of the region can't be trusted.
+                regionmetadata_mark_as_dirty(Py_REGION_DATA(root_bridge));
+                goto fail;
+            }
+        }
+
+        // Mark the region as clean
+        regionmetadata_mark_as_not_dirty(new_data);
+
+        // The LRC will never decrease after this point. If the region is open
+        // due to the LRC it will remain open and the close fails.
+        if (new_data->lrc > lrc_limit) {
+            break;
+        }
+
+        // Update the open status and make sure the parent knows
+        if (new_data->osc == 0) {
+            if (regionmetadata_close(new_data) != 0) {
+                // See `regionmetadata_close` for when this can fail.
+                // In either case, this region has just been cleaned and should
+                // be in a consistent state.
+                goto fail;
+            }
+        }
+    }
+
+    root_data = Py_REGION_DATA(root_bridge);
+    if (root_data->lrc <= root_region_lrc_limit && root_data->osc == 0) {
+        if (regionmetadata_close(root_data) != 0) {
+            // See `regionmetadata_close` for when this can fail.
+            // In either case, this region has just been cleaned and should
+            // be in a consistent state.
+            goto fail;
+        }
+    }
+
+    stack_free(info.pending);
+    stack_free(info.new_sub_regions);
+    return 0;
+
+fail:
+    if (info.pending) {
+        stack_free(info.pending);
+    }
+    if (info.new_sub_regions) {
+        stack_free(info.new_sub_regions);
+    }
+    return -1;
 }
 
 static void PyRegion_dealloc(PyRegionObject *self) {
@@ -1431,11 +1720,8 @@ static int PyRegion_clear(PyRegionObject *self) {
 // compatible with PyCFunction
 static PyObject *PyRegion_is_open(PyRegionObject *self, PyObject *ignored) {
     // FIXME: What is the behavior of a `PyRegionObject` that has been merged into another region?
-    if (regionmetadata_is_open(self->metadata)) {
-        Py_RETURN_TRUE;  // Return True if the region is open
-    } else {
-        Py_RETURN_FALSE; // Return False if the region is closed
-    }
+    assert(Py_is_bridge_object(_PyObject_CAST(self)) && "FIXME: When does this happend and what should it do?");
+    return PyBool_FromLong(_Py_CAST(long, regionmetadata_is_open(self->metadata)));
 }
 
 // Open method (sets the region to "open")
@@ -1458,20 +1744,35 @@ int _PyRegion_is_closed(PyObject* self) {
 // compatible with PyCFunction
 static PyObject *PyRegion_close(PyRegionObject *self, PyObject *ignored) {
     regionmetadata* const md = REGION_DATA_CAST(Py_REGION(self));
-    if (regionmetadata_is_open(md)) {
-        regionmetadata_close(md);  // Mark as closed
-
-        // Check if in a cown -- if so, release cown
-        if (md->cown) {
-            if (_PyCown_release(md->cown) != 0) {
-                // Propagate error from release
-                return NULL;
-            }
-        }
-        Py_RETURN_NONE; // Return None (standard for methods with no return value)
-    } else {
+    if (!regionmetadata_is_open(md)) {
         Py_RETURN_NONE; // Double close is OK
     }
+
+    // Attempt to close the region
+    if (try_close(self) != 0) {
+        return NULL;
+    }
+
+    // Check if the region is now closed
+    if (regionmetadata_is_open(Py_REGION(self))) {
+        PyErr_Format(PyExc_RegionError, "Attempting to close the region failed");
+        return NULL;
+    }
+
+    // Return None (standard for methods with no return value)
+    Py_RETURN_NONE;
+}
+
+// try_close method (Attempts to close the region)
+static PyObject *PyRegion_try_close(PyRegionObject *self, PyObject *args) {
+    assert(Py_is_bridge_object(self) && "self is not a bridge object");
+    // Propagate potentual errors
+    if (try_close(self) != 0) {
+        return NULL;
+    }
+
+    // Check if the region was closed
+    return PyBool_FromLong(_Py_CAST(long, !regionmetadata_is_open(Py_REGION(self))));
 }
 
 // Adds args object to self region
@@ -1534,6 +1835,7 @@ static PyMethodDef PyRegion_methods[] = {
     {"open", (PyCFunction)PyRegion_open, METH_NOARGS, "Open the region."},
     {"close", (PyCFunction)PyRegion_close, METH_NOARGS, "Attempt to close the region."},
     {"is_open", (PyCFunction)PyRegion_is_open, METH_NOARGS, "Check if the region is open."},
+    {"try_close", (PyCFunction)PyRegion_try_close, METH_NOARGS, "Attempt to close the region."},
     // Temporary methods for testing. These will be removed or at least renamed once
     // the write barrier is done.
     {"add_object", (PyCFunction)PyRegion_add_object, METH_O, "Add object to the region."},
@@ -1646,8 +1948,9 @@ bool _Pyrona_AddReferences(PyObject *tgt, int new_refc, ...) {
     return true;
 }
 
-void _PyRegion_set_cown_parent(PyObject* region, PyObject* cown) {
-    regionmetadata* md = PyRegion_get_metadata((PyRegionObject*) region);
+void _PyRegion_set_cown_parent(PyObject* bridge, PyObject* cown) {
+    assert(Py_is_bridge_object(bridge));
+    regionmetadata* data = Py_REGION_DATA(bridge);
     Py_XINCREF(cown);
-    Py_XSETREF(md->cown, cown);
+    Py_XSETREF(data->cown, cown);
 }
