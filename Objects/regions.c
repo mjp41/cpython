@@ -1982,7 +1982,8 @@ void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
 
     // This must be a parent reference, so we need to remove the parent reference.
     regionmetadata* src_md = Py_REGION_DATA(src);
-    if (Py_region_ptr(tgt_md->parent) != src_md) {
+    regionmetadata* tgt_parent_md = REGION_DATA_CAST(Py_region_ptr(tgt_md->parent));
+    if (tgt_parent_md != src_md) {
         // TODO: Could `dirty` mean this isn't an error?
         _PyErr_Region(src, tgt, "(in WB/remove_ref)");
     }

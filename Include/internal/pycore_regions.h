@@ -58,17 +58,17 @@ PyObject* _Py_ResetInvariant(void);
 
 // Invariant placeholder
 bool _Py_RegionAddReference(PyObject* src, PyObject* new_tgt);
-#define Py_REGIONADDREFERENCE(a, b) _Py_RegionAddReference(a, b)
+#define Py_REGIONADDREFERENCE(a, b) _Py_RegionAddReference(_PyObject_CAST(a), b)
 
 // Helper macros to count the number of arguments
 #define _COUNT_ARGS(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
 #define COUNT_ARGS(...) _COUNT_ARGS(__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
 bool _Py_RegionAddReferences(PyObject* src, int new_tgtc, ...);
-#define Py_REGIONADDREFERENCES(a, ...) _Py_RegionAddReferences(a, COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
+#define Py_REGIONADDREFERENCES(a, ...) _Py_RegionAddReferences(_PyObject_CAST(a), COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
 void _Py_RegionRemoveReference(PyObject* src, PyObject* old_tgt);
-#define Py_REGIONREMOVEREFERENCE(a, b) _Py_RegionRemoveReference(a, b)
+#define Py_REGIONREMOVEREFERENCE(a, b) _Py_RegionRemoveReference(_PyObject_CAST(a), b)
 
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
