@@ -2483,8 +2483,8 @@ dict_dealloc(PyDictObject *mp)
     if (values != NULL) {
         for (i = 0, n = mp->ma_keys->dk_nentries; i < n; i++) {
             PyObject *value = values->values[i];
-            Py_XDECREF(values->values[i]);
             Py_REGIONREMOVEREFERENCE(mp, value);
+            Py_XDECREF(values->values[i]);
         }
         free_values(values);
         dictkeys_decref(interp, keys);
