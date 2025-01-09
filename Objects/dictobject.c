@@ -2030,10 +2030,10 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
     if (mp->ma_values) {
         assert(old_value == mp->ma_values->values[ix]);
         mp->ma_values->values[ix] = NULL;
-        Py_REGIONREMOVEREFERENCE(mp, old_value);
         assert(ix < SHARED_KEYS_MAX_SIZE);
         /* Update order */
         delete_index_from_values(mp->ma_values, ix);
+        Py_REGIONREMOVEREFERENCE(mp, old_value);
         ASSERT_CONSISTENT(mp);
     }
     else {
@@ -2202,8 +2202,10 @@ PyDict_Clear(PyObject *op)
         for (i = 0; i < n; i++)
         {
             PyObject* old = oldvalues->values[i];
-            Py_CLEAR(oldvalues->values[i]);
+            // TODO Should we build a combined macro for this
+            //    Py_CLEAR_WITH_REGION(op, oldvalues->values[i])
             Py_REGIONREMOVEREFERENCE(op, old);
+            Py_CLEAR(oldvalues->values[i]);
         }
         free_values(oldvalues);
         dictkeys_decref(interp, oldkeys);
@@ -5640,7 +5642,6 @@ _PyObject_StoreInstanceAttribute(PyObject *obj, PyDictValues *values,
     PyObject *old_value = values->values[ix];
     values->values[ix] = Py_XNewRef(value);
     if (old_value == NULL) {
-        Py_REGIONREMOVEREFERENCE(obj, old_value);
         if (value == NULL) {
             PyErr_Format(PyExc_AttributeError,
                          "'%.100s' object has no attribute '%U'",
@@ -5653,6 +5654,7 @@ _PyObject_StoreInstanceAttribute(PyObject *obj, PyDictValues *values,
         if (value == NULL) {
             delete_index_from_values(values, ix);
         }
+        Py_REGIONREMOVEREFERENCE(obj, old_value);
         Py_DECREF(old_value);
     }
     return 0;

@@ -1988,5 +1988,5 @@ void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
     }
 
     // Unparent the region.
-    regionmetadata_set_parent(tgt_md, _Py_LOCAL_REGION);
+    regionmetadata_set_parent(tgt_md, NULL);
 }
