@@ -2200,13 +2200,7 @@ PyDict_Clear(PyObject *op)
     if (oldvalues != NULL) {
         n = oldkeys->dk_nentries;
         for (i = 0; i < n; i++)
-        {
-            PyObject* old = oldvalues->values[i];
-            // TODO Should we build a combined macro for this
-            //    Py_CLEAR_WITH_REGION(op, oldvalues->values[i])
-            Py_REGIONREMOVEREFERENCE(op, old);
-            Py_CLEAR(oldvalues->values[i]);
-        }
+            Py_CLEAR_OBJECT_FIELD(op, oldvalues->values[i]);
         free_values(oldvalues);
         dictkeys_decref(interp, oldkeys);
     }

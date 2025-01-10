@@ -86,6 +86,14 @@ int _PyRegion_is_closed(PyObject* region);
 int _PyCown_release(PyObject *self);
 int _PyCown_is_released(PyObject *self);
 
+
+#define Py_CLEAR_OBJECT_FIELD(obj, field) do { \
+    PyObject *tmp = (PyObject *)(field); \
+    (field) = NULL; \
+    Py_REGIONREMOVEREFERENCE(obj, tmp); \
+    Py_XDECREF(tmp); \
+} while (0)
+
 #ifdef __cplusplus
 }
 #endif
