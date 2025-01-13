@@ -9,7 +9,7 @@
 /*    Platform-specific Threading Aliases/Wrappers             */
 /***************************************************************/
 
-#ifdef _WIN32
+#if _WIN32
 #include <windows.h>
 
 typedef int PyBehaviorsLockStatus;
@@ -62,123 +62,56 @@ PyBehaviorsLockStatus PyBehaviors_release_lock(PyBehaviors_type_lock lock)
   return PY_BEHAVIORS_LOCK_SUCCESS;
 }
 
-#else
-#include <stdatomic.h>
-
-typedef intptr_t voidptr_t;
-typedef atomic_intptr_t atomic_voidptr_t;
-
-long long atomic_increment(atomic_llong *ptr)
-{
-  return atomic_fetch_add(ptr, 1) + 1;
-}
-
-long long atomic_decrement(atomic_llong *ptr)
-{
-  return atomic_fetch_sub(ptr, 1) - 1;
-}
-
-voidptr_t atomic_load_ptr(atomic_voidptr_t *ptr)
-{
-  return atomic_load(ptr);
-}
-
-bool atomic_load_bool(atomic_bool *ptr)
-{
-  return atomic_load(ptr);
-}
-
-void atomic_store_bool(atomic_bool *ptr, bool val)
-{
-  atomic_store(ptr, val);
-}
-
-voidptr_t atomic_exchange_ptr(atomic_voidptr_t *ptr, voidptr_t val)
-{
-  return atomic_exchange(ptr, val);
-}
-
-bool atomic_compare_exchange_ptr(atomic_voidptr_t *ptr, voidptr_t *expected, voidptr_t desired)
-{
-  return atomic_compare_exchange_strong(ptr, expected, desired);
-}
-
-bool atomic_compare_exchange_bool(atomic_bool *ptr, bool *expected, bool desired)
-{
-  return atomic_compare_exchange_strong(ptr, expected, desired);
-}
-
-#ifdef __APPLE__
+#elif __APPLE__
 #include <pthread.h>
 
-typedef pthread_mutex_t mtx_t;
-typedef pthread_cond_t cnd_t;
-typedef pthread_t thrd_t;
-typedef void *thrd_return_t;
-typedef thrd_return_t (*thrd_start_t)(void *);
+typedef int PyBehaviorsLockStatus;
+typedef pthread_mutex_t* PyBehaviors_type_lock;
 
-#define VPY_PTHREAD
-#define mtx_plain PTHREAD_MUTEX_NORMAL
-#define thrd_success 0
+#define PY_BEHAVIORS_LOCK_SUCCESS 0
+#define PY_BEHAVIORS_LOCK_BUSY EBUSY
+#define PY_BEHAVIORS_LOCK_ERROR EINVAL
 
-int mtx_init(mtx_t *mtx, int type)
+PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 {
-  return pthread_mutex_init(mtx, NULL);
+  pthread_mutex_t *lock = (pthread_mutex_t *)PyMem_RawMalloc(sizeof(pthread_mutex_t));
+  if(lock == NULL)
+  {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  pthread_mutex_init(lock, NULL);
+  return lock;
 }
 
-int mtx_lock(mtx_t *mtx)
+void PyBehaviors_free_lock(PyBehaviors_type_lock lock)
 {
-  return pthread_mutex_lock(mtx);
+  int r;
+  if(lock){
+    r = pthread_mutex_destroy(lock);
+    if(r == EBUSY){
+      PyErr_SetString(PyExc_RuntimeError, "Lock is busy");
+      return;
+    }
+
+    PyMem_RawFree(lock);
+  }
 }
 
-int mtx_unlock(mtx_t *mtx)
+PyBehaviorsLockStatus PyBehaviors_acquire_lock(PyBehaviors_type_lock lock, int waitflag)
 {
-  return pthread_mutex_unlock(mtx);
+  if (waitflag)
+  {
+    return pthread_mutex_lock(lock);
+  }
+
+  return pthread_mutex_trylock(lock);
 }
 
-int mtx_destroy(mtx_t *mtx)
+PyBehaviorsLockStatus PyBehaviors_release_lock(PyBehaviors_type_lock lock)
 {
-  return pthread_mutex_destroy(mtx);
-}
-
-int cnd_init(cnd_t *cond)
-{
-  return pthread_cond_init(cond, NULL);
-}
-
-int cnd_destroy(cnd_t *cond)
-{
-  return pthread_cond_destroy(cond);
-}
-
-int cnd_signal(cnd_t *cond)
-{
-  return pthread_cond_signal(cond);
-}
-
-int cnd_broadcast(cnd_t *cond)
-{
-  return pthread_cond_broadcast(cond);
-}
-
-int cnd_wait(cnd_t *cond, mtx_t *mtx)
-{
-  return pthread_cond_wait(cond, mtx);
-}
-
-int thrd_create(thrd_t *thr, thrd_start_t func, void *arg)
-{
-  return pthread_create(thr, NULL, func, arg);
-}
-
-int thrd_yield()
-{
-  return sleep(0);
-}
-
-int thrd_join(thrd_t thr, int *res)
-{
-  return pthread_join(thr, NULL);
+  return pthread_mutex_unlock(lock);
 }
 
 #else
@@ -231,7 +164,6 @@ PyBehaviorsLockStatus PyBehaviors_release_lock(PyBehaviors_type_lock lock)
 {
   return mtx_unlock(lock);
 }
-#endif
 #endif
 
 static int
