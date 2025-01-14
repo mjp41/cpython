@@ -2960,7 +2960,7 @@ dict_merge(PyInterpreterState *interp, PyObject *a, PyObject *b, int override)
                      USABLE_FRACTION(DK_SIZE(okeys)/2) < other->ma_used)) {
                 uint64_t new_version = _PyDict_NotifyEvent(
                         interp, PyDict_EVENT_CLONED, mp, b, NULL);
-                PyDictKeysObject *keys = clone_combined_dict_keys(other);
+                PyDictKeysObject *keys = clone_combined_dict_keys(other); // Need to say what owns the keys?
                 if (keys == NULL) {
                     return -1;
                 }
@@ -3455,6 +3455,8 @@ PyDict_SetDefault(PyObject *d, PyObject *key, PyObject *defaultobj)
         return NULL;
 
     if (ix == DKIX_EMPTY) {
+        if (!Py_REGIONADDREFERENCE(mp, defaultobj))
+            return NULL;
         uint64_t new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_ADDED, mp, key, defaultobj);
         mp->ma_keys->dk_version = 0;
@@ -3474,8 +3476,6 @@ PyDict_SetDefault(PyObject *d, PyObject *key, PyObject *defaultobj)
                 Py_ssize_t index = (int)mp->ma_keys->dk_nentries;
                 assert(index < SHARED_KEYS_MAX_SIZE);
                 assert(mp->ma_values->values[index] == NULL);
-                if (!Py_REGIONADDREFERENCE(mp, value))
-                  return NULL;
                 mp->ma_values->values[index] = Py_NewRef(value);
                 _PyDictValues_AddToInsertionOrder(mp->ma_values, index);
             }
@@ -3497,7 +3497,7 @@ PyDict_SetDefault(PyObject *d, PyObject *key, PyObject *defaultobj)
         assert(mp->ma_keys->dk_usable >= 0);
     }
     else if (value == NULL) {
-        if (!Py_REGIONADDREFERENCE(mp, value))
+        if (!Py_REGIONADDREFERENCE(mp, defaultobj))
           return NULL;
         uint64_t new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_ADDED, mp, key, defaultobj);

@@ -8,7 +8,7 @@ class TestRegionsDictObject(unittest.TestCase):
         # Create Region with Empty dictionary
         r = Region()
         d = {}
-        r.add_object(d)
+        r.body = d
         n = {}
         # Add local object to region
         d["foo"] = n
@@ -19,7 +19,7 @@ class TestRegionsDictObject(unittest.TestCase):
         r = Region()
         d = {}
         d["bar"] = 1
-        r.add_object(d)
+        r.body = d
         # Add local object to region
         n = {}
         d["foo"] = n
@@ -31,7 +31,7 @@ class TestRegionsDictObject(unittest.TestCase):
         d = {}
         n1 = {}
         d["foo"] = n1
-        r.add_object(d)
+        r.body = d
         # Update dictionary to contain a local object
         n2 = {}
         d["foo"] = n2
@@ -43,8 +43,38 @@ class TestRegionsDictObject(unittest.TestCase):
         d = {}
         n = {}
         d["foo"] = n
-        r.add_object(d)
+        r.body = d
         # Clear dictionary
         d.clear()
         # As LRC is not checked by the invariant, this test cannot
         # check anything useful yet.
+
+    def test_dict_copy(self):
+        r = Region()
+        d = {}
+        r.body = d
+        r2 = Region()
+        d["foo"] = r2
+        d.copy()
+
+    def test_dict_setdefault(self):
+        r = Region("outer")
+        d = {}
+        r.body = d
+        r2 = Region("inner")
+        d["foo"] = r2
+        d.setdefault("foo", r2)
+        self.assertRaises(RegionError, d.setdefault, "bar", r2)
+
+    def test_dict_update(self):
+        # Create a region containing two dictionaries
+        r = Region()
+        d = {}
+        r.body = d
+        d2 = {}
+        r.body2 = d2
+        # Add a contained region to the first dictionary
+        d["reg"] = Region()
+        # Update the second dictionary to contain the elements of the first
+        self.assertRaises(RegionError, d2.update, d)
+        self.assertRaises(RegionError, d2.update, d)
