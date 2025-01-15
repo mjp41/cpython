@@ -159,8 +159,14 @@ static void regionmetadata_mark_as_dirty(Py_region_ptr_t self_ptr) {
     if (!HAS_METADATA(self_ptr)) {
         return;
     }
+    regionmetadata *self = REGION_DATA_CAST(self_ptr);
+    self->is_dirty = true;
 
-    REGION_DATA_CAST(self_ptr)->is_dirty = true;
+    // Mark any parent as dirty as well
+    regionmetadata *parent = regionmetadata_get_parent(self);
+    if (parent) {
+        regionmetadata_mark_as_dirty(REGION_PTR_CAST(parent));
+    }
 }
 # define regionmetadata_mark_as_dirty(data) \
     (regionmetadata_mark_as_dirty(REGION_PTR_CAST(data)))
