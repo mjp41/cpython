@@ -1935,6 +1935,18 @@ bool _Py_RegionAddReference(PyObject *src, PyObject *tgt) {
     return add_to_region(tgt, Py_REGION(src)) == Py_None;
 }
 
+// Used to add a reference from a local object that might not have been created yet
+// to tgt.
+void _Py_RegionAddLocalReference(PyObject *tgt) {
+    // Only need to increment the LRC of the target region
+    // if it is not local, immutable, or a cown.
+    if (_Py_IsLocal(tgt) || Py_IsImmutable(tgt) || _Py_IsCown(tgt)) {
+        return;
+    }
+
+    Py_REGION_DATA(tgt)->lrc += 1;
+}
+
 // Convenience function for moving multiple references into tgt at once
 bool _Py_RegionAddReferences(PyObject *src, int tgtc, ...) {
     va_list args;

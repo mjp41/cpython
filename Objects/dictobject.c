@@ -793,8 +793,12 @@ new_dict_with_shared_keys(PyInterpreterState *interp, PyDictKeysObject *keys)
 }
 
 
+/*  The target represents the dictionary that this object will become part of.
+    If target is NULL, the object is not part of a freshly allocated dictionary, so should
+    be considered as part of te local region.
+*/
 static PyDictKeysObject *
-clone_combined_dict_keys(PyDictObject *orig)
+clone_combined_dict_keys(PyDictObject *orig, PyObject* target)
 {
     assert(PyDict_Check(orig));
     assert(Py_TYPE(orig)->tp_iter == (getiterfunc)dict_iter);
@@ -835,9 +839,14 @@ clone_combined_dict_keys(PyDictObject *orig)
         if (value != NULL) {
             Py_INCREF(value);
             Py_INCREF(*pkey);
-            // TODO need to add_reference here.  We don't know the underlying region
-            // but it should be freshly allocated, so can we consider it the local region
-            // TODO discuss before merging PR.
+            if (target != NULL) {
+                if (!Py_REGIONADDREFERENCES(target, *pkey, value))
+                    return NULL;
+            }
+            else {
+                Py_REGIONADDLOCALREFERENCE(*pkey);
+                Py_REGIONADDLOCALREFERENCE(value);
+            }
         }
         pvalue += offs;
         pkey += offs;
@@ -2960,7 +2969,7 @@ dict_merge(PyInterpreterState *interp, PyObject *a, PyObject *b, int override)
                      USABLE_FRACTION(DK_SIZE(okeys)/2) < other->ma_used)) {
                 uint64_t new_version = _PyDict_NotifyEvent(
                         interp, PyDict_EVENT_CLONED, mp, b, NULL);
-                PyDictKeysObject *keys = clone_combined_dict_keys(other); // Need to say what owns the keys?
+                PyDictKeysObject *keys = clone_combined_dict_keys(other, a); // Need to say what owns the keys?
                 if (keys == NULL) {
                     return -1;
                 }
@@ -3195,7 +3204,7 @@ PyDict_Copy(PyObject *o)
            operations and copied after that.  In cases like this, we defer to
            PyDict_Merge, which produces a compacted copy.
         */
-        PyDictKeysObject *keys = clone_combined_dict_keys(mp);
+        PyDictKeysObject *keys = clone_combined_dict_keys(mp, NULL);
         if (keys == NULL) {
             return NULL;
         }
