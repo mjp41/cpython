@@ -1411,12 +1411,13 @@ dummy_func(
                 goto error;
             }
 
-            if (!Py_CHECKWRITE(cell)){
+            if (!Py_CHECKWRITE(cell)) {
                 format_exc_notwriteable(tstate, frame->f_code, oparg);
                 goto error;
             }
 
             PyCell_SET(cell, NULL);
+            Py_REGIONREMOVEREFERENCE(cell, oldobj);
             Py_DECREF(oldobj);
         }
 
@@ -1473,6 +1474,11 @@ dummy_func(
 
             if(!Py_CHECKWRITE(cell)){
                 format_exc_notwriteable(tstate, frame->f_code, oparg);
+                goto error;
+            }
+
+            // Check that the reference can be created
+            if (!Py_REGIONCHANGEREFERENCE(cell, oldobj, v)) {
                 goto error;
             }
 
