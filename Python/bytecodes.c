@@ -1980,6 +1980,13 @@ dummy_func(
             }
             PyDictValues *values = _PyDictOrValues_GetValues(dorv);
             PyObject *old_value = values->values[index];
+
+            // Check that the reference can be created
+            if (!Py_REGIONCHANGEREFERENCE(owner, old_value, value)) {
+                Py_DECREF(owner);
+                goto error;
+            }
+
             values->values[index] = value;
             if (old_value == NULL) {
                 _PyDictValues_AddToInsertionOrder(values, index);
@@ -2015,11 +2022,16 @@ dummy_func(
                 DEOPT_IF(ep->me_key != name, STORE_ATTR);
                 old_value = _PyDictEntry_Value(ep);
                 DEOPT_IF(old_value == NULL, STORE_ATTR);
-                new_version = _PyDict_NotifyEvent(tstate->interp, PyDict_EVENT_MODIFIED, dict, name, value);
-                if(_PyDictEntry_IsImmutable(ep)){
+                if (_PyDictEntry_IsImmutable(ep)) {
                     format_exc_notwriteable(tstate, frame->f_code, oparg);
+                    Py_DECREF(owner);
                     goto error;
                 }
+                if (!Py_REGIONCHANGEREFERENCE(owner, old_value, value)) {
+                    Py_DECREF(owner);
+                    goto error;
+                }
+                new_version = _PyDict_NotifyEvent(tstate->interp, PyDict_EVENT_MODIFIED, dict, name, value);
                 _PyDictEntry_SetValue(ep, value);
             }
             else {
@@ -2027,11 +2039,16 @@ dummy_func(
                 DEOPT_IF(ep->me_key != name, STORE_ATTR);
                 old_value = _PyDictEntry_Value(ep);
                 DEOPT_IF(old_value == NULL, STORE_ATTR);
-                new_version = _PyDict_NotifyEvent(tstate->interp, PyDict_EVENT_MODIFIED, dict, name, value);
-                if(_PyDictEntry_IsImmutable(ep)){
+                if (_PyDictEntry_IsImmutable(ep)) {
                     format_exc_notwriteable(tstate, frame->f_code, oparg);
+                    Py_DECREF(owner);
                     goto error;
                 }
+                if (!Py_REGIONCHANGEREFERENCE(owner, old_value, value)) {
+                    Py_DECREF(owner);
+                    goto error;
+                }
+                new_version = _PyDict_NotifyEvent(tstate->interp, PyDict_EVENT_MODIFIED, dict, name, value);
                 _PyDictEntry_SetValue(ep, value);
             }
             Py_DECREF(old_value);
@@ -2055,9 +2072,16 @@ dummy_func(
                 Py_DECREF(owner);
                 goto error;
             }
+
             char *addr = (char *)owner + index;
             STAT_INC(STORE_ATTR, hit);
             PyObject *old_value = *(PyObject **)addr;
+            // Check that the reference can be created
+            if (!Py_REGIONCHANGEREFERENCE(owner, old_value, value)) {
+                Py_DECREF(owner);
+                goto error;
+            }
+
             *(PyObject **)addr = value;
             Py_XDECREF(old_value);
             Py_DECREF(owner);
