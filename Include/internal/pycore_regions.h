@@ -12,6 +12,9 @@ extern "C" {
 #include "object.h"
 #include "regions.h"
 
+#define Py_IS_REGION_AWARE(tp) (tp->tp_flags & Py_TPFLAGS_REGION_AWARE)
+#define Py_OBJ_IS_REGION_AWARE(op) Py_IS_REGION_AWARE(Py_TYPE(op))
+
 #define Py_CHECKWRITE(op) ((op) && !Py_IsImmutable(op))
 #define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
 
@@ -57,9 +60,10 @@ PyObject* _Py_ResetInvariant(void);
 #define Py_ResetInvariant() _Py_ResetInvariant()
 
 // Invariant placeholder
-bool _Pyrona_AddReference(PyObject* target, PyObject* new_ref);
+bool _Pyrona_RemoveReference(PyObject* src, PyObject* tgt);
+#define Pyrona_REMOVEREFERENCE(a, b) _Pyrona_RemoveReference(a, b)
+bool _Pyrona_AddReference(PyObject* src, PyObject* tgt);
 #define Pyrona_ADDREFERENCE(a, b) _Pyrona_AddReference(a, b)
-#define Pyrona_REMOVEREFERENCE(a, b) // TODO
 // Helper macros to count the number of arguments
 #define _COUNT_ARGS(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
 #define COUNT_ARGS(...) _COUNT_ARGS(__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
@@ -82,6 +86,7 @@ void _PyRegion_set_cown_parent(PyObject* region, PyObject* cown);
 int _PyRegion_is_closed(PyObject* region);
 int _PyCown_release(PyObject *self);
 int _PyCown_is_released(PyObject *self);
+void _PyObject_mark_region_as_dirty(PyObject *op);
 
 #ifdef __cplusplus
 }

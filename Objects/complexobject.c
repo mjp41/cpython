@@ -6,6 +6,7 @@
 /* Submitted by Jim Hugunin */
 
 #include "Python.h"
+#include "object.h"
 #include "pycore_call.h"          // _PyObject_CallNoArgs()
 #include "pycore_long.h"          // _PyLong_GetZero()
 #include "pycore_object.h"        // _PyObject_Init()
@@ -1087,7 +1088,7 @@ PyTypeObject PyComplex_Type = {
     PyObject_GenericGetAttr,                    /* tp_getattro */
     0,                                          /* tp_setattro */
     0,                                          /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_REGION_AWARE,   /* tp_flags */
     complex_new__doc__,                         /* tp_doc */
     0,                                          /* tp_traverse */
     0,                                          /* tp_clear */
