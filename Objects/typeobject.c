@@ -1,8 +1,10 @@
 /* Type object implementation */
 
 #include "Python.h"
+#include "object.h"
 #include "pycore_call.h"
 #include "pycore_code.h"          // CO_FAST_FREE
+#include "pycore_regions.h"
 #include "pycore_symtable.h"      // _Py_Mangle()
 #include "pycore_dict.h"          // _PyDict_KeysSize()
 #include "pycore_initconfig.h"    // _PyStatus_OK()
@@ -2940,8 +2942,15 @@ subtype_setdict(PyObject *obj, PyObject *value, void *context)
                      "not a '%.200s'", Py_TYPE(value)->tp_name);
         return -1;
     }
-    Py_XSETREF(*dictptr, Py_XNewRef(value));
-    return 0;
+    if (value == NULL || _Pyrona_AddReference(obj, value)) {
+        if (*dictptr) {
+            _Pyrona_RemoveReference(obj, *dictptr);
+        }
+        Py_XSETREF(*dictptr, Py_XNewRef(value));
+        return 0;
+    } else {
+        return -1;
+    }
 }
 
 static PyObject *
@@ -3326,7 +3335,7 @@ type_new_alloc(type_new_ctx *ctx)
     // All heap types need GC, since we can create a reference cycle by storing
     // an instance on one of its parents.
     type->tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HEAPTYPE |
-                      Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC);
+                      Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_REGION_AWARE);
 
     // Initialize essential fields
     type->tp_as_async = &et->as_async;
@@ -5349,6 +5358,7 @@ PyTypeObject PyType_Type = {
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC |
     Py_TPFLAGS_BASETYPE | Py_TPFLAGS_TYPE_SUBCLASS |
     Py_TPFLAGS_HAVE_VECTORCALL |
+    Py_TPFLAGS_REGION_AWARE |
     Py_TPFLAGS_ITEMS_AT_END,                    /* tp_flags */
     type_doc,                                   /* tp_doc */
     (traverseproc)type_traverse,                /* tp_traverse */
@@ -6559,7 +6569,8 @@ PyTypeObject PyBaseObject_Type = {
     PyObject_GenericGetAttr,                    /* tp_getattro */
     PyObject_GenericSetAttr,                    /* tp_setattro */
     0,                                          /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE |
+    Py_TPFLAGS_REGION_AWARE,   /* tp_flags */
     object_doc,                                 /* tp_doc */
     0,                                          /* tp_traverse */
     0,                                          /* tp_clear */
