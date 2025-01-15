@@ -235,10 +235,7 @@ static bool regionmetadata_is_open(Py_region_ptr_t self) {
     regionmetadata_is_open(REGION_PTR_CAST(self))
 
 void _PyObject_mark_region_as_dirty(PyObject *op) {
-    Py_region_ptr_t rp = _Py_REGION(op);
-    if (HAS_METADATA(rp)) {
-        REGION_DATA_CAST(rp)->is_dirty = true;
-    }
+    regionmetadata_mark_as_dirty(_Py_REGION(op));
 }
 
 static void regionmetadata_inc_osc(Py_region_ptr_t self_ptr)
