@@ -90,12 +90,30 @@ int _PyCown_release(PyObject *self);
 int _PyCown_is_released(PyObject *self);
 
 
-#define Py_CLEAR_OBJECT_FIELD(obj, field) do { \
-    PyObject *tmp = (PyObject *)(field); \
-    (field) = NULL; \
-    Py_REGIONREMOVEREFERENCE(obj, tmp); \
-    Py_XDECREF(tmp); \
-} while (0)
+#ifdef _Py_TYPEOF
+#define Py_CLEAR_OBJECT_FIELD(op, field) \
+    do { \
+        _Py_TYPEOF(op)* _tmp_op_ptr = &(op); \
+        _Py_TYPEOF(op) _tmp_old_op = (*_tmp_op_ptr); \
+        if (_tmp_old_op != NULL) { \
+            *_tmp_op_ptr = _Py_NULL; \
+            Py_REGIONREMOVEREFERENCE(op, _tmp_old_op); \
+            Py_DECREF(_tmp_old_op); \
+        } \
+    } while (0)
+#else
+#define Py_CLEAR_OBJECT_FIELD(op, field) \
+    do { \
+        PyObject **_tmp_op_ptr = _Py_CAST(PyObject**, &(op)); \
+        PyObject *_tmp_old_op = (*_tmp_op_ptr); \
+        if (_tmp_old_op != NULL) { \
+            PyObject *_null_ptr = _Py_NULL; \
+            memcpy(_tmp_op_ptr, &_null_ptr, sizeof(PyObject*)); \
+            Py_REGIONREMOVEREFERENCE(op, _tmp_old_op); \
+            Py_DECREF(_tmp_old_op); \
+        } \
+    } while (0)
+#endif
 
 #ifdef __cplusplus
 }
