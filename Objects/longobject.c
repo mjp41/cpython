@@ -3,6 +3,7 @@
 /* XXX The functional organization of this file is terrible */
 
 #include "Python.h"
+#include "object.h"
 #include "pycore_bitutils.h"      // _Py_popcount32()
 #include "pycore_initconfig.h"    // _PyStatus_OK()
 #include "pycore_long.h"          // _Py_SmallInts
@@ -6271,7 +6272,7 @@ PyTypeObject PyLong_Type = {
     0,                                          /* tp_setattro */
     0,                                          /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE |
-        Py_TPFLAGS_LONG_SUBCLASS |
+        Py_TPFLAGS_LONG_SUBCLASS | Py_TPFLAGS_REGION_AWARE |
         _Py_TPFLAGS_MATCH_SELF,               /* tp_flags */
     long_doc,                                   /* tp_doc */
     0,                                          /* tp_traverse */
