@@ -103,3 +103,7 @@ class UsingTest(unittest.TestCase):
         r = Region()
         r.f = Cown()
         self.assertTrue(True)
+
+    def test_invalid_cown_init(self):
+         # Create cown with invalid init value
+        self.assertRaises(RegionError, Cown, [42])

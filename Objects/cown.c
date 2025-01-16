@@ -73,7 +73,9 @@ static int PyCown_init(PyCownObject *self, PyObject *args, PyObject *kwds) {
     }
 
     if (value) {
-        PyCown_set_unchecked(self, value);
+        PyObject* result = PyCown_set_unchecked(self, value);
+        // Propagate errors from set_unchecked
+        if (result == NULL) return -1;
 
     } else {
         _Py_atomic_store(&self->state, Cown_RELEASED);
@@ -215,7 +217,7 @@ static PyObject *PyCown_set_unchecked(PyCownObject *self, PyObject *arg) {
         return old ? old : Py_None;
     } else {
         // Invalid cown content
-        PyErr_SetString(PyExc_RuntimeError,
+        PyErr_SetString(PyExc_RegionError,
             "Cowns can only store bridge objects, immutable objects or other cowns!");
         return NULL;
     }
