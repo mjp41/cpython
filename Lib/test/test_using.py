@@ -159,8 +159,10 @@ class UsingTest(unittest.TestCase):
         t1.join()
         t2.join()
 
-        c.acquire()
-        result = c.get().value.value
-        c.release()
+        result = 0
+        @using(c)
+        def _():
+            nonlocal result
+            result = c.get().value.value
         if result != 200:
             self.fail()
