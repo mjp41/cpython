@@ -94,8 +94,9 @@ static int PyCown_traverse(PyCownObject *self, visitproc visit, void *arg) {
 #define BAIL_IF_OWNED(o, msg) \
     do { \
         /* Note: we must hold the GIL at this point -- note for future threading implementation. */ \
-        if (o->owning_thread != 0) { \
-            PyErr_Format(PyExc_RegionError, "%s: %S -- %zd", msg, o, o->owning_thread); \
+        size_t tid = o->owning_thread; \
+        if (tid != 0) { \
+            PyErr_Format(PyExc_RegionError, "%s: %S -- %zd", msg, o, tid); \
             return NULL; \
         } \
     } while(0);
@@ -126,18 +127,20 @@ static int PyCown_traverse(PyCownObject *self, visitproc visit, void *arg) {
 // The ignored argument is required for this function's type to be
 // compatible with PyCFunction
 static PyObject *PyCown_acquire(PyCownObject *self, PyObject *ignored) {
+    PyThreadState *tstate = PyThreadState_Get();
+    Py_BEGIN_ALLOW_THREADS
     int expected = Cown_RELEASED;
 
     // TODO: eventually replace this with something from pycore_atomic (nothing there now)
     while (!atomic_compare_exchange_strong(&self->state._value, &expected, Cown_ACQUIRED)) {
-        sem_wait(&self->semaphore);
         expected = Cown_RELEASED;
+        sem_wait(&self->semaphore);
     }
 
     // Note: we must hold the GIL at this point -- note for future
     // threading implementation.
-    PyThreadState *tstate = PyThreadState_Get();
     self->owning_thread = tstate->thread_id;
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
@@ -152,9 +155,11 @@ static PyObject *PyCown_release(PyCownObject *self, PyObject *ignored) {
 
     BAIL_UNLESS_OWNED(self, "Thread attempted to release a cown it did not own");
 
+    Py_BEGIN_ALLOW_THREADS
     self->owning_thread = 0;
     _Py_atomic_store(&self->state, Cown_RELEASED);
     sem_post(&self->semaphore);
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
