@@ -107,3 +107,15 @@ class UsingTest(unittest.TestCase):
     def test_invalid_cown_init(self):
          # Create cown with invalid init value
         self.assertRaises(RegionError, Cown, [42])
+
+    def test_thread_creation(self):
+        from threading import Thread as T
+
+        class Mutable: pass
+        self.assertRaises(RuntimeError, T, kwargs = { 'target' : print, 'args' : (Mutable(),) })
+        self.assertRaises(RuntimeError, T, kwargs = { 'target' : print, 'kwargs' : {'a' : Mutable()} })
+        self.assertRaises(RuntimeError, T, kwargs = { 'target' : print, 'args' : (Mutable(),), 'kwargs' : {'a' : Mutable()} })
+
+        T(target=print, args=(42, Cown(), Region()))
+        T(target=print, kwargs={'imm' : 42, 'cown' : Cown(), 'region' : Region()})
+        self.assertTrue(True) # To make sure we got here correctly
