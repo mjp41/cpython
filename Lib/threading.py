@@ -895,21 +895,23 @@ class Thread:
                 except AttributeError:
                     pass
 
-        def movable(o):
-            return isinstance(o, Region) and not o.is_open()
+        # Only check when a program uses pyrona
+        if is_pyrona_program():
+            def movable(o):
+                return isinstance(o, Region) and not o.is_open()
 
-        for k, v in kwargs.items():
-            if not (isimmutable(v) or isinstance(v, Cown) or movable(v)):
-                raise RuntimeError(f'thread was passed {k} : {type(v)} -- '
-                                   'only immutable objects, cowns and free '
-                                   'regions may be passed to a thread')
-        for a in args:
-            if not (isimmutable(a) or isinstance(a, Cown) or movable(a)):
-                from sys import getrefcount as rc
-                print(a, rc(a))
-                raise RuntimeError(f'thread was passed {type(a)} -- '
-                                   'only immutable objects, cowns and free '
-                                   'regions may be passed to a thread')
+            for k, v in kwargs.items():
+                if not (isimmutable(v) or isinstance(v, Cown) or movable(v)):
+                    raise RuntimeError(f'thread was passed {k} : {type(v)} -- '
+                                       'only immutable objects, cowns and free '
+                                       'regions may be passed to a thread')
+            for a in args:
+                if not (isimmutable(a) or isinstance(a, Cown) or movable(a)):
+                    from sys import getrefcount as rc
+                    print(a, rc(a))
+                    raise RuntimeError(f'thread was passed {type(a)} -- '
+                                       'only immutable objects, cowns and free '
+                                       'regions may be passed to a thread')
 
         self._target = target
         self._name = name

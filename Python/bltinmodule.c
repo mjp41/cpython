@@ -2776,6 +2776,14 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
     return Py_MakeImmutable(obj);
 }
 
+extern bool invariant_do_region_check;
+
+static PyObject *
+builtin_is_pyrona_program_impl(PyObject *module)
+{
+    return invariant_do_region_check ? Py_True : Py_False;
+}
+
 /*[clinic input]
 invariant_failure_src as builtin_invariantsrcfailure
 
@@ -3118,6 +3126,7 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_MAKEIMMUTABLE_METHODDEF
     BUILTIN_INVARIANTSRCFAILURE_METHODDEF
     BUILTIN_INVARIANTTGTFAILURE_METHODDEF
+    BUILTIN_IS_PYRONA_PROGRAM_METHODDEF
     BUILTIN_ITER_METHODDEF
     BUILTIN_AITER_METHODDEF
     BUILTIN_LEN_METHODDEF
