@@ -2815,6 +2815,19 @@ builtin_enableinvariant_impl(PyObject *module)
     return Py_EnableInvariant();
 }
 
+/*[clinic input]
+is_pyrona_program as builtin_is_pyrona_program
+
+Returns True if the program has used regions or cowns.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_is_pyrona_program_impl(PyObject *module)
+/*[clinic end generated code: output=2b6729469da00221 input=d36655a3dc34a881]*/
+{
+    return Py_is_invariant_enabled() ? Py_True : Py_False;
+}
+
 typedef struct {
     PyObject_HEAD
     Py_ssize_t tuplesize;
@@ -3116,6 +3129,7 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_ISSUBCLASS_METHODDEF
     BUILTIN_ISIMMUTABLE_METHODDEF
     BUILTIN_MAKEIMMUTABLE_METHODDEF
+    BUILTIN_IS_PYRONA_PROGRAM_METHODDEF
     BUILTIN_INVARIANTSRCFAILURE_METHODDEF
     BUILTIN_INVARIANTTGTFAILURE_METHODDEF
     BUILTIN_ITER_METHODDEF
