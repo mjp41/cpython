@@ -1481,4 +1481,22 @@ builtin_enableinvariant(PyObject *module, PyObject *Py_UNUSED(ignored))
 {
     return builtin_enableinvariant_impl(module);
 }
-/*[clinic end generated code: output=3a883fa08bbd248e input=a9049054013a1b77]*/
+
+PyDoc_STRVAR(builtin_is_pyrona_program__doc__,
+"is_pyrona_program($module, /)\n"
+"--\n"
+"\n"
+"Returns True if the program has used regions or cowns.");
+
+#define BUILTIN_IS_PYRONA_PROGRAM_METHODDEF    \
+    {"is_pyrona_program", (PyCFunction)builtin_is_pyrona_program, METH_NOARGS, builtin_is_pyrona_program__doc__},
+
+static PyObject *
+builtin_is_pyrona_program_impl(PyObject *module);
+
+static PyObject *
+builtin_is_pyrona_program(PyObject *module, PyObject *Py_UNUSED(ignored))
+{
+    return builtin_is_pyrona_program_impl(module);
+}
+/*[clinic end generated code: output=c1f628b019efa501 input=a9049054013a1b77]*/
