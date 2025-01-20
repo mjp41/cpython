@@ -24,5 +24,3 @@ other_thread.start()
 # do_something(c, 42) # can't do something here because we don't have access to the cell # can't do something here because we don't have access to the cell
 
 other_thread.join()
-
-

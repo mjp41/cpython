@@ -30,5 +30,3 @@ def _():
     print(c.get().cell)
 
 other_thread.join()
-
-
