@@ -57,15 +57,21 @@ PyObject* _Py_ResetInvariant(void);
 #define Py_ResetInvariant() _Py_ResetInvariant()
 
 // Invariant placeholder
-bool _Pyrona_AddReference(PyObject* target, PyObject* new_ref);
-#define Pyrona_ADDREFERENCE(a, b) _Pyrona_AddReference(a, b)
-#define Pyrona_REMOVEREFERENCE(a, b) // TODO
+bool _Py_RegionAddReference(PyObject* src, PyObject* new_tgt);
+#define Py_REGIONADDREFERENCE(a, b) _Py_RegionAddReference(_PyObject_CAST(a), b)
+
+void _Py_RegionAddLocalReference(PyObject* new_tgt);
+#define Py_REGIONADDLOCALREFERENCE(b) _Py_RegionAddLocalReference(b)
+
 // Helper macros to count the number of arguments
 #define _COUNT_ARGS(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
 #define COUNT_ARGS(...) _COUNT_ARGS(__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
-bool _Pyrona_AddReferences(PyObject* target, int new_refc, ...);
-#define Pyrona_ADDREFERENCES(a, ...) _Pyrona_AddReferences(a, COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
+bool _Py_RegionAddReferences(PyObject* src, int new_tgtc, ...);
+#define Py_REGIONADDREFERENCES(a, ...) _Py_RegionAddReferences(_PyObject_CAST(a), COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
+
+void _Py_RegionRemoveReference(PyObject* src, PyObject* old_tgt);
+#define Py_REGIONREMOVEREFERENCE(a, b) _Py_RegionRemoveReference(_PyObject_CAST(a), b)
 
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
@@ -82,6 +88,32 @@ void _PyRegion_set_cown_parent(PyObject* region, PyObject* cown);
 int _PyRegion_is_closed(PyObject* region);
 int _PyCown_release(PyObject *self);
 int _PyCown_is_released(PyObject *self);
+
+
+#ifdef _Py_TYPEOF
+#define Py_CLEAR_OBJECT_FIELD(op, field) \
+    do { \
+        _Py_TYPEOF(op)* _tmp_field_ptr = &(field); \
+        _Py_TYPEOF(op) _tmp_old_field = (*_tmp_field_ptr); \
+        if (_tmp_old_field != NULL) { \
+            *_tmp_field_ptr = _Py_NULL; \
+            Py_REGIONREMOVEREFERENCE(op, _tmp_old_field); \
+            Py_DECREF(_tmp_old_field); \
+        } \
+    } while (0)
+#else
+#define Py_CLEAR_OBJECT_FIELD(op, field) \
+    do { \
+        PyObject **_tmp_field_ptr = _Py_CAST(PyObject**, &(op)); \
+        PyObject *_tmp_old_field = (*_tmp_field_ptr); \
+        if (_tmp_old_field != NULL) { \
+            PyObject *_null_ptr = _Py_NULL; \
+            memcpy(_tmp_field_ptr, &_null_ptr, sizeof(PyObject*)); \
+            Py_REGIONREMOVEREFERENCE(op, _tmp_old_field); \
+            Py_DECREF(_tmp_old_field); \
+        } \
+    } while (0)
+#endif
 
 #ifdef __cplusplus
 }

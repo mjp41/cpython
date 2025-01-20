@@ -44,7 +44,7 @@ static regionmetadata* regionmetadata_get_parent(regionmetadata* self);
 static PyObject *PyRegion_add_object(PyRegionObject *self, PyObject *args);
 static PyObject *PyRegion_remove_object(PyRegionObject *self, PyObject *args);
 static const char *get_region_name(PyObject* obj);
-static void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg);
+static void _PyErr_Region(PyObject *src, PyObject *tgt, const char *msg);
 
 /**
  * Global status for performing the region check.
@@ -1886,14 +1886,14 @@ PyTypeObject PyRegion_Type = {
     PyType_GenericNew,                       /* tp_new */
 };
 
-void _PyErr_Region(PyObject *tgt, PyObject *new_ref, const char *msg) {
-    const char *new_ref_region_name = get_region_name(new_ref);
+void _PyErr_Region(PyObject *src, PyObject *tgt, const char *msg) {
     const char *tgt_region_name = get_region_name(tgt);
+    const char *src_region_name = get_region_name(src);
+    PyObject *src_type_repr = PyObject_Repr(PyObject_Type(src));
+    const char *src_desc = src_type_repr ? PyUnicode_AsUTF8(src_type_repr) : "<>";
     PyObject *tgt_type_repr = PyObject_Repr(PyObject_Type(tgt));
     const char *tgt_desc = tgt_type_repr ? PyUnicode_AsUTF8(tgt_type_repr) : "<>";
-    PyObject *new_ref_type_repr = PyObject_Repr(PyObject_Type(new_ref));
-    const char *new_ref_desc = new_ref_type_repr ? PyUnicode_AsUTF8(new_ref_type_repr) : "<>";
-    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s) %s\n", tgt, tgt_desc, tgt_region_name, new_ref, new_ref_desc, new_ref_region_name, msg);
+    PyErr_Format(PyExc_RuntimeError, "Error: Invalid edge %p (%s in %s) -> %p (%s in %s) %s\n", src, src_desc, src_region_name, tgt, tgt_desc, tgt_region_name, msg);
 }
 
 static const char *get_region_name(PyObject* obj) {
@@ -1912,7 +1912,7 @@ static const char *get_region_name(PyObject* obj) {
 }
 
 // x.f = y ==> _Pyrona_AddReference(src=x, tgt=y)
-bool _Pyrona_AddReference(PyObject *src, PyObject *tgt) {
+bool _Py_RegionAddReference(PyObject *src, PyObject *tgt) {
     if (Py_REGION(src) == Py_REGION(tgt)) {
         // Nothing to do -- intra-region references are always permitted
         return true;
@@ -1924,8 +1924,9 @@ bool _Pyrona_AddReference(PyObject *src, PyObject *tgt) {
     }
 
     if (_Py_IsLocal(src)) {
-        // Slurp emphemerally owned object into the region of the target object
+        // Record the borrowed reference in the LRC of the target region
         // _Py_VPYDBG("Added borrowed ref %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
+        Py_REGION_DATA(tgt)->lrc += 1;
         return true;
     }
 
@@ -1934,13 +1935,25 @@ bool _Pyrona_AddReference(PyObject *src, PyObject *tgt) {
     return add_to_region(tgt, Py_REGION(src)) == Py_None;
 }
 
-// Convenience function for moving multiple references into tgt at once
-bool _Pyrona_AddReferences(PyObject *tgt, int new_refc, ...) {
-    va_list args;
-    va_start(args, new_refc);
+// Used to add a reference from a local object that might not have been created yet
+// to tgt.
+void _Py_RegionAddLocalReference(PyObject *tgt) {
+    // Only need to increment the LRC of the target region
+    // if it is not local, immutable, or a cown.
+    if (_Py_IsLocal(tgt) || Py_IsImmutable(tgt) || _Py_IsCown(tgt)) {
+        return;
+    }
 
-    for (int i = 0; i < new_refc; i++) {
-        int res = _Pyrona_AddReference(tgt, va_arg(args, PyObject*));
+    Py_REGION_DATA(tgt)->lrc += 1;
+}
+
+// Convenience function for moving multiple references into tgt at once
+bool _Py_RegionAddReferences(PyObject *src, int tgtc, ...) {
+    va_list args;
+    va_start(args, tgtc);
+
+    for (int i = 0; i < tgtc; i++) {
+        int res = _Py_RegionAddReference(src, va_arg(args, PyObject*));
         if (!res) return false;
     }
 
@@ -1953,4 +1966,40 @@ void _PyRegion_set_cown_parent(PyObject* bridge, PyObject* cown) {
     regionmetadata* data = Py_REGION_DATA(bridge);
     Py_XINCREF(cown);
     Py_XSETREF(data->cown, cown);
+}
+
+void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
+    if (Py_REGION(src) == Py_REGION(tgt)) {
+        // Nothing to do -- intra-region references have no accounting.
+        return;
+    }
+
+    // If the target is local, then so must the source be. So this should
+    // be covered by the previous check.
+    assert(!_Py_IsLocal(tgt));
+
+    if (_Py_IsImmutable(tgt) || _Py_IsCown(tgt)) {
+        // Nothing to do -- removing a ref to an immutable or a cown has no additional accounting.
+        return;
+    }
+
+    regionmetadata* tgt_md = Py_REGION_DATA(tgt);
+    if (_Py_IsLocal(src)) {
+        // Dec LRC of the previously referenced region
+        // TODO should this decrement be a function, if it hits zero,
+        // then a region could become unreachable.
+        tgt_md->lrc -= 1;
+        return;
+    }
+
+    // This must be a parent reference, so we need to remove the parent reference.
+    regionmetadata* src_md = Py_REGION_DATA(src);
+    regionmetadata* tgt_parent_md = REGION_DATA_CAST(Py_region_ptr(tgt_md->parent));
+    if (tgt_parent_md != src_md) {
+        // TODO: Could `dirty` mean this isn't an error?
+        _PyErr_Region(src, tgt, "(in WB/remove_ref)");
+    }
+
+    // Unparent the region.
+    regionmetadata_set_parent(tgt_md, NULL);
 }

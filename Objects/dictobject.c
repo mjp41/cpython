@@ -122,6 +122,7 @@ As a consequence of this, split keys have a maximum size of 16.
 #include "pycore_regions.h"        // _PyObject_GC_TRACK()
 #include "pycore_pyerrors.h"      // _PyErr_GetRaisedException()
 #include "pycore_pystate.h"       // _PyThreadState_GET()
+#include "pycore_regions.h"       // Py_ADDREGIONREFERENCE(), ... (region)
 #include "stringlib/eq.h"         // unicode_eq()
 #include "regions.h"              // Py_IsImmutable()
 
@@ -666,6 +667,10 @@ new_keys_object(PyInterpreterState *interp, uint8_t log2_size, bool unicode)
 static void
 free_keys_object(PyInterpreterState *interp, PyDictKeysObject *keys)
 {
+    // TODO: This feels like it should remove the references in the regions
+    // but keys is not a Python object, so it's not clear how to do that.
+    // mjp: Leaving as a TODO for now.
+
     assert(keys != Py_EMPTY_KEYS);
     if (DK_IS_UNICODE(keys)) {
         PyDictUnicodeEntry *entries = DK_UNICODE_ENTRIES(keys);
@@ -788,8 +793,12 @@ new_dict_with_shared_keys(PyInterpreterState *interp, PyDictKeysObject *keys)
 }
 
 
+/*  The target represents the dictionary that this object will become part of.
+    If target is NULL, the object is not part of a freshly allocated dictionary, so should
+    be considered as part of te local region.
+*/
 static PyDictKeysObject *
-clone_combined_dict_keys(PyDictObject *orig)
+clone_combined_dict_keys(PyDictObject *orig, PyObject* target)
 {
     assert(PyDict_Check(orig));
     assert(Py_TYPE(orig)->tp_iter == (getiterfunc)dict_iter);
@@ -830,6 +839,14 @@ clone_combined_dict_keys(PyDictObject *orig)
         if (value != NULL) {
             Py_INCREF(value);
             Py_INCREF(*pkey);
+            if (target != NULL) {
+                if (!Py_REGIONADDREFERENCES(target, *pkey, value))
+                    return NULL;
+            }
+            else {
+                Py_REGIONADDLOCALREFERENCE(*pkey);
+                Py_REGIONADDLOCALREFERENCE(value);
+            }
         }
         pvalue += offs;
         pkey += offs;
@@ -1258,6 +1275,9 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
     MAINTAIN_TRACKING(mp, key, value);
 
     if (ix == DKIX_EMPTY) {
+        if (!Py_REGIONADDREFERENCES((PyObject*)mp, key, value)) {
+            goto Fail;
+        }
         uint64_t new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_ADDED, mp, key, value);
         /* Insert into new slot. */
@@ -1303,6 +1323,9 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
     }
 
     if (old_value != value) {
+        if (!Py_REGIONADDREFERENCE((PyObject*)mp, value)) {
+            goto Fail;
+        }
         if(DK_IS_UNICODE(mp->ma_keys)){
             PyDictUnicodeEntry *ep;
             ep = &DK_UNICODE_ENTRIES(mp->ma_keys)[ix];
@@ -1336,6 +1359,7 @@ insertdict(PyInterpreterState *interp, PyDictObject *mp,
             else {
                 _PyDictEntry_SetValue(DK_ENTRIES(mp->ma_keys) + ix, value);
             }
+            Py_REGIONREMOVEREFERENCE((PyObject*)mp, old_value);
         }
         mp->ma_version_tag = new_version;
     }
@@ -1364,6 +1388,9 @@ insert_to_emptydict(PyInterpreterState *interp, PyDictObject *mp,
         Py_DECREF(value);
         return -1;
     }
+
+    if (!Py_REGIONADDREFERENCES((PyObject*)mp, key, value))
+        return -1;
 
     uint64_t new_version = _PyDict_NotifyEvent(
             interp, PyDict_EVENT_ADDED, mp, key, value);
@@ -2015,6 +2042,7 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
         assert(ix < SHARED_KEYS_MAX_SIZE);
         /* Update order */
         delete_index_from_values(mp->ma_values, ix);
+        Py_REGIONREMOVEREFERENCE(mp, old_value);
         ASSERT_CONSISTENT(mp);
     }
     else {
@@ -2181,7 +2209,7 @@ PyDict_Clear(PyObject *op)
     if (oldvalues != NULL) {
         n = oldkeys->dk_nentries;
         for (i = 0; i < n; i++)
-            Py_CLEAR(oldvalues->values[i]);
+            Py_CLEAR_OBJECT_FIELD(op, oldvalues->values[i]);
         free_values(oldvalues);
         dictkeys_decref(interp, oldkeys);
     }
@@ -2459,6 +2487,8 @@ dict_dealloc(PyDictObject *mp)
     Py_TRASHCAN_BEGIN(mp, dict_dealloc)
     if (values != NULL) {
         for (i = 0, n = mp->ma_keys->dk_nentries; i < n; i++) {
+            PyObject *value = values->values[i];
+            Py_REGIONREMOVEREFERENCE(mp, value);
             Py_XDECREF(values->values[i]);
         }
         free_values(values);
@@ -2939,7 +2969,7 @@ dict_merge(PyInterpreterState *interp, PyObject *a, PyObject *b, int override)
                      USABLE_FRACTION(DK_SIZE(okeys)/2) < other->ma_used)) {
                 uint64_t new_version = _PyDict_NotifyEvent(
                         interp, PyDict_EVENT_CLONED, mp, b, NULL);
-                PyDictKeysObject *keys = clone_combined_dict_keys(other);
+                PyDictKeysObject *keys = clone_combined_dict_keys(other, a); // Need to say what owns the keys?
                 if (keys == NULL) {
                     return -1;
                 }
@@ -3142,6 +3172,13 @@ PyDict_Copy(PyObject *o)
         dictkeys_incref(mp->ma_keys);
         for (size_t i = 0; i < size; i++) {
             PyObject *value = mp->ma_values->values[i];
+            if (!Py_REGIONADDREFERENCE(split_copy, value))
+            {
+                // TODO: is this safe to dealloc the split_copy?
+                // is it in a valid enough state to be deallocated?
+                Py_DECREF(split_copy);
+                return NULL;
+            }
             split_copy->ma_values->values[i] = Py_XNewRef(value);
         }
         if (_PyObject_GC_IS_TRACKED(mp))
@@ -3167,7 +3204,7 @@ PyDict_Copy(PyObject *o)
            operations and copied after that.  In cases like this, we defer to
            PyDict_Merge, which produces a compacted copy.
         */
-        PyDictKeysObject *keys = clone_combined_dict_keys(mp);
+        PyDictKeysObject *keys = clone_combined_dict_keys(mp, NULL);
         if (keys == NULL) {
             return NULL;
         }
@@ -3427,6 +3464,8 @@ PyDict_SetDefault(PyObject *d, PyObject *key, PyObject *defaultobj)
         return NULL;
 
     if (ix == DKIX_EMPTY) {
+        if (!Py_REGIONADDREFERENCE(mp, defaultobj))
+            return NULL;
         uint64_t new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_ADDED, mp, key, defaultobj);
         mp->ma_keys->dk_version = 0;
@@ -3467,6 +3506,8 @@ PyDict_SetDefault(PyObject *d, PyObject *key, PyObject *defaultobj)
         assert(mp->ma_keys->dk_usable >= 0);
     }
     else if (value == NULL) {
+        if (!Py_REGIONADDREFERENCE(mp, defaultobj))
+          return NULL;
         uint64_t new_version = _PyDict_NotifyEvent(
                 interp, PyDict_EVENT_ADDED, mp, key, defaultobj);
         value = defaultobj;
@@ -5507,7 +5548,7 @@ _PyObject_InitializeDict(PyObject *obj)
         return -1;
     }
     PyObject **dictptr = _PyObject_ComputedDictPointer(obj);
-    Pyrona_ADDREFERENCE(obj, dict);
+    Py_REGIONADDREFERENCE(obj, dict);
     *dictptr = dict;
     return 0;
 }
@@ -5553,10 +5594,19 @@ _PyObject_StoreInstanceAttribute(PyObject *obj, PyDictValues *values,
     assert(values != NULL);
     assert(Py_TYPE(obj)->tp_flags & Py_TPFLAGS_MANAGED_DICT);
 
-    if(!Py_CHECKWRITE(obj)){
+    if (!Py_CHECKWRITE(obj)){
         PyErr_WriteToImmutable(obj);
         return -1;
     }
+
+    //TODO: PYRONA: The addition of the key is complex here.
+    //  The keys PyDictKeysObject, might already have the key. Note that
+    //  the keys PyDictKeysObject is not a PyObject. So it is unclear where
+    //  this edge is created.
+    //  The keys is coming from ht_cached_keys on the type object.
+    //  This is also interesting from a race condition perspective.
+    //  Can this be shared, should it be treated immutably when the type is?
+    // mjp: Leaving for a future PR.
 
     Py_ssize_t ix = DKIX_EMPTY;
     if (PyUnicode_CheckExact(name)) {
@@ -5589,6 +5639,9 @@ _PyObject_StoreInstanceAttribute(PyObject *obj, PyDictValues *values,
             return PyDict_SetItem(dict, name, value);
         }
     }
+    if (!Py_REGIONADDREFERENCE(obj, value)) {
+        return -1;
+    }
     PyObject *old_value = values->values[ix];
     values->values[ix] = Py_XNewRef(value);
     if (old_value == NULL) {
@@ -5604,6 +5657,7 @@ _PyObject_StoreInstanceAttribute(PyObject *obj, PyDictValues *values,
         if (value == NULL) {
             delete_index_from_values(values, ix);
         }
+        Py_REGIONREMOVEREFERENCE(obj, old_value);
         Py_DECREF(old_value);
     }
     return 0;
@@ -5775,7 +5829,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
                     _Py_SetImmutable(dict);
                 }
                 else {
-                    Pyrona_ADDREFERENCE(obj, dict);
+                    Py_REGIONADDREFERENCE(obj, dict);
                     dorv_ptr->dict = dict;
                 }
             }
@@ -5789,7 +5843,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
                     _Py_SetImmutable(dict);
                 }
                 else {
-                    Pyrona_ADDREFERENCE(obj, dict);
+                    Py_REGIONADDREFERENCE(obj, dict);
                     dorv_ptr->dict = dict;
                 }
             }
@@ -5817,7 +5871,7 @@ PyObject_GenericGetDict(PyObject *obj, void *context)
                 _Py_SetImmutable(dict);
             }
             else {
-                Pyrona_ADDREFERENCE(obj, dict);
+                Py_REGIONADDREFERENCE(obj, dict);
                 *dictptr = dict;
             }
         }
@@ -5841,7 +5895,7 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
         if (dict == NULL) {
             dictkeys_incref(cached);
             dict = new_dict_with_shared_keys(interp, cached);
-            Pyrona_ADDREFERENCE(owner, dict);
+            Py_REGIONADDREFERENCE(owner, dict);
             if (dict == NULL)
                 return -1;
             *dictptr = dict;
@@ -5850,7 +5904,7 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             res = PyDict_DelItem(dict, key);
         }
         else {
-            if (Pyrona_ADDREFERENCES(dict, key, value)) {
+            if (Py_REGIONADDREFERENCES(dict, key, value)) {
                 res = PyDict_SetItem(dict, key, value);
             } else {
                 // Error is set inside ADDREFERENCE
@@ -5863,19 +5917,13 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             dict = PyDict_New();
             if (dict == NULL)
                 return -1;
-            Pyrona_ADDREFERENCE(owner, dict);
+            Py_REGIONADDREFERENCE(owner, dict);
             *dictptr = dict;
         }
         if (value == NULL) {
             res = PyDict_DelItem(dict, key);
         } else {
-            // TODO: remove this once we merge Matt P's changeset to dictionary object
-            if (Pyrona_ADDREFERENCES(dict, key, value)) {
-                res = PyDict_SetItem(dict, key, value);
-            } else {
-                // Error is set inside ADDREFERENCE
-                return -1;
-            }
+            res = PyDict_SetItem(dict, key, value);
         }
     }
     ASSERT_CONSISTENT(dict);
