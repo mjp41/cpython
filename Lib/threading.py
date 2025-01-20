@@ -895,23 +895,41 @@ class Thread:
                 except AttributeError:
                     pass
 
+        from sys import getrefcount as rc
         # Only check when a program uses pyrona
         if is_pyrona_program():
-            def movable(o):
-                return isinstance(o, Region) and not o.is_open()
+            def ok_share(o):
+                if isimmutable(o):
+                    return True
+                if isinstance(o, Cown):
+                    return True
+                return False
+            def ok_move(o):
+                if isinstance(o, Region):
+                    if rc(o) != 4:
+                        # rc = 4 because:
+                        # 1. ref to o in rc
+                        # 2. ref to o on this frame
+                        # 3. ref to o on the calling frame
+                        # 4. ref to o from kwargs dictionary or args tuple/list
+                        raise RuntimeError("Region passed to thread was not moved into thread")
+                    if o.is_open():
+                        raise RuntimeError("Region passed to thread was open")
+                    return True
+                return False
 
-            for k, v in kwargs.items():
-                if not (isimmutable(v) or isinstance(v, Cown) or movable(v)):
-                    raise RuntimeError(f'thread was passed {k} : {type(v)} -- '
-                                       'only immutable objects, cowns and free '
-                                       'regions may be passed to a thread')
+            for k in kwargs:
+                # rc(args) == 6 because we need to know that the args list is moved into the thread too
+                # TODO: Why 6???
+                v = kwargs[k]
+                if not (ok_share(v) or (ok_move(v) and rc(kwargs) == 6)):
+                    raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
+
             for a in args:
-                if not (isimmutable(a) or isinstance(a, Cown) or movable(a)):
-                    from sys import getrefcount as rc
-                    print(a, rc(a))
-                    raise RuntimeError(f'thread was passed {type(a)} -- '
-                                       'only immutable objects, cowns and free '
-                                       'regions may be passed to a thread')
+                # rc(args) == 6 because we need to know that the args list is moved into the thread too
+                # TODO: Why 6???
+                if not (ok_share(a) or (ok_move(a) and rc(args) == 6)):
+                    raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
 
         self._target = target
         self._name = name

@@ -27,6 +27,8 @@ def using(*args):
             yield args
         finally:
             for c in cowns:
+                if isinstance(c.get(), Region):
+                    c.get().close()
                 c.release()
 
     def argument_check(cowns, args):

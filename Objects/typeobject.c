@@ -2942,7 +2942,7 @@ subtype_setdict(PyObject *obj, PyObject *value, void *context)
                      "not a '%.200s'", Py_TYPE(value)->tp_name);
         return -1;
     }
-    if (value == NULL || _Pyrona_AddReference(obj, value)) {
+    if (value == NULL || _Py_RegionAddReference(obj, value)) {
         if (*dictptr) {
             _Pyrona_RemoveReference(obj, *dictptr);
         }
