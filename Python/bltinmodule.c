@@ -2825,6 +2825,12 @@ static PyObject *
 builtin_is_pyrona_program_impl(PyObject *module)
 /*[clinic end generated code: output=2b6729469da00221 input=d36655a3dc34a881]*/
 {
+    // TODO: This is an abuse of notions. We need to revisit 
+    // the definition of when a program is a Pyrona program
+    // at some later point. The reason for having the definition
+    // conflated with the invariant being enabled is to only 
+    // perform Pyrona checks (see threading.py) when a program
+    // must adhere to these checks for correctness.
     return Py_is_invariant_enabled() ? Py_True : Py_False;
 }
 
