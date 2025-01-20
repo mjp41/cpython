@@ -1,6 +1,7 @@
 /* Cell object implementation */
 
 #include "Python.h"
+#include "object.h"
 #include "pycore_object.h"
 #include "pycore_regions.h"
 
@@ -186,7 +187,7 @@ PyTypeObject PyCell_Type = {
     PyObject_GenericGetAttr,                    /* tp_getattro */
     0,                                          /* tp_setattro */
     0,                                          /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,    /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_REGION_AWARE,    /* tp_flags */
     cell_new_doc,                               /* tp_doc */
     (traverseproc)cell_traverse,                /* tp_traverse */
     (inquiry)cell_clear,                        /* tp_clear */
