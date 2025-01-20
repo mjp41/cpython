@@ -31,6 +31,7 @@ extern "C" {
 
 /* Defined in tracemalloc.c */
 extern void _PyMem_DumpTraceback(int fd, const void *ptr);
+extern int _Py_is_bridge_object(PyObject *op);
 
 
 int
@@ -1176,6 +1177,13 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
         if (Py_CHECKWRITE(v)) {
             if (!Py_IS_REGION_AWARE(tp)) {
                 _PyObject_mark_region_as_dirty(v);
+                // If x.f = y and type(x) isn't region aware,
+                // when y is a bridge object, mark its region
+                // as dirty since we probably just violated the
+                // external uniqueness invariant.
+                if (_Py_is_bridge_object(value)) {
+                    _PyObject_mark_region_as_dirty(value);
+                }
             }
             err = (*tp->tp_setattro)(v, name, value);
         } else {
@@ -1196,6 +1204,13 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
         if (Py_CHECKWRITE(v)) {
             if (!Py_IS_REGION_AWARE(tp)) {
                 _PyObject_mark_region_as_dirty(v);
+                // If x.f = y and type(x) isn't region aware,
+                // when y is a bridge object, mark its region
+                // as dirty since we probably just violated the
+                // external uniqueness invariant.
+                if (_Py_is_bridge_object(value)) {
+                    _PyObject_mark_region_as_dirty(value);
+                }
             }
             err = (*tp->tp_setattr)(v, (char *)name_str, value);
         } else {
