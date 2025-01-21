@@ -533,11 +533,11 @@ next:
     return obj;
 }
 
-bool globals_immutable = false;
-
 PyObject* Py_MakeGlobalsImmutable()
 {
     PyObject* ret;
+    PyObject* main_dict;
+    PyInterpreterState* main;
 
     _Py_VPYDBG(">> makeglobalsimmutable\n");
 
@@ -550,6 +550,12 @@ PyObject* Py_MakeGlobalsImmutable()
         _Py_VPYDBG("module: ");
         _Py_VPYDBGPRINT(key);
         _Py_VPYDBG("\n");
+
+        if (PyUnicode_CompareWithASCIIString(key, "importlib") == 0){
+            _Py_VPYDBG("skipping importlib module\n");
+            continue;
+        }
+
         PyObject* module = PyDict_GetItem(modules, key);
         PyObject* globals = PyModule_GetDict(module);
         ret = _Py_MakeImmutable(globals);
@@ -560,12 +566,54 @@ PyObject* Py_MakeGlobalsImmutable()
         }
     }
 
-    globals_immutable = true;
+    main = PyInterpreterState_Main();
+    if(main == NULL){
+        _Py_VPYDBG("<< makeglobalsimmutable failed (cannot access main interpreter)\n");
+        Py_DECREF(keys);
+        return NULL;
+    }
+
+    main_dict = PyInterpreterState_GetDict(main);
+    if(main_dict == NULL){
+        _Py_VPYDBG("<< makeglobalsimmutable failed (cannot access main interpreter dict)\n");
+        Py_DECREF(keys);
+        return NULL;
+    }
+
+    if(PyDict_SetItemString(main_dict, "__globals_immutable__", Py_True))
+    {
+        _Py_VPYDBG("<< makeglobalsimmutable failed (cannot set __globals_immutable__)\n");
+        Py_DECREF(keys);
+        return NULL;
+    }
+
+    Py_DECREF(keys);
     _Py_VPYDBG("<< makeglobalsimmutable complete\n");
     Py_RETURN_NONE;
 }
 
 bool _PyGlobalsImmutable_Check()
 {
-    return globals_immutable;
+    PyObject* main_dict;
+    PyInterpreterState* main;
+    PyObject* flag;
+
+    main = PyInterpreterState_Main();
+    if(main == NULL){
+        _Py_VPYDBG("<< _PyGlobalsImmutable_Check failed (cannot access main interpreter)\n");
+        return NULL;
+    }
+
+    main_dict = PyInterpreterState_GetDict(main);
+    if(main_dict == NULL){
+        _Py_VPYDBG("<< _PyGlobalsImmutable_Check failed (cannot access main interpreter dict)\n");
+        return NULL;
+    }
+
+    flag = PyDict_GetItemString(main_dict, "__globals_immutable__");
+    if(flag == NULL){
+        return false;
+    }
+
+    return PyObject_IsTrue(flag);
 }

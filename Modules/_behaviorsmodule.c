@@ -21,8 +21,8 @@ typedef LPCRITICAL_SECTION PyBehaviors_type_lock;
 
 PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 {
-  LPCRITICAL_SECTION lock = (LPCRITICAL_SECTION )PyMem_RawMalloc(sizeof(CRITICAL_SECTION));
-  if(lock == NULL)
+  LPCRITICAL_SECTION lock = (LPCRITICAL_SECTION)PyMem_RawMalloc(sizeof(CRITICAL_SECTION));
+  if (lock == NULL)
   {
     PyErr_NoMemory();
     return NULL;
@@ -34,7 +34,8 @@ PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 
 void PyBehaviors_free_lock(PyBehaviors_type_lock lock)
 {
-  if(lock){
+  if (lock)
+  {
     DeleteCriticalSection(lock);
     PyMem_RawFree(lock);
   }
@@ -48,7 +49,7 @@ PyBehaviorsLockStatus PyBehaviors_acquire_lock(PyBehaviors_type_lock lock, int w
     return PY_BEHAVIORS_LOCK_SUCCESS;
   }
 
-  if(TryEnterCriticalSection(lock))
+  if (TryEnterCriticalSection(lock))
   {
     return PY_BEHAVIORS_LOCK_SUCCESS;
   }
@@ -66,7 +67,7 @@ PyBehaviorsLockStatus PyBehaviors_release_lock(PyBehaviors_type_lock lock)
 #include <pthread.h>
 
 typedef int PyBehaviorsLockStatus;
-typedef pthread_mutex_t* PyBehaviors_type_lock;
+typedef pthread_mutex_t *PyBehaviors_type_lock;
 
 #define PY_BEHAVIORS_LOCK_SUCCESS 0
 #define PY_BEHAVIORS_LOCK_BUSY EBUSY
@@ -75,7 +76,7 @@ typedef pthread_mutex_t* PyBehaviors_type_lock;
 PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 {
   pthread_mutex_t *lock = (pthread_mutex_t *)PyMem_RawMalloc(sizeof(pthread_mutex_t));
-  if(lock == NULL)
+  if (lock == NULL)
   {
     PyErr_NoMemory();
     return NULL;
@@ -88,9 +89,11 @@ PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 void PyBehaviors_free_lock(PyBehaviors_type_lock lock)
 {
   int r;
-  if(lock){
+  if (lock)
+  {
     r = pthread_mutex_destroy(lock);
-    if(r == EBUSY){
+    if (r == EBUSY)
+    {
       PyErr_SetString(PyExc_RuntimeError, "Lock is busy");
       return;
     }
@@ -117,7 +120,7 @@ PyBehaviorsLockStatus PyBehaviors_release_lock(PyBehaviors_type_lock lock)
 #else
 #include <threads.h>
 typedef int PyBehaviorsLockStatus;
-typedef mtx_t* PyBehaviors_type_lock;
+typedef mtx_t *PyBehaviors_type_lock;
 
 #define PY_BEHAVIORS_LOCK_SUCCESS thrd_success
 #define PY_BEHAVIORS_LOCK_BUSY thrd_busy
@@ -126,13 +129,13 @@ typedef mtx_t* PyBehaviors_type_lock;
 PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 {
   mtx_t *lock = (mtx_t *)PyMem_RawMalloc(sizeof(mtx_t));
-  if(lock == NULL)
+  if (lock == NULL)
   {
     PyErr_NoMemory();
     return NULL;
   }
 
-  if(mtx_init(lock, mtx_timed) == thrd_success)
+  if (mtx_init(lock, mtx_timed) == thrd_success)
   {
     return lock;
   }
@@ -144,7 +147,8 @@ PyBehaviors_type_lock PyBehaviors_allocate_lock(void)
 
 void PyBehaviors_free_lock(PyBehaviors_type_lock lock)
 {
-  if(lock){
+  if (lock)
+  {
     mtx_destroy(lock);
     PyMem_RawFree(lock);
   }
@@ -182,57 +186,61 @@ lock_acquire_parse_args(PyObject *args, PyObject *kwds,
 
 /* lock object */
 
-typedef struct behaviors_lock_object_s {
-    PyObject_HEAD
-    PyBehaviors_type_lock lock_lock;
-    PyObject *in_weakreflist;
-    char locked; /* for sanity checking */
+typedef struct behaviors_lock_object_s
+{
+  PyObject_HEAD
+      PyBehaviors_type_lock lock_lock;
+  PyObject *in_weakreflist;
+  char locked; /* for sanity checking */
 } lockobject;
 
 static int
 lock_PyBehaviors_traverse(lockobject *self, visitproc visit, void *arg)
 {
-    Py_VISIT(Py_TYPE(self));
-    return 0;
+  Py_VISIT(Py_TYPE(self));
+  return 0;
 }
 
 static void
 lock_PyBehaviors_dealloc(lockobject *self)
 {
-    PyObject_GC_UnTrack(self);
-    if (self->in_weakreflist != NULL) {
-        PyObject_ClearWeakRefs((PyObject *) self);
-    }
-    if (self->lock_lock != NULL) {
-        /* Unlock the lock so it's safe to free it */
-        if (self->locked)
-            PyBehaviors_release_lock(self->lock_lock);
-        PyBehaviors_free_lock(self->lock_lock);
-    }
-    PyTypeObject *tp = Py_TYPE(self);
-    tp->tp_free((PyObject*)self);
-    Py_DECREF(tp);
+  PyObject_GC_UnTrack(self);
+  if (self->in_weakreflist != NULL)
+  {
+    PyObject_ClearWeakRefs((PyObject *)self);
+  }
+  if (self->lock_lock != NULL)
+  {
+    /* Unlock the lock so it's safe to free it */
+    if (self->locked)
+      PyBehaviors_release_lock(self->lock_lock);
+    PyBehaviors_free_lock(self->lock_lock);
+  }
+  PyTypeObject *tp = Py_TYPE(self);
+  tp->tp_free((PyObject *)self);
+  Py_DECREF(tp);
 }
 
 static PyObject *
 lock_PyBehaviors_acquire_lock(lockobject *self, PyObject *args, PyObject *kwds)
 {
-    bool blocking;
-    if (lock_acquire_parse_args(args, kwds, &blocking) < 0)
-        return NULL;
+  bool blocking;
+  if (lock_acquire_parse_args(args, kwds, &blocking) < 0)
+    return NULL;
 
-    PyBehaviorsLockStatus r = PyBehaviors_acquire_lock(self->lock_lock, blocking);
-    if (r == PY_BEHAVIORS_LOCK_ERROR) {
-        return NULL;
-    }
+  PyBehaviorsLockStatus r = PyBehaviors_acquire_lock(self->lock_lock, blocking);
+  if (r == PY_BEHAVIORS_LOCK_ERROR)
+  {
+    return NULL;
+  }
 
-    if (r == PY_BEHAVIORS_LOCK_SUCCESS)
-        self->locked = 1;
-    return PyBool_FromLong(r == PY_BEHAVIORS_LOCK_SUCCESS);
+  if (r == PY_BEHAVIORS_LOCK_SUCCESS)
+    self->locked = 1;
+  return PyBool_FromLong(r == PY_BEHAVIORS_LOCK_SUCCESS);
 }
 
 PyDoc_STRVAR(acquire_doc,
-"acquire(blocking=True, timeout=-1) -> bool\n\
+             "acquire(blocking=True, timeout=-1) -> bool\n\
 (acquire_lock() is an obsolete synonym)\n\
 \n\
 Lock the lock.  Without argument, this blocks if the lock is already\n\
@@ -245,24 +253,26 @@ The blocking operation is interruptible.");
 static PyObject *
 lock_PyBehaviors_release_lock(lockobject *self, PyObject *Py_UNUSED(ignored))
 {
-    /* Sanity check: the lock must be locked */
-    if (!self->locked) {
-        PyErr_SetString(PyExc_RuntimeError, "release unlocked lock");
-        return NULL;
-    }
+  /* Sanity check: the lock must be locked */
+  if (!self->locked)
+  {
+    PyErr_SetString(PyExc_RuntimeError, "release unlocked lock");
+    return NULL;
+  }
 
-    PyBehaviorsLockStatus r = PyBehaviors_release_lock(self->lock_lock);
-    if (r == PY_BEHAVIORS_LOCK_ERROR) {
-        PyErr_SetString(PyExc_RuntimeError, "cannot release lock");
-        return NULL;
-    }
+  PyBehaviorsLockStatus r = PyBehaviors_release_lock(self->lock_lock);
+  if (r == PY_BEHAVIORS_LOCK_ERROR)
+  {
+    PyErr_SetString(PyExc_RuntimeError, "cannot release lock");
+    return NULL;
+  }
 
-    self->locked = 0;
-    Py_RETURN_NONE;
+  self->locked = 0;
+  Py_RETURN_NONE;
 }
 
 PyDoc_STRVAR(release_doc,
-"release()\n\
+             "release()\n\
 (release_lock() is an obsolete synonym)\n\
 \n\
 Release the lock, allowing another thread that is blocked waiting for\n\
@@ -272,11 +282,11 @@ but it needn't be locked by the same thread that unlocks it.");
 static PyObject *
 lock_PyBehaviors_locked(lockobject *self, PyObject *Py_UNUSED(ignored))
 {
-    return PyBool_FromLong((long)self->locked);
+  return PyBool_FromLong((long)self->locked);
 }
 
 PyDoc_STRVAR(locked_doc,
-"locked() -> bool\n\
+             "locked() -> bool\n\
 (locked_lock() is an obsolete synonym)\n\
 \n\
 Return whether the lock is in the locked state.");
@@ -284,8 +294,8 @@ Return whether the lock is in the locked state.");
 static PyObject *
 lock_PyBehaviors_repr(lockobject *self)
 {
-    return PyUnicode_FromFormat("<%s %s object at %p>",
-        self->locked ? "locked" : "unlocked", Py_TYPE(self)->tp_name, self);
+  return PyUnicode_FromFormat("<%s %s object at %p>",
+                              self->locked ? "locked" : "unlocked", Py_TYPE(self)->tp_name, self);
 }
 
 static PyObject *
@@ -309,29 +319,28 @@ lock_PyBehaviors_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
   return (PyObject *)self;
 }
 
-
 static PyMethodDef lock_methods[] = {
     {"acquire_lock", _PyCFunction_CAST(lock_PyBehaviors_acquire_lock),
      METH_VARARGS | METH_KEYWORDS, acquire_doc},
-    {"acquire",      _PyCFunction_CAST(lock_PyBehaviors_acquire_lock),
+    {"acquire", _PyCFunction_CAST(lock_PyBehaviors_acquire_lock),
      METH_VARARGS | METH_KEYWORDS, acquire_doc},
     {"release_lock", (PyCFunction)lock_PyBehaviors_release_lock,
      METH_NOARGS, release_doc},
-    {"release",      (PyCFunction)lock_PyBehaviors_release_lock,
+    {"release", (PyCFunction)lock_PyBehaviors_release_lock,
      METH_NOARGS, release_doc},
-    {"locked_lock",  (PyCFunction)lock_PyBehaviors_locked,
+    {"locked_lock", (PyCFunction)lock_PyBehaviors_locked,
      METH_NOARGS, locked_doc},
-    {"locked",       (PyCFunction)lock_PyBehaviors_locked,
+    {"locked", (PyCFunction)lock_PyBehaviors_locked,
      METH_NOARGS, locked_doc},
-    {"__enter__",    _PyCFunction_CAST(lock_PyBehaviors_acquire_lock),
+    {"__enter__", _PyCFunction_CAST(lock_PyBehaviors_acquire_lock),
      METH_VARARGS | METH_KEYWORDS, acquire_doc},
-    {"__exit__",    (PyCFunction)lock_PyBehaviors_release_lock,
+    {"__exit__", (PyCFunction)lock_PyBehaviors_release_lock,
      METH_VARARGS, release_doc},
-    {NULL,           NULL}              /* sentinel */
+    {NULL, NULL} /* sentinel */
 };
 
 PyDoc_STRVAR(lock_doc,
-"A lock object is a synchronization primitive.  To create a lock,\n\
+             "A lock object is a synchronization primitive.  To create a lock,\n\
 call behaviors.Lock().  Methods are:\n\
 \n\
 acquire() -- lock the lock, possibly blocking until it can be obtained\n\
@@ -355,8 +364,7 @@ static PyType_Slot lock_type_slots[] = {
     {Py_tp_new, lock_PyBehaviors_new},
     {Py_tp_traverse, lock_PyBehaviors_traverse},
     {Py_tp_members, lock_type_members},
-    {0, 0}
-};
+    {0, 0}};
 
 static PyType_Spec lock_type_spec = {
     .name = "_behaviors.lock",
@@ -413,7 +421,7 @@ rlock_PyBehaviors_acquire(PyObject *lock, PyObject *args, PyObject *kwds)
   bool blocking;
   PyBehaviorsLockStatus r;
 
-  rlockobject* self=(rlockobject*)lock;
+  rlockobject *self = (rlockobject *)lock;
 
   if (lock_acquire_parse_args(args, kwds, &blocking) < 0)
     return NULL;
@@ -471,7 +479,7 @@ the lock is taken and its internal counter initialized to 1.");
 static PyObject *
 rlock_PyBehaviors_release(PyObject *lock, PyObject *Py_UNUSED(ignored))
 {
-  rlockobject* self=(rlockobject*)lock;
+  rlockobject *self = (rlockobject *)lock;
   uint64_t iid = PyInterpreterState_GetID(PyInterpreterState_Get());
   unsigned long tid = PyThread_get_thread_ident();
 
@@ -680,18 +688,54 @@ static PyType_Spec rlock_type_spec = {
     .slots = rlock_type_slots,
 };
 
-static bool PyBehaviors_Running = false;
+typedef struct behaviors_state_s
+{
+  bool is_running;
+} BehaviorsState;
 
 static PyObject *behaviors_start(PyObject *self, PyObject *noargs)
 {
-  Py_MakeGlobalsImmutable();
-  PyBehaviors_Running = true;
+  PyObject *behaviors, *ret;
+  BehaviorsState *state;
+
+  behaviors = PyImport_ImportModule("_behaviors");
+  if (behaviors == NULL)
+  {
+    PyErr_SetString(PyExc_RuntimeError, "Unable to import behaviors module");
+    return NULL;
+  }
+
+  ret = Py_MakeGlobalsImmutable();
+  if (ret == NULL)
+  {
+    Py_DECREF(behaviors);
+    return NULL;
+  }
+
+  state = (BehaviorsState *)PyModule_GetState(behaviors);
+  state->is_running = true;
+  Py_DECREF(behaviors);
   Py_RETURN_NONE;
 }
 
 static PyObject *behaviors_running(PyObject *self, PyObject *noargs)
 {
-  if (PyBehaviors_Running)
+  PyObject *behaviors;
+  BehaviorsState *state;
+  bool is_running;
+
+  behaviors = PyImport_ImportModule("_behaviors");
+  if (behaviors == NULL)
+  {
+    PyErr_SetString(PyExc_RuntimeError, "Unable to import behaviors module");
+    return NULL;
+  }
+
+  state = (BehaviorsState *)PyModule_GetState(behaviors);
+  is_running = state->is_running;
+  Py_DECREF(behaviors);
+
+  if (is_running)
   {
     Py_RETURN_TRUE;
   }
@@ -703,11 +747,23 @@ static PyObject *behaviors_running(PyObject *self, PyObject *noargs)
 
 static PyObject *behaviors_wait(PyObject *self, PyObject *noargs)
 {
-  PyBehaviors_Running = false;
+  PyObject *behaviors;
+  BehaviorsState *state;
+
+  behaviors = PyImport_ImportModule("_behaviors");
+  if (behaviors == NULL)
+  {
+    PyErr_SetString(PyExc_RuntimeError, "Unable to import behaviors module");
+    return NULL;
+  }
+
+  state = (BehaviorsState *)PyModule_GetState(behaviors);
+  state->is_running = false;
+  Py_DECREF(behaviors);
   Py_RETURN_NONE;
 }
 
-static PyObject* behaviors_get_ident(PyObject *self, PyObject *noargs)
+static PyObject *behaviors_get_ident(PyObject *self, PyObject *noargs)
 {
   int64_t iid = PyInterpreterState_GetID(PyInterpreterState_Get());
   unsigned long tid = PyThread_get_thread_ident();
@@ -750,6 +806,10 @@ static int behaviors_exec(PyObject *module)
   }
   Py_DECREF(rlock_type);
 
+  // BehaviorsState
+  BehaviorsState *state = (BehaviorsState *)PyModule_GetState(module);
+  state->is_running = false;
+
   return 0;
 }
 
@@ -773,7 +833,7 @@ static PyModuleDef behaviorsmoduledef = {
 #ifdef Py_mod_exec
     .m_slots = behaviors_slots,
 #endif
-    .m_size = 0};
+    .m_size = sizeof(BehaviorsState)};
 
 PyMODINIT_FUNC PyInit__behaviors(void)
 {
