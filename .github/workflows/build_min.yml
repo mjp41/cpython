@@ -563,7 +563,7 @@ jobs:
     - name: Configure ccache action
       uses: hendrikmuhs/ccache-action@v1.2
     - name: Configure CPython
-      run: ./configure --config-cache --with-address-sanitizer --without-pymalloc
+      run: ./configure --config-cache --with-address-sanitizer --without-pymalloc --with-region-invariant
     - name: Build CPython
       run: make -j4
     - name: Display build info
