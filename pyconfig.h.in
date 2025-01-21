@@ -1615,6 +1615,9 @@
    SipHash13: 3, externally defined: 0 */
 #undef Py_HASH_ALGORITHM
 
+/* Define if you want to enable region invariant for debugging purpose */
+#undef Py_REGION_INVARIANT
+
 /* Define if you want to enable internal statistics gathering. */
 #undef Py_STATS
 
