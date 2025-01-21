@@ -267,7 +267,7 @@ static int regionmetadata_check_for_close(regionmetadata* self) {
     }
 
     // The region has to remain open, if there are references into the region.
-    if (self->osc != 0) {
+    if (self->lrc != 0) {
         return 0;
     }
 
@@ -1994,7 +1994,7 @@ void _Py_RegionAddLocalReference(PyObject *tgt) {
         return;
     }
 
-    Py_REGION_DATA(tgt)->lrc += 1;
+    regionmetadata_inc_lrc(Py_REGION_DATA(tgt));
 }
 
 // Convenience function for moving multiple references into tgt at once
