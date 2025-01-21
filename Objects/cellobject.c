@@ -140,8 +140,7 @@ cell_clear(PyCellObject *op)
         return -1;
     }
 
-    Py_REGIONREMOVEREFERENCE(op, op->ob_ref);
-    Py_CLEAR(op->ob_ref);
+    Py_CLEAR_OBJECT_FIELD(op, op->ob_ref);
     return 0;
 }
 
