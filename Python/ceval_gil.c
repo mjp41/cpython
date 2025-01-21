@@ -1057,10 +1057,12 @@ _Py_HandlePending(PyThreadState *tstate)
     struct _ceval_runtime_state *ceval = &runtime->ceval;
     struct _ceval_state *interp_ceval_state = &tstate->interp->ceval;
 
+#ifdef Py_REGION_INVARIANT
     /* Check the region invariant if required. */
     if (_Py_CheckRegionInvariant(tstate) != 0) {
         return -1;
     }
+#endif
 
     /* Pending signals */
     if (_Py_atomic_load_relaxed_int32(&ceval->signals_pending)) {

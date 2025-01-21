@@ -1689,6 +1689,21 @@ else AC_MSG_RESULT([no]); Py_DEBUG='false'
 fi],
 [AC_MSG_RESULT([no])])
 
+# Check for --with-region-invariant
+# --with-region-invariant
+AC_MSG_CHECKING([for --with-region-invariant])
+AC_ARG_WITH([region-invariant],
+  [AS_HELP_STRING([--with-region-invariant], [enable region invariant for debugging purpose (default is no)])],
+  [], [with_region_invariant=yes]
+)
+AC_MSG_RESULT([$with_region_invariant])
+
+if test "$with_region_invariant" = "yes"
+then
+  AC_DEFINE([Py_REGION_INVARIANT], [1],
+            [Define if you want to enable region invariant for debugging purpose])
+fi
+
 # Check for --with-trace-refs
 # --with-trace-refs
 AC_MSG_CHECKING([for --with-trace-refs])
