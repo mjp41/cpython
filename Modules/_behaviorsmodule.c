@@ -753,7 +753,7 @@ static int behaviors_exec(PyObject *module)
   return 0;
 }
 
-void behaviors_free(PyObject *module)
+static void behaviors_free(PyObject *module)
 {
 }
 
