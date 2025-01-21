@@ -88,6 +88,7 @@
 #endif
 
 
+#ifdef Py_REGION_INVARIANT
 /* Do interpreter dispatch accounting for tracing and instrumentation */
 #define DISPATCH() \
     { \
@@ -97,6 +98,15 @@
         PRE_DISPATCH_GOTO(); \
         DISPATCH_GOTO(); \
     }
+#else
+/* Do interpreter dispatch accounting for tracing and instrumentation */
+#define DISPATCH() \
+    { \
+        NEXTOPARG(); \
+        PRE_DISPATCH_GOTO(); \
+        DISPATCH_GOTO(); \
+    }
+#endif
 
 #define DISPATCH_SAME_OPARG() \
     { \

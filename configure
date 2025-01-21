@@ -1078,6 +1078,7 @@ enable_shared
 with_static_libpython
 enable_profiling
 with_pydebug
+with_region_invariant
 with_trace_refs
 enable_pystats
 with_assertions
@@ -1850,6 +1851,8 @@ Optional Packages:
                           do not build libpythonMAJOR.MINOR.a and do not
                           install python.o (default is yes)
   --with-pydebug          build with Py_DEBUG defined (default is no)
+  --with-region-invariant enable region invariant for debugging purpose
+                          (default is no)
   --with-trace-refs       enable tracing references for debugging purpose
                           (default is no)
   --with-assertions       build with C assertions enabled (default is no)
@@ -8074,6 +8077,30 @@ else $as_nop
 printf "%s\n" "no" >&6; }
 fi
 
+
+# Check for --with-region-invariant
+# --with-region-invariant
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for --with-region-invariant" >&5
+printf %s "checking for --with-region-invariant... " >&6; }
+
+# Check whether --with-region-invariant was given.
+if test ${with_region_invariant+y}
+then :
+  withval=$with_region_invariant;
+else $as_nop
+  with_region_invariant=yes
+
+fi
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $with_region_invariant" >&5
+printf "%s\n" "$with_region_invariant" >&6; }
+
+if test "$with_region_invariant" = "yes"
+then
+
+printf "%s\n" "#define Py_REGION_INVARIANT 1" >>confdefs.h
+
+fi
 
 # Check for --with-trace-refs
 # --with-trace-refs
