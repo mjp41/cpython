@@ -727,8 +727,9 @@ static PyObject *behaviors_running(PyObject *self, PyObject *noargs)
   behaviors = PyImport_ImportModule("_behaviors");
   if (behaviors == NULL)
   {
-    PyErr_SetString(PyExc_RuntimeError, "Unable to import behaviors module");
-    return NULL;
+    // If we can't import the module, it's not running
+    PyErr_Clear();
+    Py_RETURN_FALSE;
   }
 
   state = (BehaviorsState *)PyModule_GetState(behaviors);
