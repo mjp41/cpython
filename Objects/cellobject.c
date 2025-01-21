@@ -74,6 +74,13 @@ PyCell_Set(PyObject *op, PyObject *value)
     }
 
     PyObject *old_value = PyCell_GET(op);
+
+    // Check that the reference can be created
+    if (!Py_REGIONCHANGEREFERENCE(op, old_value, value)) {
+        // Propagate the error from attempting to add the reference
+        return -1;
+    }
+
     PyCell_SET(op, Py_XNewRef(value));
     Py_XDECREF(old_value);
     return 0;
@@ -133,7 +140,7 @@ cell_clear(PyCellObject *op)
         return -1;
     }
 
-    Py_CLEAR(op->ob_ref);
+    Py_CLEAR_OBJECT_FIELD(op, op->ob_ref);
     return 0;
 }
 
@@ -153,6 +160,14 @@ cell_set_contents(PyCellObject *op, PyObject *obj, void *Py_UNUSED(ignored))
 {
     if(!Py_CHECKWRITE(op)){
         PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
+    PyObject *old_value = PyCell_GET(op);
+
+    // Check that the reference can be created
+    if (!Py_REGIONCHANGEREFERENCE(op, old_value, obj)) {
+        // Propagate the error from attempting to add the reference
         return -1;
     }
 
@@ -186,7 +201,7 @@ PyTypeObject PyCell_Type = {
     PyObject_GenericGetAttr,                    /* tp_getattro */
     0,                                          /* tp_setattro */
     0,                                          /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,    /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_REGION_AWARE,    /* tp_flags */
     cell_new_doc,                               /* tp_doc */
     (traverseproc)cell_traverse,                /* tp_traverse */
     (inquiry)cell_clear,                        /* tp_clear */
