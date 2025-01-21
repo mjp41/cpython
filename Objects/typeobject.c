@@ -5310,7 +5310,6 @@ type_traverse(PyTypeObject *type, visitproc visit, void *arg)
     // }
 
     Py_VISIT(type->tp_dict);
-    Py_VISIT(type->tp_lock);
     Py_VISIT(type->tp_mro);
     Py_VISIT(type->tp_bases);
     Py_VISIT(type->tp_base);

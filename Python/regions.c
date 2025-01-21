@@ -150,7 +150,7 @@ static PyObject* walk_function(PyObject* op, stack* frontier)
     _Py_VPYDBGPRINT(f->func_module);
     _Py_VPYDBG("\n");
 
-    if(PyUnicode_CompareWithASCIIString(f->func_module, "_frozen_importlib")){
+    if(PyUnicode_CompareWithASCIIString(f->func_module, "_frozen_importlib") == 0){
         // we don't want to freeze the importlib module
         _Py_VPYDBG("skipping importlib\n");
         Py_RETURN_NONE;
