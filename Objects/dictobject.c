@@ -5997,7 +5997,7 @@ _PyDict_SendEvent(int watcher_bits,
     }
 }
 
-bool
+PyObject *
 _PyDict_IsKeyImmutable(PyObject* op, PyObject* key)
 {
     PyDictKeysObject *dk;
@@ -6057,14 +6057,22 @@ start:
     _PyErr_SetRaisedException(tstate, exc);
 
     if (ix == DKIX_ERROR){
-        return -1;
+        return NULL;
     }
 
     if (DK_IS_UNICODE(mp->ma_keys)) {
         PyDictUnicodeEntry *ep = DK_UNICODE_ENTRIES(mp->ma_keys) + ix;
-        return _PyDictEntry_IsImmutable(ep);
+        if (_PyDictEntry_IsImmutable(ep)){
+            Py_RETURN_TRUE;
+        }else{
+            Py_RETURN_FALSE;
+        }
     } else {
         PyDictKeyEntry *ep = DK_ENTRIES(mp->ma_keys) + ix;
-        return _PyDictEntry_IsImmutable(ep);
+        if(_PyDictEntry_IsImmutable(ep)){
+            Py_RETURN_TRUE;
+        }else{
+            Py_RETURN_FALSE;
+        }
     }
 }

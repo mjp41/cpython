@@ -134,7 +134,7 @@ jobs:
 
   check_generated_files:
     name: 'Check if generated files are up to date'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     needs: check_source
     if: needs.check_source.outputs.run_tests == 'true'

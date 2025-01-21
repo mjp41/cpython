@@ -19363,7 +19363,7 @@
         <var-decl name='tp_mro' type-id='type-id-2' visibility='default' filepath='./Include/cpython/object.h' line='217' column='1'/>
       </data-member>
       <data-member access='public' layout-offset-in-bits='2816'>
-        <var-decl name='tp_cache' type-id='type-id-2' visibility='default' filepath='./Include/cpython/object.h' line='218' column='1'/>
+        <var-decl name='tp_lock' type-id='type-id-2' visibility='default' filepath='./Include/cpython/object.h' line='218' column='1'/>
       </data-member>
       <data-member access='public' layout-offset-in-bits='2880'>
         <var-decl name='tp_subclasses' type-id='type-id-22' visibility='default' filepath='./Include/cpython/object.h' line='219' column='1'/>

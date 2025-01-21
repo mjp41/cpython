@@ -17,6 +17,10 @@ extern "C" {
 PyObject* _Py_MakeImmutable(PyObject* obj);
 #define Py_MakeImmutable(op) _Py_MakeImmutable(_PyObject_CAST(op))
 
+PyObject* Py_MakeGlobalsImmutable(void);
+
+bool _PyGlobalsImmutable_Check(void);
+
 #ifdef NDEBUG
 #define _Py_VPYDBG(fmt, ...)
 #define _Py_VPYDBGPRINT(fmt, ...)

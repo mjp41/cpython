@@ -368,6 +368,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Modules\_abc.c" />
+    <ClCompile Include="..\Modules\_behaviorsmodule.c" />
     <ClCompile Include="..\Modules\_bisectmodule.c" />
     <ClCompile Include="..\Modules\_blake2\blake2module.c" />
     <ClCompile Include="..\Modules\_blake2\blake2b_impl.c" />
@@ -478,7 +479,6 @@
     <ClCompile Include="..\Objects\odictobject.c" />
     <ClCompile Include="..\Objects\picklebufobject.c" />
     <ClCompile Include="..\Objects\rangeobject.c" />
-    <ClCompile Include="..\Objects\regions.c" />
     <ClCompile Include="..\Objects\setobject.c" />
     <ClCompile Include="..\Objects\sliceobject.c" />
     <ClCompile Include="..\Objects\structseq.c" />
@@ -560,6 +560,7 @@
     <ClCompile Include="..\Python\Python-ast.c" />
     <ClCompile Include="..\Python\Python-tokenize.c" />
     <ClCompile Include="..\Python\pythonrun.c" />
+    <ClCompile Include="..\Python\regions.c" />
     <ClCompile Include="..\Python\specialize.c" />
     <ClCompile Include="..\Python\suggestions.c" />
     <ClCompile Include="..\Python\structmember.c" />

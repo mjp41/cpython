@@ -133,7 +133,7 @@ Quick Reference
    +------------------------------------------------+-----------------------------------+-------------------+---+---+---+---+
    | <:c:member:`~PyTypeObject.tp_mro`>             | :c:type:`PyObject` *              | __mro__           |   |   | ~ |   |
    +------------------------------------------------+-----------------------------------+-------------------+---+---+---+---+
-   | [:c:member:`~PyTypeObject.tp_cache`]           | :c:type:`PyObject` *              |                   |   |   |       |
+   | [:c:member:`~PyTypeObject.tp_lock`]            | :c:type:`PyObject` *              |                   |   |   |       |
    +------------------------------------------------+-----------------------------------+-------------------+---+---+---+---+
    | [:c:member:`~PyTypeObject.tp_subclasses`]      | void *                            | __subclasses__    |   |   |       |
    +------------------------------------------------+-----------------------------------+-------------------+---+---+---+---+
@@ -2013,9 +2013,9 @@ and :c:data:`PyType_Type` effectively act as defaults.)
    :c:func:`PyType_Ready`.
 
 
-.. c:member:: PyObject* PyTypeObject.tp_cache
+.. c:member:: PyObject* PyTypeObject.tp_lock
 
-   Unused.  Internal use only.
+   Internal use only.
 
    **Inheritance:**
 

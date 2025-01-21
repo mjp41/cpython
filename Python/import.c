@@ -13,6 +13,7 @@
 #include "pycore_pylifecycle.h"
 #include "pycore_pymem.h"         // _PyMem_SetDefaultAllocator()
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
+#include "pycore_regions.h"       // _PyGlobalsImmutable_Check()
 #include "pycore_sysmodule.h"     // _PySys_Audit()
 #include "marshal.h"              // PyMarshal_ReadObjectFromString()
 #include "importdl.h"             // _PyImport_DynLoadFiletab
@@ -2789,12 +2790,21 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *globals,
                                  PyObject *locals, PyObject *fromlist,
                                  int level)
 {
-    PyThreadState *tstate = _PyThreadState_GET();
+    PyInterpreterState *interp;
+    PyThreadState *tstate;
+    if(_PyGlobalsImmutable_Check()){
+        // If globals are immutable, we only import modules into a single place.
+        interp = PyInterpreterState_Main();
+        tstate = PyInterpreterState_ThreadHead(interp);
+    }else{
+        tstate = _PyThreadState_GET();
+        interp = tstate->interp;
+    }
+
     PyObject *abs_name = NULL;
     PyObject *final_mod = NULL;
     PyObject *mod = NULL;
     PyObject *package = NULL;
-    PyInterpreterState *interp = tstate->interp;
     int has_from;
 
     if (name == NULL) {
