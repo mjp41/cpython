@@ -57,6 +57,7 @@ softkwlist = [
     '_',
     'case',
     'match',
+    'move',
     'type'
 ]
 

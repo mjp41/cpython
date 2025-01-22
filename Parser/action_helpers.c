@@ -1041,6 +1041,8 @@ _PyPegen_get_expr_name(expr_ty e)
             return "tuple";
         case Lambda_kind:
             return "lambda";
+        case Move_kind:
+            return "move expression";
         case Call_kind:
             return "function call";
         case BoolOp_kind:

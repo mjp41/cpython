@@ -466,6 +466,8 @@ class UnparseTestCase(ASTTestCase):
         ):
             self.check_ast_roundtrip(statement, type_comments=True)
 
+    def test_move_expression(self):
+        self.check_ast_roundtrip("x = move a")
 
 class CosmeticTestCase(ASTTestCase):
     """Test if there are cosmetic issues caused by unnecessary additions"""
