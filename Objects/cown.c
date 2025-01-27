@@ -19,6 +19,10 @@
 #include "pyerrors.h"
 #include "pystate.h"
 
+// Needed to test for region object
+extern PyTypeObject PyRegion_Type;
+extern PyTypeObject PyCown_Type;
+
 typedef enum {
     Cown_RELEASED        = 0,
     Cown_ACQUIRED        = 1,
@@ -156,6 +160,13 @@ static PyObject *PyCown_release(PyCownObject *self, PyObject *ignored) {
     BAIL_UNLESS_OWNED(self, "Thread attempted to release a cown it did not own");
 
     Py_BEGIN_ALLOW_THREADS
+    if (self->value && Py_TYPE(self->value) == &PyRegion_Type) {
+        if (PyCown_close_region(self->value) == NULL) {
+            // Close region failed -- propagate its error
+            return NULL;
+        }
+    }
+
     self->owning_thread = 0;
     _Py_atomic_store(&self->state, Cown_RELEASED);
     sem_post(&self->semaphore);
@@ -174,6 +185,13 @@ int _PyCown_is_released(PyObject *self) {
     return STATE(cown) == Cown_RELEASED;
 }
 
+int _PyCown_is_pending_release(PyObject *self) {
+    assert(Py_TYPE(self) == &PyCown_Type && "Is pending release called on non-cown!");
+
+    PyCownObject *cown = _Py_CAST(PyCownObject *, self);
+    return STATE(cown) == Cown_PENDING_RELEASE;
+}
+
 // The ignored argument is required for this function's type to be
 // compatible with PyCFunction
 static PyObject *PyCown_get(PyCownObject *self, PyObject *ignored) {
@@ -186,16 +204,12 @@ static PyObject *PyCown_get(PyCownObject *self, PyObject *ignored) {
     }
 }
 
-// Needed to test for region object
-extern PyTypeObject PyRegion_Type;
-extern PyTypeObject PyCown_Type;
-
 static PyObject *PyCown_set_unchecked(PyCownObject *self, PyObject *arg) {
     // Cowns are cells that hold a reference to a bridge object,
     // (or another cown or immutable object)
-    const bool is_region_object =
+    const bool arg_is_region_object =
         Py_IS_TYPE(arg, &PyRegion_Type) && _Py_is_bridge_object(arg);
-    if (is_region_object ||
+    if (arg_is_region_object ||
         arg->ob_type == &PyCown_Type ||
         _Py_IsImmutable(arg)) {
 
@@ -205,10 +219,14 @@ static PyObject *PyCown_set_unchecked(PyCownObject *self, PyObject *arg) {
 
         // Tell the region that it is owned by a cown,
         // to enable it to release the cown on close
-        if (is_region_object) {
+        if (arg_is_region_object) {
             _PyRegion_set_cown_parent(arg, _PyObject_CAST(self));
+            // TODO: should not run try close here unless dirty at the end of phase 3
+            // if (_PyCown_close_region(arg) == Py_None) {
             if (_PyRegion_is_closed(arg)) {
-                PyCown_release(self, NULL);
+                if (PyCown_release(self, NULL) == NULL) {
+                    PyErr_Clear();
+                }
             } else {
                 _Py_atomic_store(&self->state, Cown_PENDING_RELEASE);
                 PyThreadState *tstate = PyThreadState_Get();

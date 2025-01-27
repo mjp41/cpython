@@ -96,7 +96,7 @@ class UsingTest(unittest.TestCase):
             self.assertTrue(self.hacky_state_check(c, "acquired"))
             r = None
             c.get().close()
-            self.assertTrue(self.hacky_state_check(c, "released"))
+            self.assertTrue(self.hacky_state_check(c, "acquired"))
         self.assertTrue(self.hacky_state_check(c, "released"))
 
     def test_region_cown_ptr(self):
