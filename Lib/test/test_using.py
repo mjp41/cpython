@@ -166,7 +166,7 @@ class UsingTest(unittest.TestCase):
             result = c.get().value.value
         if result != 200:
             self.fail()
-            
+
     def test_thread_creation(self):
         from threading import PyronaThread as T
 

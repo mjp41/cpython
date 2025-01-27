@@ -46,6 +46,9 @@ def using(*args):
             return func()
     return decorator
 
+# TODO: this creates a normal Python thread and ensures that all its
+# arguments are moved to the new thread. Eventually we should revisit
+# this behaviour as we go multiple interpreters / multicore.
 def PyronaThread(group=None, target=None, name=None,
                  args=(), kwargs=None, *, daemon=None):
     # Only check when a program uses pyrona
@@ -96,5 +99,3 @@ def PyronaThread(group=None, target=None, name=None,
             if not (ok_share(v) or (ok_move(v) and rc(kwargs) == 3)):
                 raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
             return Thread(group, target, name, kwargs, daemon)
-
-
