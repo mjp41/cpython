@@ -168,7 +168,7 @@ class UsingTest(unittest.TestCase):
             self.fail()
             
     def test_thread_creation(self):
-        from threading import Thread as T
+        from threading import PyronaThread as T
 
         class Mutable: pass
         self.assertRaises(RuntimeError, T, kwargs = { 'target' : print, 'args' : (Mutable(),) })

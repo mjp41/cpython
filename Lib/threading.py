@@ -895,46 +895,6 @@ class Thread:
                 except AttributeError:
                     pass
 
-        # Only check when a program uses pyrona
-        from sys import getrefcount as rc
-        # TODO: improve this check for final version of phase 3
-        # - Revisit the rc checks
-        # - Consider throwing a different kind of error (e.g. RegionError)
-        # - Improve error messages
-        if is_pyrona_program():
-            def ok_share(o):
-                if isimmutable(o):
-                    return True
-                if isinstance(o, Cown):
-                    return True
-                return False
-            def ok_move(o):
-                if isinstance(o, Region):
-                    if rc(o) != 4:
-                        # rc = 4 because:
-                        # 1. ref to o in rc
-                        # 2. ref to o on this frame
-                        # 3. ref to o on the calling frame
-                        # 4. ref to o from kwargs dictionary or args tuple/list
-                        raise RuntimeError("Region passed to thread was not moved into thread")
-                    if o.is_open():
-                        raise RuntimeError("Region passed to thread was open")
-                    return True
-                return False
-
-            for k in kwargs:
-                # rc(args) == 6 because we need to know that the args list is moved into the thread too
-                # TODO: Why 6???
-                v = kwargs[k]
-                if not (ok_share(v) or (ok_move(v) and rc(kwargs) == 6)):
-                    raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
-
-            for a in args:
-                # rc(args) == 6 because we need to know that the args list is moved into the thread too
-                # TODO: Why 6???
-                if not (ok_share(a) or (ok_move(a) and rc(args) == 6)):
-                    raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
-
         self._target = target
         self._name = name
         self._args = args
