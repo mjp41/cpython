@@ -674,6 +674,7 @@ expressions[expr_ty]:
 expression[expr_ty] (memo):
     | invalid_expression
     | invalid_legacy_expression
+    | move_expr
     | a=disjunction 'if' b=disjunction 'else' c=expression { _PyAST_IfExp(b, a, c, EXTRA) }
     | disjunction
     | lambdef
@@ -907,6 +908,19 @@ lambda_param_maybe_default[NameDefaultPair*]:
     | a=lambda_param c=default? ',' { _PyPegen_name_default_pair(p, a, c, NULL) }
     | a=lambda_param c=default? &':' { _PyPegen_name_default_pair(p, a, c, NULL) }
 lambda_param[arg_ty]: a=NAME { _PyAST_arg(a->v.Name.id, NULL, NULL, EXTRA) }
+
+# Move Keyword
+# -------------
+move_expr[expr_ty]:
+    | "move" b=move_source { _PyAST_Move(_PyPegen_set_expr_context(p, b, Del), EXTRA); }
+
+# Very similar to the definition of `del_target` with the difference, that only
+# one value can be moved at a time, while delete allows the delition of multiple
+# locations at once.
+move_source[expr_ty]:
+    | a=t_primary '.' b=NAME !t_lookahead { _PyAST_Attribute(a, b->v.Name.id, Del, EXTRA) }
+    | a=t_primary '[' b=slices ']' !t_lookahead { _PyAST_Subscript(a, b, Del, EXTRA) }
+    | a=NAME { _PyPegen_set_expr_context(p, a, Del) }
 
 # LITERALS
 # ========

@@ -105,6 +105,7 @@ struct ast_state {
     PyObject *Mod_singleton;
     PyObject *Mod_type;
     PyObject *Module_type;
+    PyObject *Move_type;
     PyObject *Mult_singleton;
     PyObject *Mult_type;
     PyObject *Name_type;
@@ -237,6 +238,7 @@ struct ast_state {
     PyObject *right;
     PyObject *simple;
     PyObject *slice;
+    PyObject *source;
     PyObject *step;
     PyObject *stmt_type;
     PyObject *subject;

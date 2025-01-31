@@ -118,6 +118,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->Mod_singleton);
     Py_CLEAR(state->Mod_type);
     Py_CLEAR(state->Module_type);
+    Py_CLEAR(state->Move_type);
     Py_CLEAR(state->Mult_singleton);
     Py_CLEAR(state->Mult_type);
     Py_CLEAR(state->Name_type);
@@ -250,6 +251,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->right);
     Py_CLEAR(state->simple);
     Py_CLEAR(state->slice);
+    Py_CLEAR(state->source);
     Py_CLEAR(state->step);
     Py_CLEAR(state->stmt_type);
     Py_CLEAR(state->subject);
@@ -353,6 +355,7 @@ static int init_identifiers(struct ast_state *state)
     if ((state->right = PyUnicode_InternFromString("right")) == NULL) return 0;
     if ((state->simple = PyUnicode_InternFromString("simple")) == NULL) return 0;
     if ((state->slice = PyUnicode_InternFromString("slice")) == NULL) return 0;
+    if ((state->source = PyUnicode_InternFromString("source")) == NULL) return 0;
     if ((state->step = PyUnicode_InternFromString("step")) == NULL) return 0;
     if ((state->subject = PyUnicode_InternFromString("subject")) == NULL) return 0;
     if ((state->tag = PyUnicode_InternFromString("tag")) == NULL) return 0;
@@ -591,6 +594,9 @@ static const char * const DictComp_fields[]={
 static const char * const GeneratorExp_fields[]={
     "elt",
     "generators",
+};
+static const char * const Move_fields[]={
+    "source",
 };
 static const char * const Await_fields[]={
     "value",
@@ -1364,6 +1370,7 @@ init_types(struct ast_state *state)
         "     | SetComp(expr elt, comprehension* generators)\n"
         "     | DictComp(expr key, expr value, comprehension* generators)\n"
         "     | GeneratorExp(expr elt, comprehension* generators)\n"
+        "     | Move(expr source)\n"
         "     | Await(expr value)\n"
         "     | Yield(expr? value)\n"
         "     | YieldFrom(expr value)\n"
@@ -1434,6 +1441,10 @@ init_types(struct ast_state *state)
                                          2,
         "GeneratorExp(expr elt, comprehension* generators)");
     if (!state->GeneratorExp_type) return 0;
+    state->Move_type = make_type(state, "Move", state->expr_type, Move_fields,
+                                 1,
+        "Move(expr source)");
+    if (!state->Move_type) return 0;
     state->Await_type = make_type(state, "Await", state->expr_type,
                                   Await_fields, 1,
         "Await(expr value)");
@@ -2987,6 +2998,28 @@ _PyAST_GeneratorExp(expr_ty elt, asdl_comprehension_seq * generators, int
     p->kind = GeneratorExp_kind;
     p->v.GeneratorExp.elt = elt;
     p->v.GeneratorExp.generators = generators;
+    p->lineno = lineno;
+    p->col_offset = col_offset;
+    p->end_lineno = end_lineno;
+    p->end_col_offset = end_col_offset;
+    return p;
+}
+
+expr_ty
+_PyAST_Move(expr_ty source, int lineno, int col_offset, int end_lineno, int
+            end_col_offset, PyArena *arena)
+{
+    expr_ty p;
+    if (!source) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'source' is required for Move");
+        return NULL;
+    }
+    p = (expr_ty)_PyArena_Malloc(arena, sizeof(*p));
+    if (!p)
+        return NULL;
+    p->kind = Move_kind;
+    p->v.Move.source = source;
     p->lineno = lineno;
     p->col_offset = col_offset;
     p->end_lineno = end_lineno;
@@ -4664,6 +4697,16 @@ ast2obj_expr(struct ast_state *state, void* _o)
                              ast2obj_comprehension);
         if (!value) goto failed;
         if (PyObject_SetAttr(result, state->generators, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        break;
+    case Move_kind:
+        tp = (PyTypeObject *)state->Move_type;
+        result = PyType_GenericNew(tp, NULL, NULL);
+        if (!result) goto failed;
+        value = ast2obj_expr(state, o->v.Move.source);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->source, value) == -1)
             goto failed;
         Py_DECREF(value);
         break;
@@ -9506,6 +9549,36 @@ obj2ast_expr(struct ast_state *state, PyObject* obj, expr_ty* out, PyArena*
         if (*out == NULL) goto failed;
         return 0;
     }
+    tp = state->Move_type;
+    isinstance = PyObject_IsInstance(obj, tp);
+    if (isinstance == -1) {
+        return 1;
+    }
+    if (isinstance) {
+        expr_ty source;
+
+        if (_PyObject_LookupAttr(obj, state->source, &tmp) < 0) {
+            return 1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"source\" missing from Move");
+            return 1;
+        }
+        else {
+            int res;
+            if (_Py_EnterRecursiveCall(" while traversing 'Move' node")) {
+                goto failed;
+            }
+            res = obj2ast_expr(state, tmp, &source, arena);
+            _Py_LeaveRecursiveCall();
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        *out = _PyAST_Move(source, lineno, col_offset, end_lineno,
+                           end_col_offset, arena);
+        if (*out == NULL) goto failed;
+        return 0;
+    }
     tp = state->Await_type;
     isinstance = PyObject_IsInstance(obj, tp);
     if (isinstance == -1) {
@@ -12802,6 +12875,9 @@ astmodule_exec(PyObject *m)
     }
     if (PyModule_AddObjectRef(m, "GeneratorExp", state->GeneratorExp_type) < 0)
         {
+        return -1;
+    }
+    if (PyModule_AddObjectRef(m, "Move", state->Move_type) < 0) {
         return -1;
     }
     if (PyModule_AddObjectRef(m, "Await", state->Await_type) < 0) {

@@ -69,6 +69,8 @@ module Python
          | SetComp(expr elt, comprehension* generators)
          | DictComp(expr key, expr value, comprehension* generators)
          | GeneratorExp(expr elt, comprehension* generators)
+         -- the grammar constrains where move can occur and the source expression
+         | Move(expr source)
          -- the grammar constrains where yield expressions can occur
          | Await(expr value)
          | Yield(expr? value)

@@ -1681,6 +1681,10 @@ class _Unparser(NodeVisitor):
             self.set_precedence(_Precedence.TEST, node.body)
             self.traverse(node.body)
 
+    def visit_Move(self, node):
+        self.write("move ")
+        self.traverse(node.source)
+
     def visit_alias(self, node):
         self.write(node.name)
         if node.asname:

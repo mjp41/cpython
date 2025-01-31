@@ -280,6 +280,14 @@ validate_expr(struct validator *state, expr_ty exp, expr_context_ty ctx)
         ret = validate_arguments(state, exp->v.Lambda.args) &&
             validate_expr(state, exp->v.Lambda.body, Load);
         break;
+    case Move_kind:
+        // An expression can only have one context, but the `move` keyword
+        // uses the source expression both to read and delete it. This
+        // only checks for the deletion context since that's the more
+        // intrucive one. If we can delete the data, we should also
+        // allowed to read it (In the Python world).
+        ret = validate_expr(state, exp->v.Move.source, Del);
+        break;
     case IfExp_kind:
         ret = validate_expr(state, exp->v.IfExp.test, Load) &&
             validate_expr(state, exp->v.IfExp.body, Load) &&
