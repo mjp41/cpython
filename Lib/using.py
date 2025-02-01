@@ -78,24 +78,19 @@ def PyronaThread(group=None, target=None, name=None,
             return True
         return False
 
+    def check(a, args):
+      # rc(args) == 3 because we need to know that the args list is moved into the thread too
+      # rc = 3 because:
+      # 1. ref to args in rc
+      # 2. ref to args on this frame
+      # 3. ref to args on the calling framedef check(a, args):
+      if not ok_share(a) or (ok_move(a) and rc(args) == 3):
+        raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
     if kwargs is None:
         for a in args:
-            # rc(args) == 3 because we need to know that the args list is moved into the thread too
-            # rc = 3 because:
-            # 1. ref to args in rc
-            # 2. ref to args on this frame
-            # 3. ref to args on the calling frame
-            if not (ok_share(a) or (ok_move(a) and rc(args) == 3)):
-                raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
+            check(a, args)
             return Thread(group, target, name, args, daemon)
     else:
         for k in kwargs:
-            # rc(args) == 3 because we need to know that keyword dict is moved into the thread too
-            # rc = 3 because:
-            # 1. ref to kwargs in rc
-            # 2. ref to kwargs on this frame
-            # 3. ref to kwargs on the calling frame
-            v = kwargs[k]
-            if not (ok_share(v) or (ok_move(v) and rc(kwargs) == 3)):
-                raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
+            check(k, kwargs)
             return Thread(group, target, name, kwargs, daemon)
