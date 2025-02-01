@@ -49,6 +49,7 @@ def using(*args):
 # TODO: this creates a normal Python thread and ensures that all its
 # arguments are moved to the new thread. Eventually we should revisit
 # this behaviour as we go multiple interpreters / multicore.
+# TODO: require RC to be one less when move is upstreamed
 def PyronaThread(group=None, target=None, name=None,
                  args=(), kwargs=None, *, daemon=None):
     # Only check when a program uses pyrona
@@ -66,12 +67,13 @@ def PyronaThread(group=None, target=None, name=None,
         return False
     def ok_move(o):
         if isinstance(o, Region):
-            if rc(o) != 4:
+            if rc(o) != 5:
                 # rc = 4 because:
                 # 1. ref to o in rc
-                # 2. ref to o on this frame
-                # 3. ref to o on the calling frame
-                # 4. ref to o from kwargs dictionary or args tuple/list
+                # 2. ref to o on this frame (ok_move)
+                # 3. ref to o on the calling frame (check)
+                # 4. ref to o from iteration over kwargs dictionary or args tuple/list
+                # 5. ref to o from kwargs dictionary or args tuple/list
                 raise RuntimeError("Region passed to thread was not moved into thread")
             if o.is_open():
                 raise RuntimeError("Region passed to thread was open")
@@ -79,18 +81,22 @@ def PyronaThread(group=None, target=None, name=None,
         return False
 
     def check(a, args):
-      # rc(args) == 3 because we need to know that the args list is moved into the thread too
-      # rc = 3 because:
+      # rc(args) == 4 because we need to know that the args list is moved into the thread too
+      # rc = 4 because:
       # 1. ref to args in rc
       # 2. ref to args on this frame
       # 3. ref to args on the calling framedef check(a, args):
-      if not ok_share(a) or (ok_move(a) and rc(args) == 3):
+      # 4. ref from frame calling PyronaThread -- FIXME: not valid; revisit after #45
+      if not (ok_share(a) or (ok_move(a) and rc(args) == 4)):
         raise RuntimeError("Thread was passed an object which was neither immutable, a cown, or a unique region")
+
     if kwargs is None:
         for a in args:
             check(a, args)
-            return Thread(group, target, name, args, daemon)
+        return Thread(group, target, name, args, daemon)
     else:
         for k in kwargs:
-            check(k, kwargs)
-            return Thread(group, target, name, kwargs, daemon)
+            # Important to get matching RCs in both paths
+            v = kwargs[k]
+            check(v, kwargs)
+        return Thread(group, target, name, kwargs, daemon)
