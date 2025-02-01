@@ -85,9 +85,13 @@ int _Py_CheckRegionInvariant(PyThreadState *tstate);
 // Set a cown as parent of a region
 void _PyRegion_set_cown_parent(PyObject* region, PyObject* cown);
 // Check whether a region is closed
-int _PyRegion_is_closed(PyObject* region);
 int _PyCown_release(PyObject *self);
 int _PyCown_is_released(PyObject *self);
+int _PyCown_is_pending_release(PyObject *self);
+PyObject *_PyCown_close_region(PyObject* ob);
+#define PyCown_close_region(op) _PyCown_close_region(_PyObject_CAST(op))
+int _PyRegion_is_closed(PyObject* op);
+#define PyRegion_is_closed(op) _PyRegion_is_closed(_PyObject_CAST(op))
 
 
 #ifdef _Py_TYPEOF
