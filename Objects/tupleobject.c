@@ -124,6 +124,14 @@ PyTuple_SetItem(PyObject *op, Py_ssize_t i, PyObject *newitem)
         return -1;
     }
 
+    // TODO: Pyrona: Possibly optimise this case as tuples
+    // should always be in local when they are assigned.
+    if (!Py_REGIONADDREFERENCE(op, newitem)){
+        Py_XDECREF(newitem);
+        // Error set by region add test
+        return -1;
+    }
+
     if (i < 0 || i >= Py_SIZE(op)) {
         Py_XDECREF(newitem);
         PyErr_SetString(PyExc_IndexError,
