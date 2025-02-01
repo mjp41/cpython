@@ -221,7 +221,7 @@ static PyObject *PyCown_set_unchecked(PyCownObject *self, PyObject *arg) {
         // to enable it to release the cown on close
         if (arg_is_region_object) {
             _PyRegion_set_cown_parent(arg, _PyObject_CAST(self));
-            // TODO: should not run try close here unless dirty at the end of phase 3
+            // TODO: Pyrona: should not run try close here unless dirty at the end of phase 3
             // if (_PyCown_close_region(arg) == Py_None) {
             if (_PyRegion_is_closed(arg)) {
                 if (PyCown_release(self, NULL) == NULL) {
