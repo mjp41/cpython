@@ -50,6 +50,12 @@ static void _PyErr_Region(PyObject *src, PyObject *tgt, const char *msg);
  * Global status for performing the region check.
  */
 bool invariant_do_region_check = false;
+/**
+ * TODO: revisit the definition of this builting function
+ */
+int Py_is_invariant_enabled(void) {
+    return invariant_do_region_check;
+}
 
 // The src object for an edge that invalidated the invariant.
 PyObject* invariant_error_src = Py_None;
