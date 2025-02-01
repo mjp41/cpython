@@ -61,7 +61,7 @@ static void PyCown_dealloc(PyCownObject *self) {
 }
 
 static int PyCown_init(PyCownObject *self, PyObject *args, PyObject *kwds) {
-    // TODO: should not be needed in the future
+    // TODO: Pyrona: should not be needed in the future
     _Py_MakeImmutable(_PyObject_CAST(Py_TYPE(self)));
     _Py_notify_regions_in_use();
 
@@ -132,10 +132,12 @@ static int PyCown_traverse(PyCownObject *self, visitproc visit, void *arg) {
 // compatible with PyCFunction
 static PyObject *PyCown_acquire(PyCownObject *self, PyObject *ignored) {
     PyThreadState *tstate = PyThreadState_Get();
+
+    // TODO: Pyrona: releasing the GIL will eventually not be necessary here
     Py_BEGIN_ALLOW_THREADS
     int expected = Cown_RELEASED;
 
-    // TODO: eventually replace this with something from pycore_atomic (nothing there now)
+    // TODO: Pyrona: eventually replace this with something from pycore_atomic (nothing there now)
     while (!atomic_compare_exchange_strong(&self->state._value, &expected, Cown_ACQUIRED)) {
         expected = Cown_RELEASED;
         sem_wait(&self->semaphore);
@@ -159,7 +161,6 @@ static PyObject *PyCown_release(PyCownObject *self, PyObject *ignored) {
 
     BAIL_UNLESS_OWNED(self, "Thread attempted to release a cown it did not own");
 
-    Py_BEGIN_ALLOW_THREADS
     if (self->value && Py_TYPE(self->value) == &PyRegion_Type) {
         if (PyCown_close_region(self->value) == NULL) {
             // Close region failed -- propagate its error
@@ -170,7 +171,6 @@ static PyObject *PyCown_release(PyCownObject *self, PyObject *ignored) {
     self->owning_thread = 0;
     _Py_atomic_store(&self->state, Cown_RELEASED);
     sem_post(&self->semaphore);
-    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
