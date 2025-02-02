@@ -393,7 +393,7 @@ PyAPI_FUNC(PyObject *) _PyObject_FunctionStr(PyObject *);
         _Py_TYPEOF(dst)* _tmp_dst_ptr = &(dst); \
         _Py_TYPEOF(dst) _tmp_old_dst = (*_tmp_dst_ptr); \
         *_tmp_dst_ptr = (src); \
-        if (_tmp_old_dst) _Pyrona_RemoveReference(obj, _tmp_old_dst); \
+        if (_tmp_old_dst) _Py_RegionRemoveReference(obj, _tmp_old_dst); \
         Py_XDECREF(_tmp_old_dst); \
     } while (0)
 #else
@@ -403,7 +403,7 @@ PyAPI_FUNC(PyObject *) _PyObject_FunctionStr(PyObject *);
         PyObject *_tmp_old_dst = (*_tmp_dst_ptr); \
         PyObject *_tmp_src = _PyObject_CAST(src); \
         memcpy(_tmp_dst_ptr, &_tmp_src, sizeof(PyObject*)); \
-        if (_tmp_old_dst) _Pyrona_RemoveReference(obj, _tmp_old_dst); \
+        if (_tmp_old_dst) _Py_RegionRemoveReference(obj, _tmp_old_dst); \
         Py_XDECREF(_tmp_old_dst); \
     } while (0)
 #endif

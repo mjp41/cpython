@@ -1688,7 +1688,7 @@ PyObject_GenericSetDict(PyObject *obj, PyObject *value, void *context)
                      "not a '%.200s'", Py_TYPE(value)->tp_name);
         return -1;
     }
-    if (_Pyrona_AddReference(obj, value)) {
+    if (_Py_RegionAddReference(obj, value)) {
         Py_XSETREF(*dictptr, Py_NewRef(value));
         return 0;
     } else {
