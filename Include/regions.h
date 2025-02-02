@@ -15,6 +15,8 @@ PyAPI_FUNC(int) _Py_IsLocal(PyObject *op);
 PyAPI_FUNC(int) _Py_IsCown(PyObject *op);
 #define Py_IsCown(op) _Py_IsCown(_PyObject_CAST(op))
 
+int Py_is_invariant_enabled(void);
+
 #ifdef __cplusplus
 }
 #endif

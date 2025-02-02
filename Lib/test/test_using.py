@@ -166,3 +166,25 @@ class UsingTest(unittest.TestCase):
             result = c.get().value.value
         if result != 200:
             self.fail()
+
+    def test_thread_creation(self):
+        from using import PyronaThread as T
+
+        class Mutable: pass
+        self.assertRaises(RuntimeError, lambda x: T(target=print, args=(Mutable(),)), None)
+        self.assertRaises(RuntimeError, lambda x: T(target=print, kwargs={'a' : Mutable()}), None)
+        self.assertRaises(RuntimeError, lambda x: T(target=print, args=(Mutable(),), kwargs={'a' : Mutable()}), None)
+        self.assertRaises(RuntimeError, lambda x: T(target=print, args=(Mutable(), 42)), None)
+        self.assertRaises(RuntimeError, lambda x: T(target=print, args=(Mutable(), Cown())), None)
+        self.assertRaises(RuntimeError, lambda x: T(target=print, args=(Mutable(), Region())), None)
+
+        T(target=print, kwargs={'imm' : 42, 'cown' : Cown(), 'region' : Region()})
+        T(target=print, kwargs={'a': 42})
+        T(target=print, kwargs={'a': Cown()})
+        T(target=print, kwargs={'a': Region()})
+
+        T(target=print, args=(42, Cown(), Region()))
+        T(target=print, args=(42,))
+        T(target=print, args=(Cown(),))
+        T(target=print, args=(Region(),))
+        self.assertTrue(True) # To make sure we got here correctly
