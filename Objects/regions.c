@@ -253,6 +253,33 @@ static void regionmetadata_inc_osc(Py_region_ptr_t self_ptr)
 #define regionmetadata_inc_osc(self) \
     (regionmetadata_inc_osc(REGION_PTR_CAST(self)))
 
+/// This function checks the internal state, meaning the LRC, OSC and dirty
+/// status, to determine if the region should be closed. If possible, it will
+/// close the region and propagate the state to any parent region or cowns.
+///
+/// Returns `0` on success. An error might come from closing the region
+/// see `regionmetadata_close` for potential errors.
+static int regionmetadata_check_for_close(regionmetadata* self) {
+    // If the region is marked as dirty, we can't trust the LRC or OSC
+    // to update the status. The region has to be cleaned before it can
+    // be closed
+    if (regionmetadata_is_dirty(self)) {
+        return 0;
+    }
+
+    // The region has to remain open, if there are open subregions
+    if (self->osc != 0) {
+        return 0;
+    }
+
+    // The region has to remain open, if there are references into the region.
+    if (self->lrc != 0) {
+        return 0;
+    }
+
+    return regionmetadata_close(self);
+}
+
 /// Decrements the OSC of the region. This might close the region if the LRC
 /// and ORC both hit zero and the region is not marked as dirty.
 ///
@@ -268,11 +295,7 @@ static int regionmetadata_dec_osc(Py_region_ptr_t self_ptr)
     self->osc -= 1;
 
     // Check if the OSC decrease has closed this region as well.
-    if (self->osc == 0 && self->lrc == 0 && !regionmetadata_is_dirty(self)) {
-        return regionmetadata_close(self);
-    }
-
-    return 0;
+    return regionmetadata_check_for_close(self);
 }
 #define regionmetadata_dec_osc(self) \
     (regionmetadata_dec_osc(REGION_PTR_CAST(self)))
@@ -321,6 +344,31 @@ static int regionmetadata_dec_rc(Py_region_ptr_t self_ptr)
 }
 #define regionmetadata_dec_rc(self) \
     (regionmetadata_dec_rc(REGION_PTR_CAST(self)))
+
+static void regionmetadata_inc_lrc(regionmetadata* self)
+{
+    assert(HAS_METADATA(self));
+
+    self->lrc += 1;
+    regionmetadata_open(self);
+}
+#define regionmetadata_inc_lrc(self) \
+    (regionmetadata_inc_lrc(REGION_DATA_CAST(self)))
+
+/// Decrements the LRC of the region. This might close the region if the LRC
+/// and ORC both hit zero and the region is not marked as dirty.
+///
+/// Returns `0` on success. An error might come from closing the region
+/// see `regionmetadata_close` for potential errors.
+static int regionmetadata_dec_lrc(regionmetadata* self)
+{
+    assert(HAS_METADATA(self));
+
+    self->lrc -= 1;
+    return regionmetadata_check_for_close(self);
+}
+#define regionmetadata_dec_lrc(self) \
+    (regionmetadata_dec_lrc(REGION_DATA_CAST(self)))
 
 static void regionmetadata_set_parent(regionmetadata* self, regionmetadata* parent) {
     // Just a sanity check, since these cases should never happen
@@ -473,7 +521,9 @@ int _Py_IsCown(PyObject *op)
 
 Py_region_ptr_t _Py_REGION(PyObject *ob) {
     if (!ob) {
-        return REGION_PTR_CAST(NULL);
+        // NULL is not really an object, but we want to allow pointers to be NULL
+        // so we can simply return the immutable region.
+        return _Py_IMMUTABLE;
     }
 
     Py_region_ptr_t field_value = Py_region_ptr(Py_REGION_FIELD(ob));
@@ -1932,7 +1982,7 @@ bool _Py_RegionAddReference(PyObject *src, PyObject *tgt) {
     if (_Py_IsLocal(src)) {
         // Record the borrowed reference in the LRC of the target region
         // _Py_VPYDBG("Added borrowed ref %p --> %p (owner: '%s')\n", tgt, new_ref, get_region_name(tgt));
-        Py_REGION_DATA(tgt)->lrc += 1;
+        regionmetadata_inc_lrc(Py_REGION_DATA(tgt));
         return true;
     }
 
@@ -1950,7 +2000,7 @@ void _Py_RegionAddLocalReference(PyObject *tgt) {
         return;
     }
 
-    Py_REGION_DATA(tgt)->lrc += 1;
+    regionmetadata_inc_lrc(Py_REGION_DATA(tgt));
 }
 
 // Convenience function for moving multiple references into tgt at once
@@ -1974,6 +2024,29 @@ void _PyRegion_set_cown_parent(PyObject* bridge, PyObject* cown) {
     Py_XSETREF(data->cown, cown);
 }
 
+bool _Py_RegionChangeReference(PyObject* src, PyObject* old_tgt, PyObject* new_tgt) {
+    // Only run the write barrier(WB) if the reference targets are different.
+    // This is important for bridge objects, as there can only be one owning
+    // reference at a time and adding a new reference first would throw a
+    // region error due to the WB believing that it would result in a second
+    // owning reference being created.
+    //
+    // Removing the reference before the new one also doesn't work. As it
+    // could cause a parent region to close prematurely and release a cown.
+    // It would also require adding the removed reference again, if the
+    // `_Py_RegionAddReference` fails.
+    if (old_tgt == new_tgt) {
+        return true;
+    }
+
+    if (!_Py_RegionAddReference(src, new_tgt)) {
+        return false;
+    }
+
+    _Py_RegionRemoveReference(src, old_tgt);
+    return true;
+}
+
 void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
     if (Py_REGION(src) == Py_REGION(tgt)) {
         // Nothing to do -- intra-region references have no accounting.
@@ -1992,9 +2065,8 @@ void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
     regionmetadata* tgt_md = Py_REGION_DATA(tgt);
     if (_Py_IsLocal(src)) {
         // Dec LRC of the previously referenced region
-        // TODO should this decrement be a function, if it hits zero,
-        // then a region could become unreachable.
-        tgt_md->lrc -= 1;
+        // TODO should errors be propagated?
+        regionmetadata_dec_lrc(tgt_md);
         return;
     }
 
