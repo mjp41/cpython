@@ -4688,6 +4688,114 @@ check_index(struct compiler *c, expr_ty e, expr_ty s)
     }
 }
 
+// If an attribute access spans multiple lines, update the current start
+// location to point to the attribute name.
+static location
+update_start_location_to_match_attr(struct compiler *c, location loc,
+                                    expr_ty attr)
+{
+    assert(attr->kind == Attribute_kind);
+    if (loc.lineno != attr->end_lineno) {
+        loc.lineno = attr->end_lineno;
+        int len = (int)PyUnicode_GET_LENGTH(attr->v.Attribute.attr);
+        if (len <= attr->end_col_offset) {
+            loc.col_offset = attr->end_col_offset - len;
+        }
+        else {
+            // GH-94694: Somebody's compiling weird ASTs. Just drop the columns:
+            loc.col_offset = -1;
+            loc.end_col_offset = -1;
+        }
+        // Make sure the end position still follows the start position, even for
+        // weird ASTs:
+        loc.end_lineno = Py_MAX(loc.lineno, loc.end_lineno);
+        if (loc.lineno == loc.end_lineno) {
+            loc.end_col_offset = Py_MAX(loc.col_offset, loc.end_col_offset);
+        }
+    }
+    return loc;
+}
+
+static bool
+is_two_element_slice(expr_ty s)
+{
+    return s->kind == Slice_kind &&
+           s->v.Slice.step == NULL;
+}
+
+// This function implements the `move` keyword. The keyword works for variables,
+// attributes and containers via index operations. All implementations follow
+// the same schema:
+// 1. Setup the stack to access the data
+// 2. Copy the relevant stack items
+// 3. Load the value into the top
+// 4. Move the loaded value to the bottom
+// 5. Call delete
+// 6. Only the loaded value is left on the stack
+static int
+compiler_move(struct compiler *c, expr_ty e)
+{
+    expr_ty source = e->v.Move.source;
+    assert(e->kind == Move_kind);
+
+    location loc = LOC(e);
+    location source_loc = LOC(source);
+    if (source->kind == Name_kind) {
+        // First load the value
+        RETURN_IF_ERROR(
+            compiler_nameop(c, source_loc, source->v.Name.id, Load));
+        // Now delete the old reference
+        RETURN_IF_ERROR(
+            compiler_nameop(c, source_loc, source->v.Name.id, Del));
+    } else if (source->kind == Attribute_kind) {
+        location attr_loc = update_start_location_to_match_attr(c, loc, source);
+
+        // Get the source value
+        VISIT(c, expr, source->v.Attribute.value);
+
+        // Duplicate the attribute source to be used for the load
+        // and delete
+        ADDOP_I(c, loc, COPY, 1);
+
+        // Load the value
+        ADDOP_NAME(c, attr_loc, LOAD_ATTR, source->v.Attribute.attr, names);
+        ADDOP_I(c, loc, SWAP, 2);
+
+        // Delete the value
+        ADDOP_NAME(c, loc, DELETE_ATTR, source->v.Attribute.attr, names);
+    } else if (source->kind == Subscript_kind) {
+        // Check taken from `compiler_subscript`
+        RETURN_IF_ERROR(check_subscripter(c, source->v.Subscript.value));
+        RETURN_IF_ERROR(check_index(c, source->v.Subscript.value, source->v.Subscript.slice));
+
+        // Push `None` as a swap target for the load
+        ADDOP_LOAD_CONST(c, loc, Py_None);
+
+        // Setup the operant and key
+        VISIT(c, expr, source->v.Subscript.value);
+        VISIT(c, expr, source->v.Subscript.slice);
+        // Duplicate for Load
+        ADDOP_I(c, loc, COPY, 2);
+        ADDOP_I(c, loc, COPY, 2);
+
+        // Load
+        ADDOP(c, source_loc, BINARY_SUBSCR);
+
+        // Swap the loaded value to the bottom of the move stack
+        ADDOP_I(c, loc, SWAP, 4);
+        ADDOP(c, loc, POP_TOP);
+
+        // Delete
+        ADDOP(c, source_loc, DELETE_SUBSCR);
+    } else {
+        // The parser should only allow names, slices and attributes
+        // This is just a sanity check.
+        assert(false);
+    }
+
+    return SUCCESS;
+}
+
 static int
 is_import_originated(struct compiler *c, expr_ty e)
 {
@@ -4786,34 +4894,6 @@ load_args_for_super(struct compiler *c, expr_ty e) {
     RETURN_IF_ERROR(compiler_nameop(c, loc, key, Load));
 
     return SUCCESS;
-}
-
-// If an attribute access spans multiple lines, update the current start
-// location to point to the attribute name.
-static location
-update_start_location_to_match_attr(struct compiler *c, location loc,
-                                    expr_ty attr)
-{
-    assert(attr->kind == Attribute_kind);
-    if (loc.lineno != attr->end_lineno) {
-        loc.lineno = attr->end_lineno;
-        int len = (int)PyUnicode_GET_LENGTH(attr->v.Attribute.attr);
-        if (len <= attr->end_col_offset) {
-            loc.col_offset = attr->end_col_offset - len;
-        }
-        else {
-            // GH-94694: Somebody's compiling weird ASTs. Just drop the columns:
-            loc.col_offset = -1;
-            loc.end_col_offset = -1;
-        }
-        // Make sure the end position still follows the start position, even for
-        // weird ASTs:
-        loc.end_lineno = Py_MAX(loc.lineno, loc.end_lineno);
-        if (loc.lineno == loc.end_lineno) {
-            loc.end_col_offset = Py_MAX(loc.col_offset, loc.end_col_offset);
-        }
-    }
-    return loc;
 }
 
 // Return 1 if the method call was optimized, 0 if not, and -1 on error.
@@ -6065,6 +6145,8 @@ compiler_visit_expr1(struct compiler *c, expr_ty e)
         break;
     case Lambda_kind:
         return compiler_lambda(c, e);
+    case Move_kind:
+        return compiler_move(c, e);
     case IfExp_kind:
         return compiler_ifexp(c, e);
     case Dict_kind:
@@ -6197,13 +6279,6 @@ compiler_visit_expr(struct compiler *c, expr_ty e)
 {
     int res = compiler_visit_expr1(c, e);
     return res;
-}
-
-static bool
-is_two_element_slice(expr_ty s)
-{
-    return s->kind == Slice_kind &&
-           s->v.Slice.step == NULL;
 }
 
 static int

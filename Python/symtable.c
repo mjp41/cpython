@@ -1994,6 +1994,9 @@ symtable_visit_expr(struct symtable *st, expr_ty e)
             VISIT_QUIT(st, 0);
         break;
     }
+    case Move_kind:
+        VISIT(st, expr, e->v.Move.source);
+        break;
     case IfExp_kind:
         VISIT(st, expr, e->v.IfExp.test);
         VISIT(st, expr, e->v.IfExp.body);
