@@ -159,8 +159,8 @@ static void regionmetadata_mark_as_dirty(Py_region_ptr_t self_ptr) {
     if (!HAS_METADATA(self_ptr)) {
         return;
     }
-
-    REGION_DATA_CAST(self_ptr)->is_dirty = true;
+    regionmetadata *self = REGION_DATA_CAST(self_ptr);
+    self->is_dirty = true;
 }
 # define regionmetadata_mark_as_dirty(data) \
     (regionmetadata_mark_as_dirty(REGION_PTR_CAST(data)))
@@ -239,6 +239,10 @@ static bool regionmetadata_is_open(Py_region_ptr_t self) {
 }
 #define regionmetadata_is_open(self) \
     regionmetadata_is_open(REGION_PTR_CAST(self))
+
+void _PyObject_mark_region_as_dirty(PyObject *op) {
+    regionmetadata_mark_as_dirty(_Py_REGION(op));
+}
 
 static void regionmetadata_inc_osc(Py_region_ptr_t self_ptr)
 {
@@ -1871,7 +1875,7 @@ PyTypeObject PyRegion_Type = {
     0,                                       /* tp_getattro */
     0,                                       /* tp_setattro */
     0,                                       /* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, /* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_REGION_AWARE, /* tp_flags */
     "TODO =^.^=",                            /* tp_doc */
     (traverseproc)PyRegion_traverse,         /* tp_traverse */
     (inquiry)PyRegion_clear,                 /* tp_clear */
@@ -1915,6 +1919,14 @@ static const char *get_region_name(PyObject* obj) {
             ? PyUnicode_AsUTF8(md->name)
             : "<no name>";
     }
+}
+
+// TODO replace with write barrier code
+bool _Pyrona_RemoveReference(PyObject *src, PyObject *tgt) {
+#ifndef NDEBUG
+        _Py_VPYDBG("Removed %p --> %p (owner: '%s')\n", src, tgt, get_region_name(src));
+#endif
+    return true; // TODO: implement
 }
 
 // x.f = y ==> _Pyrona_AddReference(src=x, tgt=y)

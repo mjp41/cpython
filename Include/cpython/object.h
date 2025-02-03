@@ -386,6 +386,28 @@ PyAPI_FUNC(PyObject *) _PyObject_FunctionStr(PyObject *);
     } while (0)
 #endif
 
+/* Py_XSETREF_WITH_REGION() is a region-aware variant of Py_XSETREF */
+#ifdef _Py_TYPEOF
+#define Py_XSETREF_WITH_REGION(dst, src, obj) \
+    do { \
+        _Py_TYPEOF(dst)* _tmp_dst_ptr = &(dst); \
+        _Py_TYPEOF(dst) _tmp_old_dst = (*_tmp_dst_ptr); \
+        *_tmp_dst_ptr = (src); \
+        if (_tmp_old_dst) _Py_RegionRemoveReference(obj, _tmp_old_dst); \
+        Py_XDECREF(_tmp_old_dst); \
+    } while (0)
+#else
+#define Py_XSETREF_WITH_REGION(dst, src, obj) \
+    do { \
+        PyObject **_tmp_dst_ptr = _Py_CAST(PyObject**, &(dst)); \
+        PyObject *_tmp_old_dst = (*_tmp_dst_ptr); \
+        PyObject *_tmp_src = _PyObject_CAST(src); \
+        memcpy(_tmp_dst_ptr, &_tmp_src, sizeof(PyObject*)); \
+        if (_tmp_old_dst) _Py_RegionRemoveReference(obj, _tmp_old_dst); \
+        Py_XDECREF(_tmp_old_dst); \
+    } while (0)
+#endif
+
 
 PyAPI_DATA(PyTypeObject) _PyNone_Type;
 PyAPI_DATA(PyTypeObject) _PyNotImplemented_Type;

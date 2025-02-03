@@ -31,6 +31,7 @@ extern "C" {
 
 /* Defined in tracemalloc.c */
 extern void _PyMem_DumpTraceback(int fd, const void *ptr);
+extern int _Py_is_bridge_object(PyObject *op);
 
 
 int
@@ -1173,9 +1174,19 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
 
     PyUnicode_InternInPlace(&name);
     if (tp->tp_setattro != NULL) {
-        if(Py_CHECKWRITE(v)){
+        if (Py_CHECKWRITE(v)) {
+            if (!Py_IS_REGION_AWARE(tp)) {
+                _PyObject_mark_region_as_dirty(v);
+                // If x.f = y and type(x) isn't region aware,
+                // when y is a bridge object, mark its region
+                // as dirty since we probably just violated the
+                // external uniqueness invariant.
+                if (_Py_is_bridge_object(value)) {
+                    _PyObject_mark_region_as_dirty(value);
+                }
+            }
             err = (*tp->tp_setattro)(v, name, value);
-        }else{
+        } else {
             PyErr_WriteToImmutable(v);
             err = -1;
         }
@@ -1190,9 +1201,19 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
             return -1;
         }
 
-        if(Py_CHECKWRITE(v)){
+        if (Py_CHECKWRITE(v)) {
+            if (!Py_IS_REGION_AWARE(tp)) {
+                _PyObject_mark_region_as_dirty(v);
+                // If x.f = y and type(x) isn't region aware,
+                // when y is a bridge object, mark its region
+                // as dirty since we probably just violated the
+                // external uniqueness invariant.
+                if (_Py_is_bridge_object(value)) {
+                    _PyObject_mark_region_as_dirty(value);
+                }
+            }
             err = (*tp->tp_setattr)(v, (char *)name_str, value);
-        }else{
+        } else {
             PyErr_WriteToImmutable(v);
             err = -1;
         }
@@ -1667,8 +1688,12 @@ PyObject_GenericSetDict(PyObject *obj, PyObject *value, void *context)
                      "not a '%.200s'", Py_TYPE(value)->tp_name);
         return -1;
     }
-    Py_XSETREF(*dictptr, Py_NewRef(value));
-    return 0;
+    if (_Py_RegionAddReference(obj, value)) {
+        Py_XSETREF(*dictptr, Py_NewRef(value));
+        return 0;
+    } else {
+        return -1;
+    }
 }
 
 
@@ -1895,7 +1920,7 @@ PyTypeObject _PyNone_Type = {
     0,                  /*tp_getattro */
     0,                  /*tp_setattro */
     0,                  /*tp_as_buffer */
-    Py_TPFLAGS_DEFAULT, /*tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_REGION_AWARE, /*tp_flags */
     0,                  /*tp_doc */
     0,                  /*tp_traverse */
     0,                  /*tp_clear */
