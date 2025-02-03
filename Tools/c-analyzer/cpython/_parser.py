@@ -178,6 +178,7 @@ Objects/**/*.c	Py_BUILD_CORE	1
 Objects/**/*.h	Py_BUILD_CORE	1
 
 Modules/_asynciomodule.c	Py_BUILD_CORE	1
+Modules/_behaviorsmodule.c	Py_BUILD_CORE	1
 Modules/_codecsmodule.c	Py_BUILD_CORE	1
 Modules/_collectionsmodule.c	Py_BUILD_CORE	1
 Modules/_ctypes/_ctypes.c	Py_BUILD_CORE	1

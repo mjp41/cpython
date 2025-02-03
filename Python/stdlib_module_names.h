@@ -7,6 +7,7 @@ static const char* _Py_stdlib_module_names[] = {
 "_aix_support",
 "_ast",
 "_asyncio",
+"_behaviors",
 "_bisect",
 "_blake2",
 "_bz2",

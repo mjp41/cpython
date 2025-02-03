@@ -1497,6 +1497,14 @@ finalize_modules_clear_weaklist(PyInterpreterState *interp,
         if (verbose && PyUnicode_Check(name)) {
             PySys_FormatStderr("# cleanup[3] wiping %U\n", name);
         }
+
+        // before we can proceed, we need to restore mutability
+        mod->ob_region = _Py_DEFAULT_REGION;
+        PyObject *d = PyModule_GetDict(mod);
+        if (d != NULL) {
+            d->ob_region = _Py_DEFAULT_REGION;
+        }
+
         _PyModule_Clear(mod);
         Py_DECREF(mod);
     }
@@ -1531,6 +1539,10 @@ finalize_modules(PyThreadState *tstate)
         // Already done
         return;
     }
+
+    // before we can proceed, we need to restore mutability
+    modules->ob_region = _Py_DEFAULT_REGION;
+
     int verbose = _PyInterpreterState_GetConfig(interp)->verbose;
 
     // Delete some special builtins._ and sys attributes first.  These are
@@ -1859,6 +1871,11 @@ Py_FinalizeEx(void)
     PyGC_Collect();
 
     /* Destroy all modules */
+
+    /* Module destruction requires that various dictionaries are mutable. */
+    tstate->interp->sysdict->ob_region = _Py_DEFAULT_REGION;
+    tstate->interp->builtins->ob_region = _Py_DEFAULT_REGION;
+
     _PyImport_FiniExternal(tstate->interp);
     finalize_modules(tstate);
 

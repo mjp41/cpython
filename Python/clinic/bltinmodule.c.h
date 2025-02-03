@@ -1427,4 +1427,22 @@ PyDoc_STRVAR(builtin_makeimmutable__doc__,
 
 #define BUILTIN_MAKEIMMUTABLE_METHODDEF    \
     {"makeimmutable", (PyCFunction)builtin_makeimmutable, METH_O, builtin_makeimmutable__doc__},
-/*[clinic end generated code: output=fd970a348a6896e0 input=a9049054013a1b77]*/
+
+PyDoc_STRVAR(builtin_makeglobalsimmutable__doc__,
+"makeglobalsimmutable($module, /)\n"
+"--\n"
+"\n"
+"Make all globals and the global dictionary immutable.");
+
+#define BUILTIN_MAKEGLOBALSIMMUTABLE_METHODDEF    \
+    {"makeglobalsimmutable", (PyCFunction)builtin_makeglobalsimmutable, METH_NOARGS, builtin_makeglobalsimmutable__doc__},
+
+static PyObject *
+builtin_makeglobalsimmutable_impl(PyObject *module);
+
+static PyObject *
+builtin_makeglobalsimmutable(PyObject *module, PyObject *Py_UNUSED(ignored))
+{
+    return builtin_makeglobalsimmutable_impl(module);
+}
+/*[clinic end generated code: output=9f5cc3251dacf4c1 input=a9049054013a1b77]*/

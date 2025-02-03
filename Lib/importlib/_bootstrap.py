@@ -29,6 +29,7 @@ def _object_name(obj):
 # Bootstrap-related code ######################################################
 
 # Modules injected manually by _setup()
+_behaviors = None
 _thread = None
 _warnings = None
 _weakref = None
@@ -407,6 +408,69 @@ class _DummyModuleLock:
         return f'_DummyModuleLock({self.name!r}) at {id(self)}'
 
 
+class _MultiInterpreterModuleLock:
+    """A recursive lock implementation which is able to detect deadlocks
+    across multiple subinterpreters.
+    """
+
+    def __init__(self, name):
+        self.lock = _behaviors.RLock()
+        self.wakeup = _behaviors.Lock()
+        self.name = name
+        self.owner = None
+        self.count = []
+        self.waiters = []
+
+    def has_deadlock(self):
+        return _has_deadlocked(
+            # get the thread id of the current subinterpreter
+            target_id=_behaviors.get_ident(),
+            seen_ids=set(),
+            candidate_ids=[self.owner],
+            blocking_on=_blocking_on,
+        )
+
+    def acquire(self):
+        """
+        Acquire the module lock.  If a potential deadlock is detected,
+        a _DeadlockError is raised.
+        Otherwise, the lock is always acquired and True is returned.
+        """
+        bid = _behaviors.get_ident()
+        with _BlockingOnManager(bid, self):
+            while True:
+                with self.lock:
+                    if self.count == [] or self.owner == bid:
+                        self.owner = bid
+                        self.count.append(True)
+                        return True
+
+                    if self.has_deadlock():
+                        raise _DeadlockError(f'deadlock detected by {self!r}')
+
+                    if self.wakeup.acquire(False):
+                        self.waiters.append(None)
+
+                self.wakeup.acquire()
+                self.wakeup.release()
+
+    def release(self):
+        bid = _behaviors.get_ident()
+        with self.lock:
+            if self.owner != bid:
+                raise RuntimeError('cannot release un-acquired lock')
+            assert len(self.count) > 0
+            self.count.pop()
+            if not len(self.count):
+                self.owner = None
+                if len(self.waiters) > 0:
+                    self.waiters.pop()
+                    self.wakeup.release()
+
+    def __repr__(self):
+        return f'_MultiInterpreterModuleLock({self.name!r}) at {id(self)}'
+
+
 class _ModuleLockManager:
 
     def __init__(self, name):
@@ -439,6 +503,8 @@ def _get_module_lock(name):
         if lock is None:
             if _thread is None:
                 lock = _DummyModuleLock(name)
+            elif _behaviors is not None and _behaviors.running():
+                lock = _MultiInterpreterModuleLock(name)
             else:
                 lock = _ModuleLock(name)
 
@@ -942,6 +1008,11 @@ def _load_unlocked(spec):
         _verbose_message('import {!r} # {!r}', spec.name, spec.loader)
     finally:
         spec._initializing = False
+
+    if _behaviors is not None and _behaviors.running():
+        # all modules must be made immutable upon load
+        if not isimmutable(module):
+            makeimmutable(module)
 
     return module
 
@@ -1518,7 +1589,7 @@ def _setup(sys_module, _imp_module):
 
     # Directly load built-in modules needed during bootstrap.
     self_module = sys.modules[__name__]
-    for builtin_name in ('_thread', '_warnings', '_weakref'):
+    for builtin_name in ('_thread', '_warnings', '_weakref', '_behaviors'):
         if builtin_name not in sys.modules:
             builtin_module = _builtin_from_name(builtin_name)
         else:

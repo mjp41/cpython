@@ -2754,7 +2754,7 @@ builtin_isimmutable(PyObject *module, PyObject *obj)
 {
     _Py_VPYDBG("isimmutable(");
     _Py_VPYDBGPRINT(obj);
-    _Py_VPYDBG(") region: %lu\n", Py_REGION(obj));
+    _Py_VPYDBG(") region: %" PRIuPTR "\n", Py_REGION(obj));
     return PyBool_FromLong(_Py_IsImmutable(obj));
 }
 
@@ -2774,6 +2774,20 @@ builtin_makeimmutable(PyObject *module, PyObject *obj)
 {
     return Py_MakeImmutable(obj);
 }
+
+/*[clinic input]
+makeglobalsimmutable as builtin_makeglobalsimmutable
+
+Make all globals and the global dictionary immutable.
+[clinic start generated code]*/
+
+static PyObject *
+builtin_makeglobalsimmutable_impl(PyObject *module)
+/*[clinic end generated code: output=6e689380d1cd629c input=e31cfac504e8ba55]*/
+{
+    return Py_MakeGlobalsImmutable();
+}
+
 
 typedef struct {
     PyObject_HEAD
@@ -3075,6 +3089,7 @@ static PyMethodDef builtin_methods[] = {
     BUILTIN_ISSUBCLASS_METHODDEF
     BUILTIN_ISIMMUTABLE_METHODDEF
     BUILTIN_MAKEIMMUTABLE_METHODDEF
+    BUILTIN_MAKEGLOBALSIMMUTABLE_METHODDEF
     BUILTIN_ITER_METHODDEF
     BUILTIN_AITER_METHODDEF
     BUILTIN_LEN_METHODDEF
