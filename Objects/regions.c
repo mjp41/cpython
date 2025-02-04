@@ -219,8 +219,8 @@ static int regionmetadata_close(regionmetadata* self) {
         return regionmetadata_dec_osc(parent);
     }
 
-    // Check if in a cown -- if so, release cown
-    if (self->cown) {
+    // Check if in a cown which is waiting for the region to close -- if so, release cown
+    if (self->cown && _PyCown_is_pending_release(self->cown)) {
         // Propagate error from release
         return _PyCown_release(self->cown);
     }
@@ -1749,13 +1749,16 @@ int _PyRegion_is_closed(PyObject* self) {
 // The ignored argument is required for this function's type to be
 // compatible with PyCFunction
 static PyObject *PyRegion_close(PyRegionObject *self, PyObject *ignored) {
-    regionmetadata* const md = REGION_DATA_CAST(Py_REGION(self));
-    if (!regionmetadata_is_open(md)) {
+    if (PyRegion_is_closed(self)) {
         Py_RETURN_NONE; // Double close is OK
     }
 
     // Attempt to close the region
     if (try_close(self) != 0) {
+        if (!PyErr_Occurred()) {
+            // try_close did not run out of memory but failed to close the region
+            PyErr_Format(PyExc_RegionError, "Attempting to close the region failed");
+        }
         return NULL;
     }
 
@@ -2008,4 +2011,14 @@ void _Py_RegionRemoveReference(PyObject *src, PyObject *tgt) {
 
     // Unparent the region.
     regionmetadata_set_parent(tgt_md, NULL);
+}
+
+PyObject *_PyCown_close_region(PyObject* ob) {
+    if (Py_TYPE(ob) == &PyRegion_Type) {
+        // Attempt to close the region
+        return PyRegion_close(_Py_CAST(PyRegionObject*, ob), NULL);
+    } else {
+        PyErr_SetString(PyExc_RegionError, "Attempted to close a region through a non-bridge object");
+        return NULL;
+    }
 }
