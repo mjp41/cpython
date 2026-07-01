@@ -16,6 +16,13 @@
 /* undefine macro trampoline to PyCMethod_New */
 #undef PyCFunction_NewEx
 
+#define REGIONS_NOTIFY_TYPE_USE(func) do { \
+    PyObject *self = PyCFunction_GET_SELF(func); \
+    if (self != NULL) { \
+        PyRegion_NotifyTypeUse(Py_TYPE(self)); \
+    } \
+} while(0)
+
 /* Forward declarations */
 static PyObject * cfunction_vectorcall_FASTCALL(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames);
@@ -34,18 +41,22 @@ static PyObject * cfunction_call(
 PyObject *
 PyCFunction_New(PyMethodDef *ml, PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyCFunction_NewEx(ml, self, NULL);
 }
 
 PyObject *
 PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyCMethod_New(ml, self, module, NULL);
 }
 
 PyObject *
 PyCMethod_New(PyMethodDef *ml, PyObject *self, PyObject *module, PyTypeObject *cls)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Figure out correct vectorcall function to use */
     vectorcallfunc vectorcall;
     switch (ml->ml_flags & (METH_VARARGS | METH_FASTCALL | METH_NOARGS |
@@ -94,8 +105,8 @@ PyCMethod_New(PyMethodDef *ml, PyObject *self, PyObject *module, PyTypeObject *c
                 return NULL;
             }
         }
-        if (PyRegion_AddRef(om, cls)) {
-            Py_DECREF(om);
+        if (PyRegion_AddRefs(om, self, module, cls)) {
+            PyObject_GC_Del(om);
             return NULL;
         }
         om->mm_class = (PyTypeObject*)Py_NewRef(cls);
@@ -114,13 +125,15 @@ PyCMethod_New(PyMethodDef *ml, PyObject *self, PyObject *module, PyTypeObject *c
                 return NULL;
             }
         }
+        if (PyRegion_AddRefs(op, self, module)) {
+            PyObject_GC_Del(op);
+            return NULL;
+        }
     }
 
-    if (PyRegion_AddRefs(op, self, module)) {
-        Py_DECREF(op);
-        return NULL;
-    }
     op->m_weakreflist = NULL;
+    // Regions: This takes the ml value, however, since op is new and local
+    // we don't need a barrier
     op->m_ml = ml;
     op->m_self = Py_XNewRef(self);
     op->m_module = Py_XNewRef(module);
@@ -132,6 +145,7 @@ PyCMethod_New(PyMethodDef *ml, PyObject *self, PyObject *module, PyTypeObject *c
 PyCFunction
 PyCFunction_GetFunction(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyCFunction_Check(op)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -142,6 +156,7 @@ PyCFunction_GetFunction(PyObject *op)
 PyObject *
 PyCFunction_GetSelf(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyCFunction_Check(op)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -152,6 +167,7 @@ PyCFunction_GetSelf(PyObject *op)
 int
 PyCFunction_GetFlags(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyCFunction_Check(op)) {
         PyErr_BadInternalCall();
         return -1;
@@ -162,6 +178,7 @@ PyCFunction_GetFlags(PyObject *op)
 PyTypeObject *
 PyCMethod_GetClass(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyCFunction_Check(op)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -174,6 +191,7 @@ PyCMethod_GetClass(PyObject *op)
 static void
 meth_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     PyObject_GC_UnTrack(m);
     FT_CLEAR_WEAKREFS(self, m->m_weakreflist);
@@ -183,7 +201,7 @@ meth_dealloc(PyObject *self)
     int ml_flags = m->m_ml->ml_flags;
     // Dereference class before m_self: PyCFunction_GET_CLASS accesses
     // PyMethodDef m_ml, which could be kept alive by m_self
-    PyRegion_RemoveRef(self, PyCFunction_GET_CLASS(m));
+    assert(!PyRegion_NeedsReadBarrier(PyCFunction_GET_CLASS(m)));
     Py_XDECREF(PyCFunction_GET_CLASS(m));
     PyRegion_CLEAR(m, m->m_self);
     PyRegion_CLEAR(m, m->m_module);
@@ -200,6 +218,7 @@ meth_dealloc(PyObject *self)
 static PyObject *
 meth_reduce(PyObject *self, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     if (m->m_self == NULL || PyModule_Check(m->m_self))
         return PyUnicode_FromString(m->m_ml->ml_name);
@@ -209,6 +228,7 @@ meth_reduce(PyObject *self, PyObject *Py_UNUSED(ignored))
 }
 
 static PyMethodDef meth_methods[] = {
+    // Pyrona: This functions was checked and no further migration is needed
     {"__reduce__", meth_reduce, METH_NOARGS, NULL},
     {NULL, NULL}
 };
@@ -216,6 +236,7 @@ static PyMethodDef meth_methods[] = {
 static PyObject *
 meth_get__text_signature__(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     return _PyType_GetTextSignatureFromInternalDoc(m->m_ml->ml_name,
                                                    m->m_ml->ml_doc,
@@ -225,6 +246,7 @@ meth_get__text_signature__(PyObject *self, void *closure)
 static PyObject *
 meth_get__doc__(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     return _PyType_GetDocFromInternalDoc(m->m_ml->ml_name, m->m_ml->ml_doc);
 }
@@ -232,6 +254,7 @@ meth_get__doc__(PyObject *self, void *closure)
 static PyObject *
 meth_get__name__(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     return PyUnicode_FromString(m->m_ml->ml_name);
 }
@@ -239,6 +262,8 @@ meth_get__name__(PyObject *self, void *closure)
 static PyObject *
 meth_get__qualname__(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* If __self__ is a module or NULL, return m.__name__
        (e.g. len.__qualname__ == 'len')
 
@@ -262,18 +287,19 @@ meth_get__qualname__(PyObject *self, void *closure)
     if (!PyUnicode_Check(type_qualname)) {
         PyErr_SetString(PyExc_TypeError, "<method>.__class__."
                         "__qualname__ is not a unicode object");
-        Py_XDECREF(type_qualname);
+        PyRegion_CLEARLOCAL(type_qualname);
         return NULL;
     }
 
     PyObject *res = PyUnicode_FromFormat("%S.%s", type_qualname, m->m_ml->ml_name);
-    Py_DECREF(type_qualname);
+    PyRegion_CLEARLOCAL(type_qualname);
     return res;
 }
 
 static int
 meth_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     Py_VISIT(PyCFunction_GET_CLASS(m));
     Py_VISIT(m->m_self);
@@ -284,12 +310,13 @@ meth_traverse(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 meth_get__self__(PyObject *meth, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(meth);
     PyObject *self = PyCFunction_GET_SELF(m);
     if (self == NULL) {
         self = Py_None;
     }
-    return Py_NewRef(self);
+    return PyRegion_NewRef(self);
 }
 
 static PyGetSetDef meth_getsets[] = {
@@ -311,6 +338,7 @@ static PyMemberDef meth_members[] = {
 static PyObject *
 meth_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *m = _PyCFunctionObject_CAST(self);
     if (m->m_self == NULL || PyModule_Check(m->m_self)) {
         return PyUnicode_FromFormat("<built-in function %s>",
@@ -326,6 +354,7 @@ meth_repr(PyObject *self)
 static PyObject *
 meth_richcompare(PyObject *self, PyObject *other, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *a, *b;
     PyObject *res;
     int eq;
@@ -345,12 +374,13 @@ meth_richcompare(PyObject *self, PyObject *other, int op)
         res = eq ? Py_True : Py_False;
     else
         res = eq ? Py_False : Py_True;
-    return Py_NewRef(res);
+    return PyRegion_NewRef(res);
 }
 
 static Py_hash_t
 meth_hash(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCFunctionObject *a = _PyCFunctionObject_CAST(self);
     Py_hash_t x = PyObject_GenericHash(a->m_self);
     Py_hash_t y = Py_HashPointer((void*)(a->m_ml->ml_meth));
@@ -397,6 +427,7 @@ PyTypeObject PyCFunction_Type = {
     0,                                          /* tp_base */
     0,                                          /* tp_dict */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 PyTypeObject PyCMethod_Type = {
@@ -404,6 +435,7 @@ PyTypeObject PyCMethod_Type = {
     .tp_name = "builtin_method",
     .tp_basicsize = sizeof(PyCMethodObject),
     .tp_base = &PyCFunction_Type,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /* Vectorcall functions for each of the PyCFunction calling conventions,
@@ -416,6 +448,7 @@ PyTypeObject PyCMethod_Type = {
 static inline int
 cfunction_check_kwargs(PyThreadState *tstate, PyObject *func, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(!_PyErr_Occurred(tstate));
     assert(PyCFunction_Check(func));
     if (kwnames && PyTuple_GET_SIZE(kwnames)) {
@@ -423,6 +456,7 @@ cfunction_check_kwargs(PyThreadState *tstate, PyObject *func, PyObject *kwnames)
         if (funcstr != NULL) {
             _PyErr_Format(tstate, PyExc_TypeError,
                          "%U takes no keyword arguments", funcstr);
+            assert(!PyRegion_NeedsReadBarrier(funcstr));
             Py_DECREF(funcstr);
         }
         return -1;
@@ -435,6 +469,7 @@ typedef void (*funcptr)(void);
 static inline funcptr
 cfunction_enter_call(PyThreadState *tstate, PyObject *func)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (_Py_EnterRecursiveCallTstate(tstate, " while calling a Python object")) {
         return NULL;
     }
@@ -446,6 +481,7 @@ static PyObject *
 cfunction_vectorcall_FASTCALL(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     if (cfunction_check_kwargs(tstate, func, kwnames)) {
         return NULL;
@@ -456,6 +492,10 @@ cfunction_vectorcall_FASTCALL(
     if (meth == NULL) {
         return NULL;
     }
+    // FIXME(regions): This notify type usage is not actually correct, since the
+    // method object could have been added from a third party library instead of
+    // the type itself
+    REGIONS_NOTIFY_TYPE_USE(func);
     PyObject *result = meth(PyCFunction_GET_SELF(func), args, nargs);
     _Py_LeaveRecursiveCallTstate(tstate);
     return result;
@@ -465,6 +505,7 @@ static PyObject *
 cfunction_vectorcall_FASTCALL_KEYWORDS(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
     PyCFunctionFastWithKeywords meth = (PyCFunctionFastWithKeywords)
@@ -472,6 +513,10 @@ cfunction_vectorcall_FASTCALL_KEYWORDS(
     if (meth == NULL) {
         return NULL;
     }
+    // FIXME(regions): This notify type usage is not actually correct, since the
+    // method object could have been added from a third party library instead of
+    // the type itself
+    REGIONS_NOTIFY_TYPE_USE(func);
     PyObject *result = meth(PyCFunction_GET_SELF(func), args, nargs, kwnames);
     _Py_LeaveRecursiveCallTstate(tstate);
     return result;
@@ -481,6 +526,7 @@ static PyObject *
 cfunction_vectorcall_FASTCALL_KEYWORDS_METHOD(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     PyTypeObject *cls = PyCFunction_GET_CLASS(func);
     Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
@@ -488,6 +534,10 @@ cfunction_vectorcall_FASTCALL_KEYWORDS_METHOD(
     if (meth == NULL) {
         return NULL;
     }
+    // FIXME(regions): This notify type usage is not actually correct, since the
+    // method object could have been added from a third party library instead of
+    // the type itself
+    REGIONS_NOTIFY_TYPE_USE(func);
     PyObject *result = meth(PyCFunction_GET_SELF(func), cls, args, nargs, kwnames);
     _Py_LeaveRecursiveCallTstate(tstate);
     return result;
@@ -497,6 +547,7 @@ static PyObject *
 cfunction_vectorcall_NOARGS(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     if (cfunction_check_kwargs(tstate, func, kwnames)) {
         return NULL;
@@ -507,6 +558,7 @@ cfunction_vectorcall_NOARGS(
         if (funcstr != NULL) {
             _PyErr_Format(tstate, PyExc_TypeError,
                 "%U takes no arguments (%zd given)", funcstr, nargs);
+            assert(!PyRegion_NeedsReadBarrier(funcstr));
             Py_DECREF(funcstr);
         }
         return NULL;
@@ -515,6 +567,10 @@ cfunction_vectorcall_NOARGS(
     if (meth == NULL) {
         return NULL;
     }
+    // FIXME(regions): This notify type usage is not actually correct, since the
+    // method object could have been added from a third party library instead of
+    // the type itself
+    REGIONS_NOTIFY_TYPE_USE(func);
     PyObject *result = _PyCFunction_TrampolineCall(
         meth, PyCFunction_GET_SELF(func), NULL);
     _Py_LeaveRecursiveCallTstate(tstate);
@@ -525,6 +581,7 @@ static PyObject *
 cfunction_vectorcall_O(
     PyObject *func, PyObject *const *args, size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     if (cfunction_check_kwargs(tstate, func, kwnames)) {
         return NULL;
@@ -535,6 +592,7 @@ cfunction_vectorcall_O(
         if (funcstr != NULL) {
             _PyErr_Format(tstate, PyExc_TypeError,
                 "%U takes exactly one argument (%zd given)", funcstr, nargs);
+            assert(!PyRegion_NeedsReadBarrier(funcstr));
             Py_DECREF(funcstr);
         }
         return NULL;
@@ -543,6 +601,10 @@ cfunction_vectorcall_O(
     if (meth == NULL) {
         return NULL;
     }
+    // FIXME(regions): This notify type usage is not actually correct, since the
+    // method object could have been added from a third party library instead of
+    // the type itself
+    REGIONS_NOTIFY_TYPE_USE(func);
     PyObject *result = _PyCFunction_TrampolineCall(
         meth, PyCFunction_GET_SELF(func), args[0]);
     _Py_LeaveRecursiveCallTstate(tstate);
@@ -553,6 +615,7 @@ cfunction_vectorcall_O(
 static PyObject *
 cfunction_call(PyObject *func, PyObject *args, PyObject *kwargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(kwargs == NULL || PyDict_Check(kwargs));
 
     PyThreadState *tstate = _PyThreadState_GET();
@@ -571,6 +634,10 @@ cfunction_call(PyObject *func, PyObject *args, PyObject *kwargs)
 
     PyObject *result;
     if (flags & METH_KEYWORDS) {
+        // FIXME(regions): This notify type usage is not actually correct, since the
+        // method object could have been added from a third party library instead of
+        // the type itself
+        REGIONS_NOTIFY_TYPE_USE(func);
         result = _PyCFunctionWithKeywords_TrampolineCall(
             *_PyCFunctionWithKeywords_CAST(meth),
             self, args, kwargs);
@@ -582,6 +649,10 @@ cfunction_call(PyObject *func, PyObject *args, PyObject *kwargs)
                           ((PyCFunctionObject*)func)->m_ml->ml_name);
             return NULL;
         }
+        // FIXME(regions): This notify type usage is not actually correct, since the
+        // method object could have been added from a third party library instead of
+        // the type itself
+        REGIONS_NOTIFY_TYPE_USE(func);
         result = _PyCFunction_TrampolineCall(meth, self, args);
     }
     return _Py_CheckFunctionResult(tstate, func, result, NULL);
