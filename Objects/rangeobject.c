@@ -31,6 +31,7 @@ typedef struct {
 static PyObject *
 validate_step(PyObject *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     /* No step specified, use a step of 1. */
     if (!step)
         return PyLong_FromLong(1);
@@ -39,6 +40,7 @@ validate_step(PyObject *step)
     if (step && _PyLong_IsZero((PyLongObject *)step)) {
         PyErr_SetString(PyExc_ValueError,
                         "range() arg 3 must not be zero");
+        assert(!PyRegion_NeedsReadBarrier(step));
         Py_CLEAR(step);
     }
 
@@ -52,6 +54,7 @@ static rangeobject *
 make_range_object(PyTypeObject *type, PyObject *start,
                   PyObject *stop, PyObject *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *length;
     length = compute_range_length(start, stop, step);
     if (length == NULL) {
@@ -61,10 +64,18 @@ make_range_object(PyTypeObject *type, PyObject *start,
     if (obj == NULL) {
         obj = PyObject_New(rangeobject, type);
         if (obj == NULL) {
+            assert(!PyRegion_NeedsReadBarrier(length));
             Py_DECREF(length);
             return NULL;
         }
     }
+    // Regions: The start, stop and step attributes are all read only.
+    // They're also always PyLongObjects which don't need write barriers
+    // this makes the migration of this type easy
+    assert(PyLong_CheckExact(start));
+    assert(PyLong_CheckExact(stop));
+    assert(PyLong_CheckExact(step));
+    assert(PyLong_CheckExact(length));
     obj->start = start;
     obj->stop = stop;
     obj->step = step;
@@ -80,6 +91,7 @@ make_range_object(PyTypeObject *type, PyObject *start,
 static PyObject *
 range_from_array(PyTypeObject *type, PyObject *const *args, Py_ssize_t num_args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *obj;
     PyObject *start = NULL, *stop = NULL, *step = NULL;
 
@@ -95,11 +107,14 @@ range_from_array(PyTypeObject *type, PyObject *const *args, Py_ssize_t num_args)
             }
             stop = PyNumber_Index(args[1]);
             if (!stop) {
+                assert(!PyRegion_NeedsReadBarrier(start));
                 Py_DECREF(start);
                 return NULL;
             }
             step = validate_step(step);  /* Caution, this can clear exceptions */
             if (!step) {
+                assert(!PyRegion_NeedsReadBarrier(start));
+                assert(!PyRegion_NeedsReadBarrier(stop));
                 Py_DECREF(start);
                 Py_DECREF(stop);
                 return NULL;
@@ -129,6 +144,9 @@ range_from_array(PyTypeObject *type, PyObject *const *args, Py_ssize_t num_args)
     }
 
     /* Failed to create object, release attributes */
+    assert(!PyRegion_NeedsReadBarrier(start));
+    assert(!PyRegion_NeedsReadBarrier(stop));
+    assert(!PyRegion_NeedsReadBarrier(step));
     Py_DECREF(start);
     Py_DECREF(stop);
     Py_DECREF(step);
@@ -138,6 +156,7 @@ range_from_array(PyTypeObject *type, PyObject *const *args, Py_ssize_t num_args)
 static PyObject *
 range_new(PyTypeObject *type, PyObject *args, PyObject *kw)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_PyArg_NoKeywords("range", kw))
         return NULL;
 
@@ -149,6 +168,7 @@ static PyObject *
 range_vectorcall(PyObject *rangetype, PyObject *const *args,
                  size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
     if (!_PyArg_NoKwnames("range", kwnames)) {
         return NULL;
@@ -170,6 +190,10 @@ static void
 range_dealloc(PyObject *op)
 {
     rangeobject *r = (rangeobject*)op;
+    assert(!PyRegion_NeedsReadBarrier(r->start));
+    assert(!PyRegion_NeedsReadBarrier(r->stop));
+    assert(!PyRegion_NeedsReadBarrier(r->step));
+    assert(!PyRegion_NeedsReadBarrier(r->length));
     Py_DECREF(r->start);
     Py_DECREF(r->stop);
     Py_DECREF(r->step);
@@ -186,6 +210,7 @@ get_len_of_range(long lo, long hi, long step);
  */
 static long compute_range_length_long(PyObject *start,
                 PyObject *stop, PyObject *step) {
+    // Pyrona: This functions was checked and no further migration is needed
     int overflow = 0;
 
     long long_start = PyLong_AsLongAndOverflow(start, &overflow);
@@ -227,6 +252,8 @@ static long compute_range_length_long(PyObject *start,
 static PyObject*
 compute_range_length(PyObject *start, PyObject *stop, PyObject *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* -------------------------------------------------------------
     Algorithm is equal to that of get_len_of_range(), but it operates
     on PyObjects (which are assumed to be PyLong objects).
@@ -293,6 +320,10 @@ compute_range_length(PyObject *start, PyObject *stop, PyObject *step)
     if ((result = PyNumber_Add(tmp2, one)) == NULL)
         goto Fail;
 
+    assert(!PyRegion_NeedsReadBarrier(tmp2));
+    assert(!PyRegion_NeedsReadBarrier(diff));
+    assert(!PyRegion_NeedsReadBarrier(step));
+    assert(!PyRegion_NeedsReadBarrier(tmp1));
     Py_DECREF(tmp2);
     Py_DECREF(diff);
     Py_DECREF(step);
@@ -310,6 +341,7 @@ compute_range_length(PyObject *start, PyObject *stop, PyObject *step)
 static Py_ssize_t
 range_length(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)op;
     return PyLong_AsSsize_t(r->length);
 }
@@ -317,6 +349,7 @@ range_length(PyObject *op)
 static PyObject *
 compute_item(rangeobject *r, PyObject *i)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *incr, *result;
     /* PyLong equivalent to:
      *    return r->start + (i * r->step)
@@ -330,6 +363,7 @@ compute_item(rangeobject *r, PyObject *i)
             return NULL;
         }
         result = PyNumber_Add(r->start, incr);
+        assert(!PyRegion_NeedsReadBarrier(incr));
         Py_DECREF(incr);
     }
     return result;
@@ -338,6 +372,7 @@ compute_item(rangeobject *r, PyObject *i)
 static PyObject *
 compute_range_item(rangeobject *r, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *zero = _PyLong_GetZero();  // borrowed reference
     int cmp_result;
     PyObject *i, *result;
@@ -359,6 +394,9 @@ compute_range_item(rangeobject *r, PyObject *arg)
           return NULL;
         }
     } else {
+        if (PyRegion_AddLocalRef(arg)) {
+            return NULL;
+        }
         i = Py_NewRef(arg);
     }
 
@@ -372,30 +410,32 @@ compute_range_item(rangeobject *r, PyObject *arg)
         cmp_result = PyObject_RichCompareBool(i, r->length, Py_GE);
     }
     if (cmp_result == -1) {
-       Py_DECREF(i);
+       PyRegion_CLEARLOCAL(i);
        return NULL;
     }
     if (cmp_result == 1) {
-        Py_DECREF(i);
+        PyRegion_CLEARLOCAL(i);
         PyErr_SetString(PyExc_IndexError,
                         "range object index out of range");
         return NULL;
     }
 
     result = compute_item(r, i);
-    Py_DECREF(i);
+    PyRegion_CLEARLOCAL(i);
     return result;
 }
 
 static PyObject *
 range_item(PyObject *op, Py_ssize_t i)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)op;
     PyObject *res, *arg = PyLong_FromSsize_t(i);
     if (!arg) {
         return NULL;
     }
     res = compute_range_item(r, arg);
+    assert(!PyRegion_NeedsReadBarrier(arg));
     Py_DECREF(arg);
     return res;
 }
@@ -403,6 +443,7 @@ range_item(PyObject *op, Py_ssize_t i)
 static PyObject *
 compute_slice(rangeobject *r, PyObject *_slice)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *slice = (PySliceObject *) _slice;
     rangeobject *result;
     PyObject *start = NULL, *stop = NULL, *step = NULL;
@@ -430,6 +471,12 @@ compute_slice(rangeobject *r, PyObject *_slice)
         return (PyObject *) result;
     }
 fail:
+    assert(!PyRegion_NeedsReadBarrier(start));
+    assert(!PyRegion_NeedsReadBarrier(stop));
+    assert(!PyRegion_NeedsReadBarrier(step));
+    assert(!PyRegion_NeedsReadBarrier(substart));
+    assert(!PyRegion_NeedsReadBarrier(substop));
+    assert(!PyRegion_NeedsReadBarrier(substep));
     Py_XDECREF(start);
     Py_XDECREF(stop);
     Py_XDECREF(step);
@@ -443,6 +490,7 @@ fail:
 static int
 range_contains_long(rangeobject *r, PyObject *ob)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *zero = _PyLong_GetZero();  // borrowed reference
     int cmp1, cmp2, cmp3;
     PyObject *tmp1 = NULL;
@@ -480,6 +528,8 @@ range_contains_long(rangeobject *r, PyObject *ob)
     /* result = ((int(ob) - start) % step) == 0 */
     result = PyObject_RichCompareBool(tmp2, zero, Py_EQ);
   end:
+    assert(!PyRegion_NeedsReadBarrier(tmp1));
+    assert(!PyRegion_NeedsReadBarrier(tmp2));
     Py_XDECREF(tmp1);
     Py_XDECREF(tmp2);
     return result;
@@ -488,6 +538,7 @@ range_contains_long(rangeobject *r, PyObject *ob)
 static int
 range_contains(PyObject *self, PyObject *ob)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)self;
     if (PyLong_CheckExact(ob) || PyBool_Check(ob))
         return range_contains_long(r, ob);
@@ -514,6 +565,7 @@ range_contains(PyObject *self, PyObject *ob)
 static int
 range_equals(rangeobject *r0, rangeobject *r1)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int cmp_result;
 
     if (r0 == r1)
@@ -540,6 +592,7 @@ range_equals(rangeobject *r0, rangeobject *r1)
 static PyObject *
 range_richcompare(PyObject *self, PyObject *other, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
     if (!PyRange_Check(other))
@@ -578,6 +631,7 @@ range_richcompare(PyObject *self, PyObject *other, int op)
 static Py_hash_t
 range_hash(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)op;
     PyObject *t;
     Py_hash_t result = -1;
@@ -608,6 +662,7 @@ range_hash(PyObject *op)
     }
     result = PyObject_Hash(t);
   end:
+    assert(!PyRegion_NeedsReadBarrier(t));
     Py_DECREF(t);
     return result;
 }
@@ -615,6 +670,7 @@ range_hash(PyObject *op)
 static PyObject *
 range_count(PyObject *self, PyObject *ob)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)self;
     if (PyLong_CheckExact(ob) || PyBool_Check(ob)) {
         int result = range_contains_long(r, ob);
@@ -633,6 +689,7 @@ range_count(PyObject *self, PyObject *ob)
 static PyObject *
 range_index(PyObject *self, PyObject *ob)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)self;
     int contains;
 
@@ -660,6 +717,7 @@ range_index(PyObject *self, PyObject *ob)
 
         /* idx = (ob - r.start) // r.step */
         PyObject *sidx = PyNumber_FloorDivide(idx, r->step);
+        assert(!PyRegion_NeedsReadBarrier(idx));
         Py_DECREF(idx);
         return sidx;
     }
@@ -683,6 +741,7 @@ static PySequenceMethods range_as_sequence = {
 static PyObject *
 range_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)op;
     Py_ssize_t istep;
 
@@ -705,6 +764,7 @@ range_repr(PyObject *op)
 static PyObject *
 range_reduce(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject*)op;
     return Py_BuildValue("(O(OOO))", Py_TYPE(r),
                          r->start, r->stop, r->step);
@@ -713,6 +773,7 @@ range_reduce(PyObject *op, PyObject *args)
 static PyObject *
 range_subscript(PyObject *op, PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *self = (rangeobject*)op;
     if (_PyIndex_Check(item)) {
         PyObject *i, *result;
@@ -720,6 +781,7 @@ range_subscript(PyObject *op, PyObject *item)
         if (!i)
             return NULL;
         result = compute_range_item(self, i);
+        assert(!PyRegion_NeedsReadBarrier(i));
         Py_DECREF(i);
         return result;
     }
@@ -742,6 +804,7 @@ static PyMappingMethods range_as_mapping = {
 static int
 range_bool(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *self = (rangeobject*)op;
     return PyObject_IsTrue(self->length);
 }
@@ -781,6 +844,7 @@ static PyMemberDef range_members[] = {
 static int
 range_reachable(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject *)self;
 
     Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
@@ -832,7 +896,8 @@ PyTypeObject PyRange_Type = {
         0,                      /* tp_alloc */
         range_new,              /* tp_new */
         .tp_reachable = range_reachable,
-        .tp_vectorcall = range_vectorcall
+        .tp_vectorcall = range_vectorcall,
+        .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /*********************** range Iterator **************************/
@@ -845,6 +910,7 @@ PyTypeObject PyRange_Type = {
 static PyObject *
 rangeiter_next(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyRangeIterObject *r = (_PyRangeIterObject*)op;
     if (r->len > 0) {
         long result = r->start;
@@ -858,6 +924,7 @@ rangeiter_next(PyObject *op)
 static PyObject *
 rangeiter_len(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyRangeIterObject *r = (_PyRangeIterObject*)op;
     return PyLong_FromLong(r->len);
 }
@@ -868,6 +935,7 @@ PyDoc_STRVAR(length_hint_doc,
 static PyObject *
 rangeiter_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyRangeIterObject *r = (_PyRangeIterObject*)op;
     PyObject *start=NULL, *stop=NULL, *step=NULL;
     PyObject *range;
@@ -890,6 +958,9 @@ rangeiter_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
     return Py_BuildValue("N(N)O", _PyEval_GetBuiltin(&_Py_ID(iter)),
                          range, Py_None);
 err:
+    assert(!PyRegion_NeedsReadBarrier(start));
+    assert(!PyRegion_NeedsReadBarrier(stop));
+    assert(!PyRegion_NeedsReadBarrier(step));
     Py_XDECREF(start);
     Py_XDECREF(stop);
     Py_XDECREF(step);
@@ -899,6 +970,7 @@ err:
 static PyObject *
 rangeiter_setstate(PyObject *op, PyObject *state)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyRangeIterObject *r = (_PyRangeIterObject*)op;
     long index = PyLong_AsLong(state);
     if (index == -1 && PyErr_Occurred())
@@ -916,6 +988,7 @@ rangeiter_setstate(PyObject *op, PyObject *state)
 static void
 rangeiter_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _Py_FREELIST_FREE_OBJ(range_iters, (_PyRangeIterObject *)self, PyObject_Free);
 }
 
@@ -960,6 +1033,7 @@ PyTypeObject PyRangeIter_Type = {
         rangeiter_next,                         /* tp_iternext */
         rangeiter_methods,                      /* tp_methods */
         0,                                      /* tp_members */
+        .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /* Return number of items in range (lo, hi, step).  step != 0
@@ -968,6 +1042,8 @@ PyTypeObject PyRangeIter_Type = {
 static unsigned long
 get_len_of_range(long lo, long hi, long step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* -------------------------------------------------------------
     If step > 0 and lo >= hi, or step < 0 and lo <= hi, the range is empty.
     Else for step > 0, if n values are in the range, the last one is
@@ -996,6 +1072,7 @@ get_len_of_range(long lo, long hi, long step)
 static PyObject *
 fast_range_iter(long start, long stop, long step, long len)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyRangeIterObject *it = _Py_FREELIST_POP(_PyRangeIterObject, range_iters);
     if (it == NULL) {
         it = PyObject_New(_PyRangeIterObject, &PyRangeIter_Type);
@@ -1020,7 +1097,9 @@ typedef struct {
 static PyObject *
 longrangeiter_len(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     longrangeiterobject *r = (longrangeiterobject*)op;
+    assert(!PyRegion_NeedsReadBarrier(r->len));
     Py_INCREF(r->len);
     return r->len;
 }
@@ -1028,6 +1107,7 @@ longrangeiter_len(PyObject *op, PyObject *Py_UNUSED(ignored))
 static PyObject *
 longrangeiter_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     longrangeiterobject *r = (longrangeiterobject*)op;
     PyObject *product, *stop=NULL;
     PyObject *range;
@@ -1037,12 +1117,16 @@ longrangeiter_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
     if (product == NULL)
         return NULL;
     stop = PyNumber_Add(r->start, product);
+    assert(!PyRegion_NeedsReadBarrier(product));
     Py_DECREF(product);
     if (stop ==  NULL)
         return NULL;
     range =  (PyObject*)make_range_object(&PyRange_Type,
                                Py_NewRef(r->start), stop, Py_NewRef(r->step));
     if (range == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(r->start));
+        assert(!PyRegion_NeedsReadBarrier(stop));
+        assert(!PyRegion_NeedsReadBarrier(r->step));
         Py_DECREF(r->start);
         Py_DECREF(stop);
         Py_DECREF(r->step);
@@ -1057,6 +1141,7 @@ longrangeiter_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 static PyObject *
 longrangeiter_setstate(PyObject *op, PyObject *state)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     longrangeiterobject *r = (longrangeiterobject*)op;
     PyObject *zero = _PyLong_GetZero();  // borrowed reference
     int cmp;
@@ -1079,17 +1164,22 @@ longrangeiter_setstate(PyObject *op, PyObject *state)
     if (product == NULL)
         return NULL;
     PyObject *new_start = PyNumber_Add(r->start, product);
+    assert(!PyRegion_NeedsReadBarrier(product));
     Py_DECREF(product);
     if (new_start == NULL)
         return NULL;
     PyObject *new_len = PyNumber_Subtract(r->len, state);
     if (new_len == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(new_start));
         Py_DECREF(new_start);
         return NULL;
     }
     PyObject *tmp = r->start;
     r->start = new_start;
+    assert(!PyRegion_NeedsReadBarrier(r->len));
+    assert(!PyRegion_NeedsReadBarrier(new_len));
     Py_SETREF(r->len, new_len);
+    assert(!PyRegion_NeedsReadBarrier(tmp));
     Py_DECREF(tmp);
     Py_RETURN_NONE;
 }
@@ -1104,7 +1194,11 @@ static PyMethodDef longrangeiter_methods[] = {
 static void
 longrangeiter_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     longrangeiterobject *r = (longrangeiterobject*)op;
+    assert(!PyRegion_NeedsReadBarrier(r->start));
+    assert(!PyRegion_NeedsReadBarrier(r->step));
+    assert(!PyRegion_NeedsReadBarrier(r->len));
     Py_XDECREF(r->start);
     Py_XDECREF(r->step);
     Py_XDECREF(r->len);
@@ -1114,6 +1208,7 @@ longrangeiter_dealloc(PyObject *op)
 static PyObject *
 longrangeiter_next(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     longrangeiterobject *r = (longrangeiterobject*)op;
     if (PyObject_RichCompareBool(r->len, _PyLong_GetZero(), Py_GT) != 1)
         return NULL;
@@ -1124,11 +1219,14 @@ longrangeiter_next(PyObject *op)
     }
     PyObject *new_len = PyNumber_Subtract(r->len, _PyLong_GetOne());
     if (new_len == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(new_start));
         Py_DECREF(new_start);
         return NULL;
     }
     PyObject *result = r->start;
     r->start = new_start;
+    assert(!PyRegion_NeedsReadBarrier(r->len));
+    assert(!PyRegion_NeedsReadBarrier(new_len));
     Py_SETREF(r->len, new_len);
     return result;
 }
@@ -1164,11 +1262,13 @@ PyTypeObject PyLongRangeIter_Type = {
         longrangeiter_next,                     /* tp_iternext */
         longrangeiter_methods,                  /* tp_methods */
         0,
+        .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static PyObject *
 range_iter(PyObject *seq)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *r = (rangeobject *)seq;
     longrangeiterobject *it;
     long lstart, lstop, lstep;
@@ -1214,7 +1314,9 @@ range_iter(PyObject *seq)
     it = PyObject_New(longrangeiterobject, &PyLongRangeIter_Type);
     if (it == NULL)
         return NULL;
-
+    assert(PyLong_CheckExact(r->start));
+    assert(PyLong_CheckExact(r->step));
+    assert(PyLong_CheckExact(r->length));
     it->start = Py_NewRef(r->start);
     it->step = Py_NewRef(r->step);
     it->len = Py_NewRef(r->length);
@@ -1224,6 +1326,7 @@ range_iter(PyObject *seq)
 static PyObject *
 range_reverse(PyObject *seq, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rangeobject *range = (rangeobject*) seq;
     longrangeiterobject *it;
     PyObject *sum, *diff, *product;
@@ -1305,11 +1408,13 @@ long_range:
         goto create_failure;
 
     product = PyNumber_Multiply(diff, range->step);
+    assert(!PyRegion_NeedsReadBarrier(diff));
     Py_DECREF(diff);
     if (!product)
         goto create_failure;
 
     sum = PyNumber_Add(range->start, product);
+    assert(!PyRegion_NeedsReadBarrier(product));
     Py_DECREF(product);
     it->start = sum;
     if (!it->start)
@@ -1322,6 +1427,7 @@ long_range:
     return (PyObject *)it;
 
 create_failure:
+    assert(!PyRegion_NeedsReadBarrier(it));
     Py_DECREF(it);
     return NULL;
 }

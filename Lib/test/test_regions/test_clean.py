@@ -38,7 +38,6 @@ class TestCleanRegion(unittest.TestCase):
         self.assertFalse(region.is_dirty, "The parent region should be cleaned")
         self.assertTrue(region.sub.owns(detached_object), "The subregion should remain uncleaned")
 
-    @expectedFailure # We need to migrate more types for the region to stay clean
     def test_cleaning_also_cleans_dirty_subregion(self):
         region = Region()
         region.sub = Region()

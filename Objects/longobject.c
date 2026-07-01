@@ -610,6 +610,7 @@ long
 PyLong_AsLongAndOverflow(PyObject *vv, int *overflow)
 {
     // Pyrona: This functions was checked and no further migration is needed
+
     /* This version originally by Tim Peters */
     PyLongObject *v;
     long res;
