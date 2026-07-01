@@ -102,6 +102,7 @@ _PyErr_Restore(PyThreadState *tstate, PyObject *type, PyObject *value,
 void
 PyErr_Restore(PyObject *type, PyObject *value, PyObject *traceback)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     _PyErr_Restore(tstate, type, value, traceback);
 }

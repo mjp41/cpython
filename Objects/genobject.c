@@ -46,11 +46,13 @@ static const char *ASYNC_GEN_IGNORED_EXIT_MSG =
 /* Returns a borrowed reference */
 static inline PyCodeObject *
 _PyGen_GetCode(PyGenObject *gen) {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyFrame_GetCode(&gen->gi_iframe);
 }
 
 PyCodeObject *
 PyGen_GetCode(PyGenObject *gen) {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyGen_Check(gen));
     PyCodeObject *res = _PyGen_GetCode(gen);
     PyRegion_AddLocalRef(res);
@@ -61,6 +63,7 @@ PyGen_GetCode(PyGenObject *gen) {
 static int
 gen_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     Py_VISIT(gen->gi_name);
     Py_VISIT(gen->gi_qualname);
@@ -88,6 +91,7 @@ gen_traverse(PyObject *self, visitproc visit, void *arg)
 static int
 gen_reachable(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
     /* Visit cr_origin which gen_traverse skips because it only contains
@@ -99,6 +103,7 @@ gen_reachable(PyObject *self, visitproc visit, void *arg)
 void
 _PyGen_Finalize(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = (PyGenObject *)self;
 
     if (FRAME_STATE_FINISHED(gen->gi_frame_state)) {
@@ -119,7 +124,7 @@ _PyGen_Finalize(PyObject *self)
                                        "finalizing generator %R", self);
             }
             else {
-                Py_DECREF(res);
+                PyRegion_CLEARLOCAL(res);
             }
             /* Restore the saved exception. */
             PyErr_SetRaisedException(exc);
@@ -147,7 +152,7 @@ _PyGen_Finalize(PyObject *self)
             }
         }
         else {
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
         }
     }
 
@@ -158,6 +163,7 @@ _PyGen_Finalize(PyObject *self)
 static void
 gen_clear_frame(PyGenObject *gen)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (gen->gi_frame_state == FRAME_CLEARED)
         return;
 
@@ -171,6 +177,7 @@ gen_clear_frame(PyGenObject *gen)
 static void
 gen_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
 
     _PyObject_GC_UNTRACK(gen);
@@ -187,16 +194,16 @@ gen_dealloc(PyObject *self)
         /* We have to handle this case for asynchronous generators
            right here, because this code has to be between UNTRACK
            and GC_Del. */
-        Py_CLEAR(((PyAsyncGenObject*)gen)->ag_origin_or_finalizer);
+        PyRegion_CLEAR(gen, ((PyAsyncGenObject*)gen)->ag_origin_or_finalizer);
     }
     if (PyCoro_CheckExact(gen)) {
-        Py_CLEAR(((PyCoroObject *)gen)->cr_origin_or_finalizer);
+        PyRegion_CLEAR(gen, ((PyCoroObject *)gen)->cr_origin_or_finalizer);
     }
     gen_clear_frame(gen);
     assert(gen->gi_exc_state.exc_value == NULL);
     PyStackRef_CLEAR(gen->gi_iframe.f_executable);
-    Py_CLEAR(gen->gi_name);
-    Py_CLEAR(gen->gi_qualname);
+    PyRegion_CLEAR(gen, gen->gi_name);
+    PyRegion_CLEAR(gen, gen->gi_qualname);
 
     PyObject_GC_Del(gen);
 }
@@ -205,6 +212,7 @@ static PySendResult
 gen_send_ex2(PyGenObject *gen, PyObject *arg, PyObject **presult,
              int exc, int closing)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     _PyInterpreterFrame *frame = &gen->gi_iframe;
 
@@ -285,7 +293,7 @@ gen_send_ex2(PyGenObject *gen, PyObject *arg, PyObject **presult,
         assert(result == Py_None || !PyAsyncGen_CheckExact(gen));
         if (result == Py_None && !PyAsyncGen_CheckExact(gen) && !arg) {
             /* Return NULL if called by gen_iternext() */
-            Py_CLEAR(result);
+            PyRegion_CLEARLOCAL(result);
         }
     }
     else {
@@ -303,6 +311,7 @@ gen_send_ex2(PyGenObject *gen, PyObject *arg, PyObject **presult,
 static PySendResult
 PyGen_am_send(PyObject *self, PyObject *arg, PyObject **result)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     return gen_send_ex2(gen, arg, result, 0, 0);
 }
@@ -310,6 +319,7 @@ PyGen_am_send(PyObject *self, PyObject *arg, PyObject **result)
 static PyObject *
 gen_send_ex(PyGenObject *gen, PyObject *arg, int exc, int closing)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     if (gen_send_ex2(gen, arg, &result, exc, closing) == PYGEN_RETURN) {
         if (PyAsyncGen_CheckExact(gen)) {
@@ -322,7 +332,7 @@ gen_send_ex(PyGenObject *gen, PyObject *arg, int exc, int closing)
         else {
             _PyGen_SetStopIterationValue(result);
         }
-        Py_CLEAR(result);
+        PyRegion_CLEARLOCAL(result);
     }
     return result;
 }
@@ -334,6 +344,7 @@ return next yielded value or raise StopIteration.");
 static PyObject *
 gen_send(PyObject *gen, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return gen_send_ex((PyGenObject*)gen, arg, 0, 0);
 }
 
@@ -348,6 +359,7 @@ PyDoc_STRVAR(close_doc,
 static int
 gen_close_iter(PyObject *yf)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *retval = NULL;
 
     if (PyGen_CheckExact(yf) || PyCoro_CheckExact(yf)) {
@@ -363,18 +375,19 @@ gen_close_iter(PyObject *yf)
         }
         if (meth) {
             retval = _PyObject_CallNoArgs(meth);
-            Py_DECREF(meth);
+            PyRegion_CLEARLOCAL(meth);
             if (retval == NULL)
                 return -1;
         }
     }
-    Py_XDECREF(retval);
+    PyRegion_CLEARLOCAL(retval);
     return 0;
 }
 
 static inline bool
 is_resume(_Py_CODEUNIT *instr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     uint8_t code = FT_ATOMIC_LOAD_UINT8_RELAXED(instr->op.code);
     return (
         code == RESUME ||
@@ -386,6 +399,7 @@ is_resume(_Py_CODEUNIT *instr)
 PyObject *
 _PyGen_yf(PyGenObject *gen)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (gen->gi_frame_state == FRAME_SUSPENDED_YIELD_FROM) {
         _PyInterpreterFrame *frame = &gen->gi_iframe;
         // GH-122390: These asserts are wrong in the presence of ENTER_EXECUTOR!
@@ -399,6 +413,7 @@ _PyGen_yf(PyGenObject *gen)
 static PyObject *
 gen_close(PyObject *self, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
 
     if (gen->gi_frame_state == FRAME_CREATED) {
@@ -416,6 +431,7 @@ gen_close(PyObject *self, PyObject *args)
         gen->gi_frame_state = FRAME_EXECUTING;
         err = gen_close_iter(yf);
         gen->gi_frame_state = state;
+        assert(!PyRegion_NeedsReadBarrier(yf));
         Py_DECREF(yf);
     }
     _PyInterpreterFrame *frame = &gen->gi_iframe;
@@ -444,7 +460,7 @@ gen_close(PyObject *self, PyObject *args)
         } else if (PyAsyncGen_CheckExact(gen)) {
             msg = ASYNC_GEN_IGNORED_EXIT_MSG;
         }
-        Py_DECREF(retval);
+        PyRegion_CLEARLOCAL(retval);
         PyErr_SetString(PyExc_RuntimeError, msg);
         return NULL;
     }
@@ -477,6 +493,7 @@ static PyObject *
 _gen_throw(PyGenObject *gen, int close_on_genexit,
            PyObject *typ, PyObject *val, PyObject *tb)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *yf = _PyGen_yf(gen);
 
     if (yf) {
@@ -494,6 +511,7 @@ _gen_throw(PyGenObject *gen, int close_on_genexit,
             gen->gi_frame_state = FRAME_EXECUTING;
             err = gen_close_iter(yf);
             gen->gi_frame_state = state;
+           assert(!PyRegion_NeedsReadBarrier(yf));
             Py_DECREF(yf);
             if (err < 0)
                 return gen_send_ex(gen, Py_None, 1, 0);
@@ -523,10 +541,12 @@ _gen_throw(PyGenObject *gen, int close_on_genexit,
             /* `yf` is an iterator or a coroutine-like object. */
             PyObject *meth;
             if (PyObject_GetOptionalAttr(yf, &_Py_ID(throw), &meth) < 0) {
+                assert(!PyRegion_NeedsReadBarrier(yf));
                 Py_DECREF(yf);
                 return NULL;
             }
             if (meth == NULL) {
+                assert(!PyRegion_NeedsReadBarrier(yf));
                 Py_DECREF(yf);
                 goto throw_here;
             }
@@ -540,8 +560,9 @@ _gen_throw(PyGenObject *gen, int close_on_genexit,
             gen->gi_frame_state = state;
             tstate->current_frame = prev;
             frame->previous = NULL;
-            Py_DECREF(meth);
+            PyRegion_CLEARLOCAL(meth);
         }
+        assert(!PyRegion_NeedsReadBarrier(yf));
         Py_DECREF(yf);
         if (!ret) {
             ret = gen_send_ex(gen, Py_None, 1, 0);
@@ -561,6 +582,9 @@ throw_here:
         return NULL;
     }
 
+    if (PyRegion_AddLocalRefs(typ, val, tb)) {
+        return NULL;
+    }
     Py_INCREF(typ);
     Py_XINCREF(val);
     Py_XINCREF(tb);
@@ -577,8 +601,16 @@ throw_here:
         }
         else {
             /* Normalize to raise <class>, <instance> */
-            Py_XSETREF(val, typ);
-            typ = Py_NewRef(PyExceptionInstance_Class(typ));
+            if (PyRegion_XSETLOCALREF(val, typ)) {
+                typ = NULL;
+                goto failed_throw;
+            }
+            typ = PyExceptionInstance_Class(typ);
+            if (PyRegion_AddLocalRef(typ)) {
+                typ = NULL;
+                goto failed_throw;
+            }
+            Py_INCREF(typ);
 
             if (tb == NULL)
                 /* Returns NULL if there's no traceback */
@@ -599,9 +631,9 @@ throw_here:
 
 failed_throw:
     /* Didn't use our arguments, so restore their original refcounts */
-    Py_DECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
+    PyRegion_CLEARLOCAL(typ);
+    PyRegion_CLEARLOCAL(val);
+    PyRegion_CLEARLOCAL(tb);
     return NULL;
 }
 
@@ -609,6 +641,7 @@ failed_throw:
 static PyObject *
 gen_throw(PyObject *op, PyObject *const *args, Py_ssize_t nargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(op);
     PyObject *typ;
     PyObject *tb = NULL;
@@ -640,6 +673,7 @@ gen_throw(PyObject *op, PyObject *const *args, Py_ssize_t nargs)
 static PyObject *
 gen_iternext(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyGen_CheckExact(self) || PyCoro_CheckExact(self));
     PyGenObject *gen = _PyGen_CAST(self);
 
@@ -648,7 +682,7 @@ gen_iternext(PyObject *self)
         if (result != Py_None) {
             _PyGen_SetStopIterationValue(result);
         }
-        Py_CLEAR(result);
+        PyRegion_CLEARLOCAL(result);
     }
     return result;
 }
@@ -662,6 +696,7 @@ gen_iternext(PyObject *self)
 int
 _PyGen_SetStopIterationValue(PyObject *value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(!PyErr_Occurred());
     // Construct an exception instance manually with PyObject_CallOneArg()
     // but use PyErr_SetRaisedException() instead of PyErr_SetObject() as
@@ -690,11 +725,17 @@ _PyGen_SetStopIterationValue(PyObject *value)
 int
 _PyGen_FetchStopIterationValue(PyObject **pvalue)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *value = NULL;
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
         PyObject *exc = PyErr_GetRaisedException();
-        value = Py_NewRef(((PyStopIterationObject *)exc)->value);
-        Py_DECREF(exc);
+        value = ((PyStopIterationObject *)exc)->value;
+        if (PyRegion_AddLocalRef(value)) {
+            PyRegion_CLEARLOCAL(exc);
+            return -1;
+        }
+        Py_INCREF(value);
+        PyRegion_CLEARLOCAL(exc);
     } else if (PyErr_Occurred()) {
         return -1;
     }
@@ -708,6 +749,7 @@ _PyGen_FetchStopIterationValue(PyObject **pvalue)
 static PyObject *
 gen_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     return PyUnicode_FromFormat("<generator object %S at %p>",
                                 gen->gi_qualname, gen);
@@ -718,12 +760,13 @@ gen_get_name(PyObject *self, void *Py_UNUSED(ignored))
 {
     PyGenObject *op = _PyGen_CAST(self);
     PyObject *name = FT_ATOMIC_LOAD_PTR_ACQUIRE(op->gi_name);
-    return Py_NewRef(name);
+    return PyRegion_NewRef(name);
 }
 
 static int
 gen_set_name(PyObject *self, PyObject *value, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *op = _PyGen_CAST(self);
     /* Not legal to del gen.gi_name or to set it to anything
      * other than a string object. */
@@ -732,25 +775,32 @@ gen_set_name(PyObject *self, PyObject *value, void *Py_UNUSED(ignored))
                         "__name__ must be set to a string object");
         return -1;
     }
+    int res = 0;
     Py_BEGIN_CRITICAL_SECTION(self);
+#ifdef Py_GIL_DISABLED
     // gh-133931: To prevent use-after-free from other threads that reference
     // the gi_name.
     _PyObject_XSetRefDelayed(&op->gi_name, Py_NewRef(value));
+#else
+    res = PyRegion_XSETNEWREF(op, op->gi_name, value);
+#endif
     Py_END_CRITICAL_SECTION();
-    return 0;
+    return res;
 }
 
 static PyObject *
 gen_get_qualname(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *op = _PyGen_CAST(self);
     PyObject *qualname = FT_ATOMIC_LOAD_PTR_ACQUIRE(op->gi_qualname);
-    return Py_NewRef(qualname);
+    return PyRegion_NewRef(qualname);
 }
 
 static int
 gen_set_qualname(PyObject *self, PyObject *value, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *op = _PyGen_CAST(self);
     /* Not legal to del gen.__qualname__ or to set it to anything
      * other than a string object. */
@@ -759,17 +809,23 @@ gen_set_qualname(PyObject *self, PyObject *value, void *Py_UNUSED(ignored))
                         "__qualname__ must be set to a string object");
         return -1;
     }
+    int res = 0;
     Py_BEGIN_CRITICAL_SECTION(self);
+#ifdef Py_GIL_DISABLED
     // gh-133931: To prevent use-after-free from other threads that reference
     // the gi_qualname.
     _PyObject_XSetRefDelayed(&op->gi_qualname, Py_NewRef(value));
+#else
+    res = PyRegion_XSETNEWREF(op, op->gi_qualname, value);
+#endif
     Py_END_CRITICAL_SECTION();
-    return 0;
+    return res;
 }
 
 static PyObject *
 gen_getyieldfrom(PyObject *gen, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *yf = _PyGen_yf(_PyGen_CAST(gen));
     if (yf == NULL) {
         Py_RETURN_NONE;
@@ -781,6 +837,7 @@ gen_getyieldfrom(PyObject *gen, void *Py_UNUSED(ignored))
 static PyObject *
 gen_getrunning(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     if (gen->gi_frame_state == FRAME_EXECUTING) {
         Py_RETURN_TRUE;
@@ -791,6 +848,7 @@ gen_getrunning(PyObject *self, void *Py_UNUSED(ignored))
 static PyObject *
 gen_getsuspended(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     return PyBool_FromLong(FRAME_STATE_SUSPENDED(gen->gi_frame_state));
 }
@@ -798,18 +856,20 @@ gen_getsuspended(PyObject *self, void *Py_UNUSED(ignored))
 static PyObject *
 _gen_getframe(PyGenObject *gen, const char *const name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("object.__getattr__", "Os", gen, name) < 0) {
         return NULL;
     }
     if (FRAME_STATE_FINISHED(gen->gi_frame_state)) {
         Py_RETURN_NONE;
     }
-    return _Py_XNewRef((PyObject *)_PyFrame_GetFrameObject(&gen->gi_iframe));
+    return PyRegion_XNewRef((PyObject *)_PyFrame_GetFrameObject(&gen->gi_iframe));
 }
 
 static PyObject *
 gen_getframe(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     return _gen_getframe(gen, "gi_frame");
 }
@@ -817,15 +877,17 @@ gen_getframe(PyObject *self, void *Py_UNUSED(ignored))
 static PyObject *
 _gen_getcode(PyGenObject *gen, const char *const name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("object.__getattr__", "Os", gen, name) < 0) {
         return NULL;
     }
-    return Py_NewRef(_PyGen_GetCode(gen));
+    return PyRegion_NewRef(_PyGen_GetCode(gen));
 }
 
 static PyObject *
 gen_getcode(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     return _gen_getcode(gen, "gi_code");
 }
@@ -851,6 +913,7 @@ static PyMemberDef gen_memberlist[] = {
 static PyObject *
 gen_sizeof(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(op);
     Py_ssize_t res;
     res = offsetof(PyGenObject, gi_iframe) + offsetof(_PyInterpreterFrame, localsplus);
@@ -913,7 +976,6 @@ PyTypeObject PyGen_Type = {
     gen_getsetlist,                             /* tp_getset */
     0,                                          /* tp_base */
     0,                                          /* tp_dict */
-
     0,                                          /* tp_descr_get */
     0,                                          /* tp_descr_set */
     0,                                          /* tp_dictoffset */
@@ -931,15 +993,24 @@ PyTypeObject PyGen_Type = {
     0,                                          /* tp_version_tag */
     _PyGen_Finalize,                            /* tp_finalize */
     .tp_reachable = gen_reachable,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static PyObject *
 make_gen(PyTypeObject *type, PyFunctionObject *func)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = (PyCodeObject *)func->func_code;
     int slots = _PyFrame_NumSlotsForCodeObject(code);
     PyGenObject *gen = PyObject_GC_NewVar(PyGenObject, type, slots);
     if (gen == NULL) {
+        return NULL;
+    }
+    if (PyRegion_AddRefs(gen, func->func_name, func->func_qualname)) {
+        /* gen is freshly allocated and not yet GC-tracked; free the raw
+           memory without running gen_dealloc (which would untrack an
+           untracked object and read uninitialized fields). */
+        PyObject_GC_Del(gen);
         return NULL;
     }
     gen->gi_frame_state = FRAME_CLEARED;
@@ -960,6 +1031,7 @@ compute_cr_origin(int origin_depth, _PyInterpreterFrame *current_frame);
 PyObject *
 _Py_MakeCoro(PyFunctionObject *func)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int coro_flags = ((PyCodeObject *)func->func_code)->co_flags &
         (CO_GENERATOR | CO_COROUTINE | CO_ASYNC_GENERATOR);
     assert(coro_flags);
@@ -997,6 +1069,7 @@ _Py_MakeCoro(PyFunctionObject *func)
         PyObject *cr_origin = compute_cr_origin(origin_depth, frame);
         ((PyCoroObject *)coro)->cr_origin_or_finalizer = cr_origin;
         if (!cr_origin) {
+            assert(!PyRegion_NeedsReadBarrier(coro));
             Py_DECREF(coro);
             return NULL;
         }
@@ -1008,10 +1081,12 @@ static PyObject *
 gen_new_with_qualname(PyTypeObject *type, PyFrameObject *f,
                       PyObject *name, PyObject *qualname)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyFrame_GetCode(f->f_frame);
     int size = code->co_nlocalsplus + code->co_stacksize;
     PyGenObject *gen = PyObject_GC_NewVar(PyGenObject, type, size);
     if (gen == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(f));
         Py_DECREF(f);
         return NULL;
     }
@@ -1025,18 +1100,31 @@ gen_new_with_qualname(PyTypeObject *type, PyFrameObject *f,
     f->f_frame = frame;
     frame->owner = FRAME_OWNED_BY_GENERATOR;
     assert(PyObject_GC_IsTracked((PyObject *)f));
+    assert(!PyRegion_NeedsReadBarrier(f));
     Py_DECREF(f);
     gen->gi_weakreflist = NULL;
     gen->gi_exc_state.exc_value = NULL;
     gen->gi_exc_state.previous_item = NULL;
     if (name != NULL)
-        gen->gi_name = Py_NewRef(name);
+        gen->gi_name = PyRegion_NewRef(name);
     else
-        gen->gi_name = Py_NewRef(_PyGen_GetCode(gen)->co_name);
+        gen->gi_name = PyRegion_NewRef(_PyGen_GetCode(gen)->co_name);
     if (qualname != NULL)
-        gen->gi_qualname = Py_NewRef(qualname);
+        gen->gi_qualname = PyRegion_NewRef(qualname);
     else
-        gen->gi_qualname = Py_NewRef(_PyGen_GetCode(gen)->co_qualname);
+        gen->gi_qualname = PyRegion_NewRef(_PyGen_GetCode(gen)->co_qualname);
+    if (gen->gi_name == NULL || gen->gi_qualname == NULL) {
+        /* gen is not GC-tracked yet, so we cannot Py_DECREF it (that would
+           untrack an untracked object and run the finalizer on a half-built
+           coroutine). Release everything gen already owns -- the copied frame
+           and whichever name field succeeded -- then free the raw memory. */
+        gen_clear_frame(gen);
+        PyStackRef_CLEAR(gen->gi_iframe.f_executable);
+        PyRegion_CLEARLOCAL(gen->gi_name);
+        PyRegion_CLEARLOCAL(gen->gi_qualname);
+        PyObject_GC_Del(gen);
+        return NULL;
+    }
     _PyObject_GC_TRACK(gen);
     return (PyObject *)gen;
 }
@@ -1044,12 +1132,14 @@ gen_new_with_qualname(PyTypeObject *type, PyFrameObject *f,
 PyObject *
 PyGen_NewWithQualName(PyFrameObject *f, PyObject *name, PyObject *qualname)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return gen_new_with_qualname(&PyGen_Type, f, name, qualname);
 }
 
 PyObject *
 PyGen_New(PyFrameObject *f)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return gen_new_with_qualname(&PyGen_Type, f, NULL, NULL);
 }
 
@@ -1068,6 +1158,7 @@ typedef struct {
 static int
 gen_is_coroutine(PyObject *o)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PyGen_CheckExact(o)) {
         PyCodeObject *code = _PyGen_GetCode((PyGenObject*)o);
         if (code->co_flags & CO_ITERABLE_COROUTINE) {
@@ -1088,12 +1179,13 @@ gen_is_coroutine(PyObject *o)
 PyObject *
 _PyCoro_GetAwaitableIter(PyObject *o)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unaryfunc getter = NULL;
     PyTypeObject *ot;
 
     if (PyCoro_CheckExact(o) || gen_is_coroutine(o)) {
         /* 'o' is a coroutine. */
-        return Py_NewRef(o);
+        return PyRegion_NewRef(o);
     }
 
     ot = Py_TYPE(o);
@@ -1101,6 +1193,7 @@ _PyCoro_GetAwaitableIter(PyObject *o)
         getter = ot->tp_as_async->am_await;
     }
     if (getter != NULL) {
+        PyRegion_NotifyTypeUse(Py_TYPE(o));
         PyObject *res = (*getter)(o);
         if (res != NULL) {
             if (PyCoro_CheckExact(res) || gen_is_coroutine(res)) {
@@ -1109,12 +1202,12 @@ _PyCoro_GetAwaitableIter(PyObject *o)
                 PyErr_Format(PyExc_TypeError,
                              "%T.__await__() must return an iterator, "
                              "not coroutine", o);
-                Py_CLEAR(res);
+                PyRegion_CLEARLOCAL(res);
             } else if (!PyIter_Check(res)) {
                 PyErr_Format(PyExc_TypeError,
                              "%T.__await__() must return an iterator, "
                              "not %T", o, res);
-                Py_CLEAR(res);
+                PyRegion_CLEARLOCAL(res);
             }
         }
         return res;
@@ -1129,6 +1222,7 @@ _PyCoro_GetAwaitableIter(PyObject *o)
 static PyObject *
 coro_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroObject *coro = _PyCoroObject_CAST(self);
     return PyUnicode_FromFormat("<coroutine object %S at %p>",
                                 coro->cr_qualname, coro);
@@ -1137,8 +1231,13 @@ coro_repr(PyObject *self)
 static PyObject *
 coro_await(PyObject *coro)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = PyObject_GC_New(PyCoroWrapper, &_PyCoroWrapper_Type);
     if (cw == NULL) {
+        return NULL;
+    }
+    if (PyRegion_AddRef(cw, coro)) {
+        PyObject_GC_Del(cw);
         return NULL;
     }
     cw->cw_coroutine = (PyCoroObject*)Py_NewRef(coro);
@@ -1149,6 +1248,7 @@ coro_await(PyObject *coro)
 static PyObject *
 coro_get_cr_await(PyObject *coro, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *yf = _PyGen_yf((PyGenObject *) coro);
     if (yf == NULL)
         Py_RETURN_NONE;
@@ -1158,6 +1258,7 @@ coro_get_cr_await(PyObject *coro, void *Py_UNUSED(ignored))
 static PyObject *
 cr_getsuspended(PyObject *self, void *Py_UNUSED(ignored))
 {
+// Pyrona: This functions was checked and no further migration is needed
     PyCoroObject *coro = _PyCoroObject_CAST(self);
     if (FRAME_STATE_SUSPENDED(coro->cr_frame_state)) {
         Py_RETURN_TRUE;
@@ -1168,6 +1269,7 @@ cr_getsuspended(PyObject *self, void *Py_UNUSED(ignored))
 static PyObject *
 cr_getrunning(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroObject *coro = _PyCoroObject_CAST(self);
     if (coro->cr_frame_state == FRAME_EXECUTING) {
         Py_RETURN_TRUE;
@@ -1178,12 +1280,14 @@ cr_getrunning(PyObject *self, void *Py_UNUSED(ignored))
 static PyObject *
 cr_getframe(PyObject *coro, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _gen_getframe(_PyGen_CAST(coro), "cr_frame");
 }
 
 static PyObject *
 cr_getcode(PyObject *coro, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _gen_getcode(_PyGen_CAST(coro), "cr_code");
 }
 
@@ -1244,6 +1348,7 @@ static int coro_traverse(PyObject *, visitproc, void *);
 static int
 coro_reachable(PyObject *self, visitproc visit, void *arg)
 {
+// Pyrona: This functions was checked and no further migration is needed
     PyGenObject *gen = _PyGen_CAST(self);
     Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
     /* Visit cr_origin_or_finalizer which coro_traverse skips because it only
@@ -1258,6 +1363,7 @@ coro_reachable(PyObject *self, visitproc visit, void *arg)
 static int
 coro_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return gen_traverse(self, visit, arg);
 }
 
@@ -1312,20 +1418,23 @@ PyTypeObject PyCoro_Type = {
     0,                                          /* tp_version_tag */
     _PyGen_Finalize,                            /* tp_finalize */
     .tp_reachable = coro_reachable,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static void
 coro_wrapper_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = _PyCoroWrapper_CAST(self);
     _PyObject_GC_UNTRACK((PyObject *)cw);
-    Py_CLEAR(cw->cw_coroutine);
+    PyRegion_CLEAR(cw, cw->cw_coroutine);
     PyObject_GC_Del(cw);
 }
 
 static PyObject *
 coro_wrapper_iternext(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = _PyCoroWrapper_CAST(self);
     return gen_iternext((PyObject *)cw->cw_coroutine);
 }
@@ -1333,6 +1442,7 @@ coro_wrapper_iternext(PyObject *self)
 static PyObject *
 coro_wrapper_send(PyObject *self, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = _PyCoroWrapper_CAST(self);
     return gen_send((PyObject *)cw->cw_coroutine, arg);
 }
@@ -1340,6 +1450,7 @@ coro_wrapper_send(PyObject *self, PyObject *arg)
 static PyObject *
 coro_wrapper_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = _PyCoroWrapper_CAST(self);
     return gen_throw((PyObject*)cw->cw_coroutine, args, nargs);
 }
@@ -1347,6 +1458,7 @@ coro_wrapper_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 static PyObject *
 coro_wrapper_close(PyObject *self, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = _PyCoroWrapper_CAST(self);
     return gen_close((PyObject *)cw->cw_coroutine, args);
 }
@@ -1354,6 +1466,7 @@ coro_wrapper_close(PyObject *self, PyObject *args)
 static int
 coro_wrapper_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCoroWrapper *cw = _PyCoroWrapper_CAST(self);
     Py_VISIT((PyObject *)cw->cw_coroutine);
     return 0;
@@ -1407,11 +1520,13 @@ PyTypeObject _PyCoroWrapper_Type = {
     0,                                          /* tp_alloc */
     0,                                          /* tp_new */
     0,                                          /* tp_free */
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static PyObject *
 compute_cr_origin(int origin_depth, _PyInterpreterFrame *current_frame)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyInterpreterFrame *frame = current_frame;
     /* First count how many frames we have */
     int frame_count = 0;
@@ -1431,6 +1546,7 @@ compute_cr_origin(int origin_depth, _PyInterpreterFrame *current_frame)
         PyObject *frameinfo = Py_BuildValue("OiO", code->co_filename, line,
                                             code->co_name);
         if (!frameinfo) {
+            assert(!PyRegion_NeedsReadBarrier(cr_origin));
             Py_DECREF(cr_origin);
             return NULL;
         }
@@ -1444,6 +1560,7 @@ compute_cr_origin(int origin_depth, _PyInterpreterFrame *current_frame)
 PyObject *
 PyCoro_New(PyFrameObject *f, PyObject *name, PyObject *qualname)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *coro = gen_new_with_qualname(&PyCoro_Type, f, name, qualname);
     if (!coro) {
         return NULL;
@@ -1458,6 +1575,7 @@ PyCoro_New(PyFrameObject *f, PyObject *name, PyObject *qualname)
         PyObject *cr_origin = compute_cr_origin(origin_depth, _PyEval_GetFrame());
         ((PyCoroObject *)coro)->cr_origin_or_finalizer = cr_origin;
         if (!cr_origin) {
+            assert(!PyRegion_NeedsReadBarrier(coro));
             Py_DECREF(coro);
             return NULL;
         }
@@ -1522,6 +1640,7 @@ typedef struct _PyAsyncGenWrappedValue {
 static int
 async_gen_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *ag = _PyAsyncGenObject_CAST(self);
     Py_VISIT(ag->ag_origin_or_finalizer);
     return gen_traverse((PyObject*)ag, visit, arg);
@@ -1531,6 +1650,7 @@ async_gen_traverse(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 async_gen_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *o = _PyAsyncGenObject_CAST(self);
     return PyUnicode_FromFormat("<async_generator object %S at %p>",
                                 o->ag_qualname, o);
@@ -1540,6 +1660,7 @@ async_gen_repr(PyObject *self)
 static int
 async_gen_init_hooks(PyAsyncGenObject *o)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate;
     PyObject *finalizer;
     PyObject *firstiter;
@@ -1554,6 +1675,9 @@ async_gen_init_hooks(PyAsyncGenObject *o)
 
     finalizer = tstate->async_gen_finalizer;
     if (finalizer) {
+        if (PyRegion_AddRef(o, finalizer)) {
+            return -1;
+        }
         o->ag_origin_or_finalizer = Py_NewRef(finalizer);
     }
 
@@ -1561,13 +1685,17 @@ async_gen_init_hooks(PyAsyncGenObject *o)
     if (firstiter) {
         PyObject *res;
 
+        if (PyRegion_AddLocalRef(firstiter)) {
+            return -1;
+        }
         Py_INCREF(firstiter);
         res = PyObject_CallOneArg(firstiter, (PyObject *)o);
+        PyRegion_RemoveLocalRef(firstiter);
         Py_DECREF(firstiter);
         if (res == NULL) {
             return 1;
         }
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
     }
 
     return 0;
@@ -1577,6 +1705,7 @@ async_gen_init_hooks(PyAsyncGenObject *o)
 static PyObject *
 async_gen_anext(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *ag = _PyAsyncGenObject_CAST(self);
     if (async_gen_init_hooks(ag)) {
         return NULL;
@@ -1588,6 +1717,7 @@ async_gen_anext(PyObject *self)
 static PyObject *
 async_gen_asend(PyObject *op, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *o = (PyAsyncGenObject*)op;
     if (async_gen_init_hooks(o)) {
         return NULL;
@@ -1599,6 +1729,7 @@ async_gen_asend(PyObject *op, PyObject *arg)
 static PyObject *
 async_gen_aclose(PyObject *op, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *o = (PyAsyncGenObject*)op;
     if (async_gen_init_hooks(o)) {
         return NULL;
@@ -1609,6 +1740,7 @@ async_gen_aclose(PyObject *op, PyObject *arg)
 static PyObject *
 async_gen_athrow(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *o = (PyAsyncGenObject*)op;
     if (PyTuple_GET_SIZE(args) > 1) {
         if (PyErr_WarnEx(PyExc_DeprecationWarning,
@@ -1627,18 +1759,21 @@ async_gen_athrow(PyObject *op, PyObject *args)
 static PyObject *
 ag_getframe(PyObject *ag, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _gen_getframe((PyGenObject *)ag, "ag_frame");
 }
 
 static PyObject *
 ag_getcode(PyObject *gen, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _gen_getcode((PyGenObject*)gen, "ag_code");
 }
 
 static PyObject *
 ag_getsuspended(PyObject *self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *ag = _PyAsyncGenObject_CAST(self);
     if (FRAME_STATE_SUSPENDED(ag->ag_frame_state)) {
         Py_RETURN_TRUE;
@@ -1749,12 +1884,14 @@ PyTypeObject PyAsyncGen_Type = {
     0,                                          /* tp_version_tag */
     _PyGen_Finalize,                            /* tp_finalize */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
 PyObject *
 PyAsyncGen_New(PyFrameObject *f, PyObject *name, PyObject *qualname)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenObject *ag;
     ag = (PyAsyncGenObject *)gen_new_with_qualname(&PyAsyncGen_Type, f,
                                                    name, qualname);
@@ -1772,6 +1909,7 @@ PyAsyncGen_New(PyFrameObject *f, PyObject *name, PyObject *qualname)
 static PyObject *
 async_gen_unwrap_value(PyAsyncGenObject *gen, PyObject *result)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (result == NULL) {
         if (!PyErr_Occurred()) {
             PyErr_SetNone(PyExc_StopAsyncIteration);
@@ -1790,7 +1928,7 @@ async_gen_unwrap_value(PyAsyncGenObject *gen, PyObject *result)
     if (_PyAsyncGenWrappedValue_CheckExact(result)) {
         /* async yield */
         _PyGen_SetStopIterationValue(((_PyAsyncGenWrappedValue*)result)->agw_val);
-        Py_DECREF(result);
+        PyRegion_CLEARLOCAL(result);
         gen->ag_running_async = 0;
         return NULL;
     }
@@ -1805,6 +1943,7 @@ async_gen_unwrap_value(PyAsyncGenObject *gen, PyObject *result)
 static void
 async_gen_asend_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyAsyncGenASend_CheckExact(self));
     PyAsyncGenASend *ags = _PyAsyncGenASend_CAST(self);
 
@@ -1813,8 +1952,8 @@ async_gen_asend_dealloc(PyObject *self)
     }
 
     _PyObject_GC_UNTRACK(self);
-    Py_CLEAR(ags->ags_gen);
-    Py_CLEAR(ags->ags_sendval);
+    PyRegion_CLEAR(ags, ags->ags_gen);
+    PyRegion_CLEAR(ags, ags->ags_sendval);
 
     _PyGC_CLEAR_FINALIZED(self);
 
@@ -1824,6 +1963,7 @@ async_gen_asend_dealloc(PyObject *self)
 static int
 async_gen_asend_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenASend *ags = _PyAsyncGenASend_CAST(self);
     Py_VISIT(ags->ags_gen);
     Py_VISIT(ags->ags_sendval);
@@ -1834,6 +1974,7 @@ async_gen_asend_traverse(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 async_gen_asend_send(PyObject *self, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenASend *o = _PyAsyncGenASend_CAST(self);
     if (o->ags_state == AWAITABLE_STATE_CLOSED) {
         PyErr_SetString(
@@ -1872,6 +2013,7 @@ async_gen_asend_send(PyObject *self, PyObject *arg)
 static PyObject *
 async_gen_asend_iternext(PyObject *ags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return async_gen_asend_send(ags, NULL);
 }
 
@@ -1879,6 +2021,7 @@ async_gen_asend_iternext(PyObject *ags)
 static PyObject *
 async_gen_asend_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenASend *o = _PyAsyncGenASend_CAST(self);
 
     if (o->ags_state == AWAITABLE_STATE_CLOSED) {
@@ -1916,6 +2059,7 @@ async_gen_asend_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 static PyObject *
 async_gen_asend_close(PyObject *self, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenASend *o = _PyAsyncGenASend_CAST(self);
     if (o->ags_state == AWAITABLE_STATE_CLOSED) {
         Py_RETURN_NONE;
@@ -1933,7 +2077,7 @@ async_gen_asend_close(PyObject *self, PyObject *args)
         return result;
     }
 
-    Py_DECREF(result);
+    PyRegion_CLEARLOCAL(result);
     PyErr_SetString(PyExc_RuntimeError, "coroutine ignored GeneratorExit");
     return NULL;
 }
@@ -1941,6 +2085,7 @@ async_gen_asend_close(PyObject *self, PyObject *args)
 static void
 async_gen_asend_finalize(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenASend *ags = _PyAsyncGenASend_CAST(self);
     if (ags->ags_state == AWAITABLE_STATE_INIT) {
         _PyErr_WarnUnawaitedAgenMethod(ags->ags_gen, &_Py_ID(asend));
@@ -2004,12 +2149,14 @@ PyTypeObject _PyAsyncGenASend_Type = {
     0,                                          /* tp_alloc */
     0,                                          /* tp_new */
     .tp_finalize = async_gen_asend_finalize,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
 static PyObject *
 async_gen_asend_new(PyAsyncGenObject *gen, PyObject *sendval)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenASend *ags = _Py_FREELIST_POP(PyAsyncGenASend, async_gen_asends);
     if (ags == NULL) {
         ags = PyObject_GC_New(PyAsyncGenASend, &_PyAsyncGenASend_Type);
@@ -2018,6 +2165,10 @@ async_gen_asend_new(PyAsyncGenObject *gen, PyObject *sendval)
         }
     }
 
+    if (PyRegion_AddRefs(ags, gen, sendval)) {
+        PyObject_GC_Del(ags);
+        return NULL;
+    }
     ags->ags_gen = (PyAsyncGenObject*)Py_NewRef(gen);
     ags->ags_sendval = Py_XNewRef(sendval);
     ags->ags_state = AWAITABLE_STATE_INIT;
@@ -2033,9 +2184,10 @@ async_gen_asend_new(PyAsyncGenObject *gen, PyObject *sendval)
 static void
 async_gen_wrapped_val_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyAsyncGenWrappedValue *agw = _PyAsyncGenWrappedValue_CAST(self);
     _PyObject_GC_UNTRACK(self);
-    Py_CLEAR(agw->agw_val);
+    PyRegion_CLEAR(agw, agw->agw_val);
     _Py_FREELIST_FREE_OBJ(async_gens, self, PyObject_GC_Del);
 }
 
@@ -2043,6 +2195,7 @@ async_gen_wrapped_val_dealloc(PyObject *self)
 static int
 async_gen_wrapped_val_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyAsyncGenWrappedValue *agw = _PyAsyncGenWrappedValue_CAST(self);
     Py_VISIT(agw->agw_val);
     return 0;
@@ -2089,12 +2242,14 @@ PyTypeObject _PyAsyncGenWrappedValue_Type = {
     0,                                          /* tp_init */
     0,                                          /* tp_alloc */
     0,                                          /* tp_new */
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
 PyObject *
 _PyAsyncGenValueWrapperNew(PyThreadState *tstate, PyObject *val)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(val);
 
     _PyAsyncGenWrappedValue *o = _Py_FREELIST_POP(_PyAsyncGenWrappedValue, async_gens);
@@ -2104,6 +2259,10 @@ _PyAsyncGenValueWrapperNew(PyThreadState *tstate, PyObject *val)
         if (o == NULL) {
             return NULL;
         }
+    }
+    if (PyRegion_AddRef(o, val)) {
+        PyObject_GC_Del(o);
+        return NULL;
     }
     assert(_PyAsyncGenWrappedValue_CheckExact(o));
     o->agw_val = Py_NewRef(val);
@@ -2121,16 +2280,17 @@ _PyAsyncGenValueWrapperNew(PyThreadState *tstate, PyObject *val)
 static void
 async_gen_athrow_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenAThrow *agt = _PyAsyncGenAThrow_CAST(self);
     if (PyObject_CallFinalizerFromDealloc(self)) {
         return;
     }
 
     _PyObject_GC_UNTRACK(self);
-    Py_CLEAR(agt->agt_gen);
-    Py_XDECREF(agt->agt_typ);
-    Py_XDECREF(agt->agt_tb);
-    Py_XDECREF(agt->agt_val);
+    PyRegion_CLEAR(agt, agt->agt_gen);
+    PyRegion_CLEAR(agt, agt->agt_typ);
+    PyRegion_CLEAR(agt, agt->agt_tb);
+    PyRegion_CLEAR(agt, agt->agt_val);
     PyObject_GC_Del(self);
 }
 
@@ -2138,6 +2298,7 @@ async_gen_athrow_dealloc(PyObject *self)
 static int
 async_gen_athrow_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenAThrow *agt = _PyAsyncGenAThrow_CAST(self);
     Py_VISIT(agt->agt_gen);
     Py_VISIT(agt->agt_typ);
@@ -2150,6 +2311,7 @@ async_gen_athrow_traverse(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 async_gen_athrow_send(PyObject *self, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenAThrow *o = _PyAsyncGenAThrow_CAST(self);
     PyGenObject *gen = _PyGen_CAST(o->agt_gen);
     PyObject *retval;
@@ -2207,7 +2369,7 @@ async_gen_athrow_send(PyObject *self, PyObject *arg)
                                 PyExc_GeneratorExit, NULL, NULL);
 
             if (retval && _PyAsyncGenWrappedValue_CheckExact(retval)) {
-                Py_DECREF(retval);
+                PyRegion_CLEARLOCAL(retval);
                 goto yield_close;
             }
         } else {
@@ -2232,7 +2394,7 @@ async_gen_athrow_send(PyObject *self, PyObject *arg)
         /* aclose() mode */
         if (retval) {
             if (_PyAsyncGenWrappedValue_CheckExact(retval)) {
-                Py_DECREF(retval);
+                PyRegion_CLEARLOCAL(retval);
                 goto yield_close;
             }
             else {
@@ -2274,6 +2436,7 @@ check_error:
 static PyObject *
 async_gen_athrow_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenAThrow *o = _PyAsyncGenAThrow_CAST(self);
 
     if (o->agt_state == AWAITABLE_STATE_CLOSED) {
@@ -2317,7 +2480,7 @@ async_gen_athrow_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
         if (retval && _PyAsyncGenWrappedValue_CheckExact(retval)) {
             o->agt_gen->ag_running_async = 0;
             o->agt_state = AWAITABLE_STATE_CLOSED;
-            Py_DECREF(retval);
+            PyRegion_CLEARLOCAL(retval);
             PyErr_SetString(PyExc_RuntimeError, ASYNC_GEN_IGNORED_EXIT_MSG);
             return NULL;
         }
@@ -2344,6 +2507,7 @@ async_gen_athrow_throw(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 static PyObject *
 async_gen_athrow_iternext(PyObject *agt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return async_gen_athrow_send(agt, Py_None);
 }
 
@@ -2351,6 +2515,7 @@ async_gen_athrow_iternext(PyObject *agt)
 static PyObject *
 async_gen_athrow_close(PyObject *self, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenAThrow *agt = _PyAsyncGenAThrow_CAST(self);
     if (agt->agt_state == AWAITABLE_STATE_CLOSED) {
         Py_RETURN_NONE;
@@ -2367,7 +2532,7 @@ async_gen_athrow_close(PyObject *self, PyObject *args)
         }
         return result;
     } else {
-        Py_DECREF(result);
+        PyRegion_CLEARLOCAL(result);
         PyErr_SetString(PyExc_RuntimeError, "coroutine ignored GeneratorExit");
         return NULL;
     }
@@ -2377,6 +2542,7 @@ async_gen_athrow_close(PyObject *self, PyObject *args)
 static void
 async_gen_athrow_finalize(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyAsyncGenAThrow *o = (PyAsyncGenAThrow*)op;
     if (o->agt_state == AWAITABLE_STATE_INIT) {
         PyObject *method = o->agt_typ ? &_Py_ID(athrow) : &_Py_ID(aclose);
@@ -2442,12 +2608,14 @@ PyTypeObject _PyAsyncGenAThrow_Type = {
     0,                                          /* tp_alloc */
     0,                                          /* tp_new */
     .tp_finalize = async_gen_athrow_finalize,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
 static PyObject *
 async_gen_athrow_new(PyAsyncGenObject *gen, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *typ = NULL;
     PyObject *tb = NULL;
     PyObject *val = NULL;
@@ -2458,6 +2626,10 @@ async_gen_athrow_new(PyAsyncGenObject *gen, PyObject *args)
     PyAsyncGenAThrow *o;
     o = PyObject_GC_New(PyAsyncGenAThrow, &_PyAsyncGenAThrow_Type);
     if (o == NULL) {
+        return NULL;
+    }
+    if (PyRegion_AddRefs(o, gen, typ, tb, val)) {
+        PyObject_GC_Del(o);
         return NULL;
     }
     o->agt_gen = (PyAsyncGenObject*)Py_NewRef(gen);
