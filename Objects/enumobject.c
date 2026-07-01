@@ -414,6 +414,7 @@ static PyObject *
 reversed_new_impl(PyTypeObject *type, PyObject *seq)
 /*[clinic end generated code: output=f7854cc1df26f570 input=4781869729e3ba50]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n;
     PyObject *reversed_meth;
     reversedobject *ro;
@@ -428,7 +429,7 @@ reversed_new_impl(PyTypeObject *type, PyObject *seq)
     }
     if (reversed_meth != NULL) {
         PyObject *res = _PyObject_CallNoArgs(reversed_meth);
-        Py_DECREF(reversed_meth);
+        PyRegion_CLEARLOCAL(reversed_meth);
         return res;
     }
     else if (PyErr_Occurred())
@@ -448,6 +449,10 @@ reversed_new_impl(PyTypeObject *type, PyObject *seq)
     ro = (reversedobject *)type->tp_alloc(type, 0);
     if (ro == NULL)
         return NULL;
+    if (PyRegion_AddLocalRef(seq)) {
+        Py_DECREF(ro);
+        return NULL;
+    }
 
     ro->index = n-1;
     ro->seq = Py_NewRef(seq);
@@ -458,6 +463,7 @@ static PyObject *
 reversed_vectorcall(PyObject *type, PyObject * const*args,
                 size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_PyArg_NoKwnames("reversed", kwnames)) {
         return NULL;
     }
@@ -473,15 +479,17 @@ reversed_vectorcall(PyObject *type, PyObject * const*args,
 static void
 reversed_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     reversedobject *ro = _reversedobject_CAST(op);
     PyObject_GC_UnTrack(ro);
-    Py_XDECREF(ro->seq);
+    PyRegion_CLEAR(ro, ro->seq);
     Py_TYPE(ro)->tp_free(ro);
 }
 
 static int
 reversed_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     reversedobject *ro = _reversedobject_CAST(op);
     Py_VISIT(ro->seq);
     return 0;
@@ -490,6 +498,7 @@ reversed_traverse(PyObject *op, visitproc visit, void *arg)
 static PyObject *
 reversed_next(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     reversedobject *ro = _reversedobject_CAST(op);
     PyObject *item;
     Py_ssize_t index = FT_ATOMIC_LOAD_SSIZE_RELAXED(ro->index);
@@ -506,7 +515,7 @@ reversed_next(PyObject *op)
     }
     FT_ATOMIC_STORE_SSIZE_RELAXED(ro->index, -1);
 #ifndef Py_GIL_DISABLED
-    Py_CLEAR(ro->seq);
+    PyRegion_CLEAR(ro, ro->seq);
 #endif
     return NULL;
 }
@@ -514,6 +523,7 @@ reversed_next(PyObject *op)
 static PyObject *
 reversed_len(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     reversedobject *ro = _reversedobject_CAST(op);
     Py_ssize_t position, seqsize;
     Py_ssize_t index = FT_ATOMIC_LOAD_SSIZE_RELAXED(ro->index);
@@ -533,6 +543,7 @@ PyDoc_STRVAR(length_hint_doc, "Private method returning an estimate of len(list(
 static PyObject *
 reversed_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     reversedobject *ro = _reversedobject_CAST(op);
     Py_ssize_t index = FT_ATOMIC_LOAD_SSIZE_RELAXED(ro->index);
     if (index != -1) {
@@ -546,6 +557,7 @@ reversed_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 static PyObject *
 reversed_setstate(PyObject *op, PyObject *state)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     reversedobject *ro = _reversedobject_CAST(op);
     Py_ssize_t index = PyLong_AsSsize_t(state);
     if (index == -1 && PyErr_Occurred())
@@ -620,4 +632,5 @@ PyTypeObject PyReversed_Type = {
     PyObject_GC_Del,                /* tp_free */
     .tp_vectorcall = reversed_vectorcall,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
