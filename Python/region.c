@@ -1871,7 +1871,7 @@ _Py_movable_status _PyRegion_GetMoveability(PyObject *obj) {
     // end up in multiple regions, requiring the type to be frozen. Types also
     // have a lot of reference pointing to them. Let's hope there is no need to
     // keep them freezable
-    if (PyType_Check(obj)) {
+    if (PyType_Check(obj) || PyCode_Check(obj)) {
         return Py_MOVABLE_FREEZE;
     }
 

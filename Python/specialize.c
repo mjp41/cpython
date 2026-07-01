@@ -458,6 +458,7 @@ do { \
 void
 _PyCode_Quicken(_Py_CODEUNIT *instructions, Py_ssize_t size, int enable_counters)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     #if ENABLE_SPECIALIZATION_FT
     _Py_BackoffCounter jump_counter, adaptive_counter;
     if (enable_counters) {

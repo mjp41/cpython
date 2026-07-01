@@ -138,6 +138,7 @@ _PyBytes_FromSize(Py_ssize_t size, int use_calloc)
 PyObject *
 PyBytes_FromStringAndSize(const char *str, Py_ssize_t size)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyBytesObject *op;
     if (size < 0) {
         PyErr_SetString(PyExc_SystemError,

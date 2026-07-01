@@ -40,7 +40,11 @@ code_event_name(PyCodeEvent event) {
 static void
 notify_code_watchers(PyCodeEvent event, PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed 
     assert(Py_REFCNT(co) > 0);
+
+    // Pyrona: This uses per-interpreter state. Therefore, it should be safe
+    // to call this without synchronization.
     PyInterpreterState *interp = _PyInterpreterState_GET();
     assert(interp->_initialized);
     uint8_t bits = interp->active_code_watchers;
@@ -65,6 +69,7 @@ notify_code_watchers(PyCodeEvent event, PyCodeObject *co)
 int
 PyCode_AddWatcher(PyCode_WatchCallback callback)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp = _PyInterpreterState_GET();
     assert(interp->_initialized);
 
@@ -83,6 +88,7 @@ PyCode_AddWatcher(PyCode_WatchCallback callback)
 static inline int
 validate_watcher_id(PyInterpreterState *interp, int watcher_id)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (watcher_id < 0 || watcher_id >= CODE_MAX_WATCHERS) {
         PyErr_Format(PyExc_ValueError, "Invalid code watcher ID %d", watcher_id);
         return -1;
@@ -97,6 +103,7 @@ validate_watcher_id(PyInterpreterState *interp, int watcher_id)
 int
 PyCode_ClearWatcher(int watcher_id)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp = _PyInterpreterState_GET();
     assert(interp->_initialized);
     if (validate_watcher_id(interp, watcher_id) < 0) {
@@ -116,6 +123,7 @@ PyCode_ClearWatcher(int watcher_id)
 static int
 should_intern_string(PyObject *o)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef Py_GIL_DISABLED
     // The free-threaded build interns (and immortalizes) all string constants
     return 1;
@@ -181,6 +189,7 @@ should_immortalize_constant(PyObject *v)
 static int
 intern_strings(PyObject *tuple)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp = _PyInterpreterState_GET();
     Py_ssize_t i;
 
@@ -230,23 +239,23 @@ intern_constants(PyObject *tuple, int *modified)
             }
             int tmp_modified = 0;
             if (intern_constants(tmp, &tmp_modified) < 0) {
-                Py_DECREF(tmp);
+                PyRegion_CLEARLOCAL(tmp);
                 return -1;
             }
             if (tmp_modified) {
                 v = PyFrozenSet_New(tmp);
                 if (v == NULL) {
-                    Py_DECREF(tmp);
+                    PyRegion_CLEARLOCAL(tmp);
                     return -1;
                 }
 
                 PyTuple_SET_ITEM(tuple, i, v);
-                Py_DECREF(w);
+                PyRegion_CLEARLOCAL(w);
                 if (modified) {
                     *modified = 1;
                 }
             }
-            Py_DECREF(tmp);
+            PyRegion_CLEARLOCAL(tmp);
         }
 #ifdef Py_GIL_DISABLED
         else if (PySlice_Check(v)) {
@@ -309,6 +318,7 @@ intern_constants(PyObject *tuple, int *modified)
 static PyObject*
 validate_and_copy_tuple(PyObject *tup)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *newtuple;
     PyObject *item;
     Py_ssize_t i, len;
@@ -321,6 +331,7 @@ validate_and_copy_tuple(PyObject *tup)
     for (i = 0; i < len; i++) {
         item = PyTuple_GET_ITEM(tup, i);
         if (PyUnicode_CheckExact(item)) {
+            assert(!PyRegion_NeedsReadBarrier(item));
             Py_INCREF(item);
         }
         else if (!PyUnicode_Check(item)) {
@@ -329,12 +340,14 @@ validate_and_copy_tuple(PyObject *tup)
                 "name tuples must contain only "
                 "strings, not '%.500s'",
                 Py_TYPE(item)->tp_name);
+            assert(!PyRegion_NeedsReadBarrier(newtuple));
             Py_DECREF(newtuple);
             return NULL;
         }
         else {
             item = _PyUnicode_Copy(item);
             if (item == NULL) {
+                assert(!PyRegion_NeedsReadBarrier(newtuple));
                 Py_DECREF(newtuple);
                 return NULL;
             }
@@ -348,6 +361,7 @@ validate_and_copy_tuple(PyObject *tup)
 static int
 init_co_cached(PyCodeObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyCoCached *cached = FT_ATOMIC_LOAD_PTR(self->_co_cached);
     if (cached != NULL) {
         return 0;
@@ -377,12 +391,17 @@ init_co_cached(PyCodeObject *self)
  ******************/
 
 // This is also used in compile.c.
-void
+int
 _Py_set_localsplus_info(int offset, PyObject *name, _PyLocals_Kind kind,
                         PyObject *names, PyObject *kinds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+    if (PyRegion_AddRef(names, name)) {
+        return -1;
+    }
     PyTuple_SET_ITEM(names, offset, Py_NewRef(name));
     _PyLocals_SetKind(kinds, offset, kind);
+    return 0;
 }
 
 static void
@@ -390,6 +409,7 @@ get_localsplus_counts(PyObject *names, PyObject *kinds,
                       int *pnlocals, int *pncellvars,
                       int *pnfreevars)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int nlocals = 0;
     int ncellvars = 0;
     int nfreevars = 0;
@@ -423,6 +443,7 @@ get_localsplus_counts(PyObject *names, PyObject *kinds,
 static PyObject *
 get_localsplus_names(PyCodeObject *co, _PyLocals_Kind kind, int num)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *names = PyTuple_New(num);
     if (names == NULL) {
         return NULL;
@@ -435,6 +456,10 @@ get_localsplus_names(PyCodeObject *co, _PyLocals_Kind kind, int num)
         }
         assert(index < num);
         PyObject *name = PyTuple_GET_ITEM(co->co_localsplusnames, offset);
+        // Regions: Creating a local reference to name should always be safe
+        int res = PyRegion_AddRef(names, name);
+        assert(res == 0);
+        (void)res;
         PyTuple_SET_ITEM(names, index, Py_NewRef(name));
         index += 1;
     }
@@ -445,6 +470,8 @@ get_localsplus_names(PyCodeObject *co, _PyLocals_Kind kind, int num)
 int
 _PyCode_Validate(struct _PyCodeConstructor *con)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Check argument types */
     if (con->argcount < con->posonlyargcount || con->posonlyargcount < 0 ||
         con->kwonlyargcount < 0 ||
@@ -510,6 +537,7 @@ static _PyCodeArray * _PyCodeArray_New(Py_ssize_t size);
 static int
 init_code(PyCodeObject *co, struct _PyCodeConstructor *con)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int nlocalsplus = (int)PyTuple_GET_SIZE(con->localsplusnames);
     int nlocals, ncellvars, nfreevars;
     get_localsplus_counts(con->localsplusnames, con->localspluskinds,
@@ -518,6 +546,12 @@ init_code(PyCodeObject *co, struct _PyCodeConstructor *con)
         con->stacksize = 1;
     }
 
+    if (PyRegion_AddRefs(
+        co, con->linetable, con->consts, con->names, con->localsplusnames,
+        con->localspluskinds, con->exceptiontable)
+    ) {
+        return -1;
+    }
     PyInterpreterState *interp = _PyInterpreterState_GET();
     co->co_filename = Py_NewRef(con->filename);
     co->co_name = Py_NewRef(con->name);
@@ -591,6 +625,7 @@ init_code(PyCodeObject *co, struct _PyCodeConstructor *con)
 static int
 scan_varint(const uint8_t *ptr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned int read = *ptr++;
     unsigned int val = read & 63;
     unsigned int shift = 0;
@@ -605,6 +640,7 @@ scan_varint(const uint8_t *ptr)
 static int
 scan_signed_varint(const uint8_t *ptr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned int uval = scan_varint(ptr);
     if (uval & 1) {
         return -(int)(uval >> 1);
@@ -617,6 +653,7 @@ scan_signed_varint(const uint8_t *ptr)
 static int
 get_line_delta(const uint8_t *ptr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int code = ((*ptr) >> 3) & 15;
     switch (code) {
         case PY_CODE_LOCATION_INFO_NONE:
@@ -639,6 +676,7 @@ get_line_delta(const uint8_t *ptr)
 static PyObject *
 remove_column_info(PyObject *locations)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t offset = 0;
     const uint8_t *data = (const uint8_t *)PyBytes_AS_STRING(locations);
     PyObject *res = PyBytes_FromStringAndSize(NULL, 32);
@@ -682,6 +720,7 @@ remove_column_info(PyObject *locations)
 static int
 intern_code_constants(struct _PyCodeConstructor *con)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef Py_GIL_DISABLED
     PyInterpreterState *interp = _PyInterpreterState_GET();
     struct _py_code_state *state = &interp->code_state;
@@ -709,6 +748,7 @@ error:
 PyCodeObject *
 _PyCode_New(struct _PyCodeConstructor *con)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (intern_code_constants(con) < 0) {
         return NULL;
     }
@@ -732,13 +772,13 @@ _PyCode_New(struct _PyCodeConstructor *con)
     co = PyObject_NewVar(PyCodeObject, &PyCode_Type, size);
 #endif
     if (co == NULL) {
-        Py_XDECREF(replacement_locations);
+        PyRegion_CLEARLOCAL(replacement_locations);
         PyErr_NoMemory();
         return NULL;
     }
 
     if (init_code(co, con) < 0) {
-        Py_DECREF(co);
+        PyRegion_CLEARLOCAL(co);
         return NULL;
     }
 
@@ -746,7 +786,7 @@ _PyCode_New(struct _PyCodeConstructor *con)
     co->_co_unique_id = _PyObject_AssignUniqueId((PyObject *)co);
     _PyObject_GC_TRACK(co);
 #endif
-    Py_XDECREF(replacement_locations);
+    PyRegion_CLEARLOCAL(replacement_locations);
     return co;
 }
 
@@ -766,6 +806,7 @@ PyUnstable_Code_NewWithPosOnlyArgs(
                           PyObject *linetable,
                           PyObject *exceptiontable)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co = NULL;
     PyObject *localsplusnames = NULL;
     PyObject *localspluskinds = NULL;
@@ -904,6 +945,8 @@ PyUnstable_Code_NewWithPosOnlyArgs(
     }
 
 error:
+    assert(!PyRegion_NeedsReadBarrier(localsplusnames)); 
+    assert(!PyRegion_NeedsReadBarrier(localspluskinds)); 
     Py_XDECREF(localsplusnames);
     Py_XDECREF(localspluskinds);
     return co;
@@ -946,6 +989,7 @@ static const uint8_t linetable[2] = {
 PyCodeObject *
 PyCode_NewEmpty(const char *filename, const char *funcname, int firstlineno)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *nulltuple = NULL;
     PyObject *filename_ob = NULL;
     PyObject *funcname_ob = NULL;
@@ -992,6 +1036,11 @@ PyCode_NewEmpty(const char *filename, const char *funcname, int firstlineno)
     result = _PyCode_New(&con);
 
 failed:
+    assert(!PyRegion_NeedsReadBarrier(nulltuple));
+    assert(!PyRegion_NeedsReadBarrier(funcname_ob));
+    assert(!PyRegion_NeedsReadBarrier(filename_ob));
+    assert(!PyRegion_NeedsReadBarrier(code_ob));
+    assert(!PyRegion_NeedsReadBarrier(linetable_ob));
     Py_XDECREF(nulltuple);
     Py_XDECREF(funcname_ob);
     Py_XDECREF(filename_ob);
@@ -1008,6 +1057,7 @@ failed:
 int
 _PyCode_Addr2LineNoTstate(PyCodeObject *co, int addrq)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (addrq < 0) {
         return co->co_firstlineno;
     }
@@ -1023,6 +1073,7 @@ _PyCode_Addr2LineNoTstate(PyCodeObject *co, int addrq)
 int
 PyCode_Addr2Line(PyCodeObject *co, int addrq)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int lineno;
     Py_BEGIN_CRITICAL_SECTION(co);
     lineno = _PyCode_Addr2LineNoTstate(co, addrq);
@@ -1033,6 +1084,7 @@ PyCode_Addr2Line(PyCodeObject *co, int addrq)
 void
 _PyLineTable_InitAddressRange(const char *linetable, Py_ssize_t length, int firstlineno, PyCodeAddressRange *range)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     range->opaque.lo_next = (const uint8_t *)linetable;
     range->opaque.limit = range->opaque.lo_next + length;
     range->ar_start = -1;
@@ -1044,6 +1096,7 @@ _PyLineTable_InitAddressRange(const char *linetable, Py_ssize_t length, int firs
 int
 _PyCode_InitAddressRange(PyCodeObject* co, PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(co->co_linetable != NULL);
     const char *linetable = PyBytes_AS_STRING(co->co_linetable);
     Py_ssize_t length = PyBytes_GET_SIZE(co->co_linetable);
@@ -1056,6 +1109,7 @@ _PyCode_InitAddressRange(PyCodeObject* co, PyCodeAddressRange *bounds)
 int
 _PyCode_CheckLineNumber(int lasti, PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     while (bounds->ar_end <= lasti) {
         if (!_PyLineTable_NextAddressRange(bounds)) {
             return -1;
@@ -1072,6 +1126,7 @@ _PyCode_CheckLineNumber(int lasti, PyCodeAddressRange *bounds)
 static int
 is_no_line_marker(uint8_t b)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return (b >> 3) == 0x1f;
 }
 
@@ -1085,6 +1140,7 @@ is_no_line_marker(uint8_t b)
 static int
 next_code_delta(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert((*bounds->opaque.lo_next) & 128);
     return (((*bounds->opaque.lo_next) & 7) + 1) * sizeof(_Py_CODEUNIT);
 }
@@ -1092,6 +1148,7 @@ next_code_delta(PyCodeAddressRange *bounds)
 static int
 previous_code_delta(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (bounds->ar_start == 0) {
         // If we looking at the first entry, the
         // "previous" entry has an implicit length of 1.
@@ -1107,12 +1164,14 @@ previous_code_delta(PyCodeAddressRange *bounds)
 static int
 read_byte(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return *bounds->opaque.lo_next++;
 }
 
 static int
 read_varint(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned int read = read_byte(bounds);
     unsigned int val = read & 63;
     unsigned int shift = 0;
@@ -1127,6 +1186,7 @@ read_varint(PyCodeAddressRange *bounds)
 static int
 read_signed_varint(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned int uval = read_varint(bounds);
     if (uval & 1) {
         return -(int)(uval >> 1);
@@ -1139,6 +1199,7 @@ read_signed_varint(PyCodeAddressRange *bounds)
 static void
 retreat(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ASSERT_VALID_BOUNDS(bounds);
     assert(bounds->ar_start >= 0);
     do {
@@ -1159,6 +1220,7 @@ retreat(PyCodeAddressRange *bounds)
 static void
 advance(PyCodeAddressRange *bounds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ASSERT_VALID_BOUNDS(bounds);
     bounds->opaque.computed_line += get_line_delta(bounds->opaque.lo_next);
     if (is_no_line_marker(*bounds->opaque.lo_next)) {
@@ -1179,6 +1241,7 @@ advance(PyCodeAddressRange *bounds)
 static void
 advance_with_locations(PyCodeAddressRange *bounds, int *endline, int *column, int *endcolumn)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ASSERT_VALID_BOUNDS(bounds);
     int first_byte = read_byte(bounds);
     int code = (first_byte >> 3) & 15;
@@ -1235,6 +1298,7 @@ PyCode_Addr2Location(PyCodeObject *co, int addrq,
                      int *start_line, int *start_column,
                      int *end_line, int *end_column)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (addrq < 0) {
         *start_line = *end_line = co->co_firstlineno;
         *start_column = *end_column = 0;
@@ -1253,12 +1317,14 @@ PyCode_Addr2Location(PyCodeObject *co, int addrq,
 
 static inline int
 at_end(PyCodeAddressRange *bounds) {
+    // Pyrona: This functions was checked and no further migration is needed
     return bounds->opaque.lo_next >= bounds->opaque.limit;
 }
 
 int
 _PyLineTable_PreviousAddressRange(PyCodeAddressRange *range)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (range->ar_start <= 0) {
         return 0;
     }
@@ -1270,6 +1336,7 @@ _PyLineTable_PreviousAddressRange(PyCodeAddressRange *range)
 int
 _PyLineTable_NextAddressRange(PyCodeAddressRange *range)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (at_end(range)) {
         return 0;
     }
@@ -1281,6 +1348,7 @@ _PyLineTable_NextAddressRange(PyCodeAddressRange *range)
 static int
 emit_pair(PyObject **bytes, int *offset, int a, int b)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t len = PyBytes_GET_SIZE(*bytes);
     if (*offset + 2 >= len) {
         if (_PyBytes_Resize(bytes, len * 2) < 0)
@@ -1297,6 +1365,7 @@ emit_pair(PyObject **bytes, int *offset, int a, int b)
 static int
 emit_delta(PyObject **bytes, int bdelta, int ldelta, int *offset)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     while (bdelta > 255) {
         if (!emit_pair(bytes, offset, 255, 0)) {
             return 0;
@@ -1323,6 +1392,7 @@ emit_delta(PyObject **bytes, int bdelta, int ldelta, int *offset)
 static PyObject *
 decode_linetable(PyCodeObject *code)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeAddressRange bounds;
     PyObject *bytes;
     int table_offset = 0;
@@ -1338,6 +1408,7 @@ decode_linetable(PyCodeObject *code)
             int bdelta = bounds.ar_start - code_offset;
             int ldelta = bounds.opaque.computed_line - line;
             if (!emit_delta(&bytes, bdelta, ldelta, &table_offset)) {
+                assert(!PyRegion_NeedsReadBarrier(bytes));
                 Py_DECREF(bytes);
                 return NULL;
             }
@@ -1360,14 +1431,16 @@ typedef struct {
 static void
 lineiter_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     lineiterator *li = (lineiterator*)self;
-    Py_DECREF(li->li_code);
+    PyRegion_CLEAR(li, li->li_code);
     Py_TYPE(li)->tp_free(li);
 }
 
 static int
 lineiter_reachable(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     lineiterator *li = (lineiterator*)self;
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(li->li_code);
@@ -1376,6 +1449,7 @@ lineiter_reachable(PyObject *self, visitproc visit, void *arg)
 
 static PyObject *
 _source_offset_converter(void *arg) {
+    // Pyrona: This functions was checked and no further migration is needed
     int *value = (int*)arg;
     if (*value == -1) {
         Py_RETURN_NONE;
@@ -1386,6 +1460,7 @@ _source_offset_converter(void *arg) {
 static PyObject *
 lineiter_next(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     lineiterator *li = (lineiterator*)self;
     PyCodeAddressRange *bounds = &li->li_line;
     if (!_PyLineTable_NextAddressRange(bounds)) {
@@ -1446,13 +1521,19 @@ PyTypeObject _PyLineIterator = {
     0,                                  /* tp_new */
     PyObject_Free,                      /* tp_free */
     .tp_reachable = lineiter_reachable,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static lineiterator *
 new_linesiterator(PyCodeObject *code)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     lineiterator *li = (lineiterator *)PyType_GenericAlloc(&_PyLineIterator, 0);
     if (li == NULL) {
+        return NULL;
+    }
+    if (PyRegion_AddRef(li, code)) {
+        Py_DECREF(li);
         return NULL;
     }
     li->li_code = (PyCodeObject*)Py_NewRef(code);
@@ -1474,14 +1555,16 @@ typedef struct {
 static void
 positionsiter_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     positionsiterator *pi = (positionsiterator*)self;
-    Py_DECREF(pi->pi_code);
+    PyRegion_CLEAR(pi, pi->pi_code);
     Py_TYPE(pi)->tp_free(pi);
 }
 
 static int
 positionsiter_reachable(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     positionsiterator *pi = (positionsiterator*)self;
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(pi->pi_code);
@@ -1491,6 +1574,7 @@ positionsiter_reachable(PyObject *self, visitproc visit, void *arg)
 static PyObject*
 positionsiter_next(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     positionsiterator *pi = (positionsiterator*)self;
     if (pi->pi_offset >= pi->pi_range.ar_end) {
         assert(pi->pi_offset == pi->pi_range.ar_end);
@@ -1549,14 +1633,20 @@ PyTypeObject _PyPositionsIterator = {
     0,                                  /* tp_new */
     PyObject_Free,                      /* tp_free */
     .tp_reachable = positionsiter_reachable,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static PyObject*
 code_positionsiterator(PyObject *self, PyObject* Py_UNUSED(args))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = (PyCodeObject*)self;
     positionsiterator* pi = (positionsiterator*)PyType_GenericAlloc(&_PyPositionsIterator, 0);
     if (pi == NULL) {
+        return NULL;
+    }
+    if (PyRegion_AddRef(pi, code)) {
+        Py_DECREF(pi);
         return NULL;
     }
     pi->pi_code = (PyCodeObject*)Py_NewRef(code);
@@ -1580,6 +1670,7 @@ typedef struct {
 int
 PyUnstable_Code_GetExtra(PyObject *code, Py_ssize_t index, void **extra)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyCode_Check(code)) {
         PyErr_BadInternalCall();
         return -1;
@@ -1601,6 +1692,7 @@ PyUnstable_Code_GetExtra(PyObject *code, Py_ssize_t index, void **extra)
 int
 PyUnstable_Code_SetExtra(PyObject *code, Py_ssize_t index, void *extra)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp = _PyInterpreterState_GET();
 
     if (!PyCode_Check(code) || index < 0 ||
@@ -1648,11 +1740,12 @@ static PyObject *
 get_cached_locals(PyCodeObject *co, PyObject **cached_field,
     _PyLocals_Kind kind, int num)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(cached_field != NULL);
     assert(co->_co_cached != NULL);
     PyObject *varnames = FT_ATOMIC_LOAD_PTR(*cached_field);
     if (varnames != NULL) {
-        return Py_NewRef(varnames);
+        return PyRegion_NewRef(varnames);
     }
 
     Py_BEGIN_CRITICAL_SECTION(co);
@@ -1664,12 +1757,13 @@ get_cached_locals(PyCodeObject *co, PyObject **cached_field,
         }
     }
     Py_END_CRITICAL_SECTION();
-    return Py_XNewRef(varnames);
+    return PyRegion_XNewRef(varnames);
 }
 
 PyObject *
 _PyCode_GetVarnames(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (init_co_cached(co)) {
         return NULL;
     }
@@ -1679,12 +1773,14 @@ _PyCode_GetVarnames(PyCodeObject *co)
 PyObject *
 PyCode_GetVarnames(PyCodeObject *code)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyCode_GetVarnames(code);
 }
 
 PyObject *
 _PyCode_GetCellvars(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (init_co_cached(co)) {
         return NULL;
     }
@@ -1694,12 +1790,14 @@ _PyCode_GetCellvars(PyCodeObject *co)
 PyObject *
 PyCode_GetCellvars(PyCodeObject *code)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyCode_GetCellvars(code);
 }
 
 PyObject *
 _PyCode_GetFreevars(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (init_co_cached(co)) {
         return NULL;
     }
@@ -1709,6 +1807,7 @@ _PyCode_GetFreevars(PyCodeObject *co)
 PyObject *
 PyCode_GetFreevars(PyCodeObject *code)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyCode_GetFreevars(code);
 }
 
@@ -1739,6 +1838,8 @@ identify_unbound_names(PyThreadState *tstate, PyCodeObject *co,
                        PyObject *globalsns, PyObject *builtinsns,
                        struct co_unbound_counts *counts, int *p_numdupes)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // This function is inspired by inspect.getclosurevars().
     // It would be nicer if we had something similar to co_localspluskinds,
     // but for co_names.
@@ -1829,6 +1930,7 @@ identify_unbound_names(PyThreadState *tstate, PyCodeObject *co,
 void
 _PyCode_GetVarCounts(PyCodeObject *co, _PyCode_var_counts_t *counts)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(counts != NULL);
 
     // Count the locals, cells, and free vars.
@@ -1939,6 +2041,7 @@ _PyCode_SetUnboundVarCounts(PyThreadState *tstate,
                             PyObject *globalnames, PyObject *attrnames,
                             PyObject *globalsns, PyObject *builtinsns)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res = -1;
     PyObject *globalnames_owned = NULL;
     PyObject *attrnames_owned = NULL;
@@ -1992,6 +2095,8 @@ _PyCode_SetUnboundVarCounts(PyThreadState *tstate,
     res = 0;
 
 finally:
+    assert(!PyRegion_NeedsReadBarrier(globalnames_owned));
+    assert(!PyRegion_NeedsReadBarrier(attrnames_owned));
     Py_XDECREF(globalnames_owned);
     Py_XDECREF(attrnames_owned);
     return res;
@@ -2001,6 +2106,7 @@ finally:
 int
 _PyCode_CheckNoInternalState(PyCodeObject *co, const char **p_errmsg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *errmsg = NULL;
     // We don't worry about co_executors, co_instrumentation,
     // or co_monitoring.  They are essentially ephemeral.
@@ -2021,6 +2127,7 @@ int
 _PyCode_CheckNoExternalState(PyCodeObject *co, _PyCode_var_counts_t *counts,
                              const char **p_errmsg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *errmsg = NULL;
     if (counts->numfree > 0) {  // It's a closure.
         errmsg = "closures not supported";
@@ -2050,6 +2157,7 @@ _PyCode_VerifyStateless(PyThreadState *tstate,
                         PyCodeObject *co, PyObject *globalnames,
                         PyObject *globalsns, PyObject *builtinsns)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *errmsg;
    _PyCode_var_counts_t counts = {0};
     _PyCode_GetVarCounts(co, &counts);
@@ -2082,6 +2190,7 @@ _PyCode_VerifyStateless(PyThreadState *tstate,
 int
 _PyCode_CheckPureFunction(PyCodeObject *co, const char **p_errmsg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *errmsg = NULL;
     if (co->co_flags & CO_GENERATOR) {
         errmsg = "generators not supported";
@@ -2111,6 +2220,7 @@ _PyCode_CheckPureFunction(PyCodeObject *co, const char **p_errmsg)
 static int
 code_returns_only_none(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_PyCode_CheckPureFunction(co, NULL)) {
         return 0;
     }
@@ -2175,6 +2285,7 @@ code_returns_only_none(PyCodeObject *co)
 int
 _PyCode_ReturnsOnlyNone(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     Py_BEGIN_CRITICAL_SECTION(co);
     res = code_returns_only_none(co);
@@ -2210,6 +2321,7 @@ _PyCode_Clear_Executors(PyCodeObject *code)
 static void
 deopt_code(PyCodeObject *code, _Py_CODEUNIT *instructions)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t len = Py_SIZE(code);
     for (int i = 0; i < len; i++) {
         _Py_CODEUNIT inst = _Py_GetBaseCodeUnit(code, i);
@@ -2226,6 +2338,7 @@ deopt_code(PyCodeObject *code, _Py_CODEUNIT *instructions)
 PyObject *
 _PyCode_GetCode(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (init_co_cached(co)) {
         return NULL;
     }
@@ -2233,6 +2346,7 @@ _PyCode_GetCode(PyCodeObject *co)
     _PyCoCached *cached = co->_co_cached;
     PyObject *code = FT_ATOMIC_LOAD_PTR(cached->_co_code);
     if (code != NULL) {
+        assert(!PyRegion_NeedsReadBarrier(code));
         return Py_NewRef(code);
     }
 
@@ -2248,12 +2362,14 @@ _PyCode_GetCode(PyCodeObject *co)
         }
     }
     Py_END_CRITICAL_SECTION();
+    assert(!PyRegion_NeedsReadBarrier(code));
     return Py_XNewRef(code);
 }
 
 PyObject *
 PyCode_GetCode(PyCodeObject *co)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyCode_GetCode(co);
 }
 
@@ -2303,6 +2419,7 @@ code_new_impl(PyTypeObject *type, int argcount, int posonlyargcount,
               PyObject *cellvars)
 /*[clinic end generated code: output=069fa20d299f9dda input=e31da3c41ad8064a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *co = NULL;
     PyObject *ournames = NULL;
     PyObject *ourvarnames = NULL;
@@ -2372,6 +2489,10 @@ code_new_impl(PyTypeObject *type, int argcount, int posonlyargcount,
                                                exceptiontable
                                               );
   cleanup:
+    assert(!PyRegion_NeedsReadBarrier(ournames));
+    assert(!PyRegion_NeedsReadBarrier(ourvarnames));
+    assert(!PyRegion_NeedsReadBarrier(ourfreevars));
+    assert(!PyRegion_NeedsReadBarrier(ourcellvars));
     Py_XDECREF(ournames);
     Py_XDECREF(ourvarnames);
     Py_XDECREF(ourfreevars);
@@ -2382,6 +2503,7 @@ code_new_impl(PyTypeObject *type, int argcount, int posonlyargcount,
 static void
 free_monitoring_data(_PyCoMonitoringData *data)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (data == NULL) {
         return;
     }
@@ -2406,6 +2528,7 @@ free_monitoring_data(_PyCoMonitoringData *data)
 static void
 code_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = PyThreadState_GET();
     _Py_atomic_add_uint64(&tstate->interp->_code_object_generation, 1);
     PyCodeObject *co = _PyCodeObject_CAST(self);
@@ -2488,6 +2611,7 @@ code_traverse(PyObject *self, visitproc visit, void *arg)
 static int
 code_reachable(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co = _PyCodeObject_CAST(self);
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(co->co_consts);
@@ -2511,6 +2635,7 @@ code_reachable(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 code_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co = _PyCodeObject_CAST(self);
     int lineno;
     if (co->co_firstlineno != 0)
@@ -2531,6 +2656,7 @@ code_repr(PyObject *self)
 static PyObject *
 code_richcompare(PyObject *self, PyObject *other, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co, *cp;
     int eq;
     PyObject *consts1, *consts2;
@@ -2576,11 +2702,14 @@ code_richcompare(PyObject *self, PyObject *other, int op)
         return NULL;
     consts2 = _PyCode_ConstantKey(cp->co_consts);
     if (!consts2) {
+        assert(!PyRegion_NeedsReadBarrier(consts1));
         Py_DECREF(consts1);
         return NULL;
     }
     eq = PyObject_RichCompareBool(consts1, consts2, Py_EQ);
+    assert(!PyRegion_NeedsReadBarrier(consts1));
     Py_DECREF(consts1);
+    assert(!PyRegion_NeedsReadBarrier(consts2));
     Py_DECREF(consts2);
     if (eq <= 0) goto unequal;
 
@@ -2614,12 +2743,14 @@ code_richcompare(PyObject *self, PyObject *other, int op)
         res = Py_False;
 
   done:
+    assert(!PyRegion_NeedsReadBarrier(res));
     return Py_NewRef(res);
 }
 
 static Py_hash_t
 code_hash(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co = _PyCodeObject_CAST(self);
     Py_uhash_t uhash = 20221211;
     #define SCRAMBLE_IN(H) do {       \
@@ -2683,6 +2814,7 @@ static PyMemberDef code_memberlist[] = {
 static PyObject *
 code_getlnotab(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     if (PyErr_WarnEx(PyExc_DeprecationWarning,
                      "co_lnotab is deprecated, use co_lines instead.",
@@ -2695,6 +2827,7 @@ code_getlnotab(PyObject *self, void *closure)
 static PyObject *
 code_getvarnames(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return _PyCode_GetVarnames(code);
 }
@@ -2702,6 +2835,7 @@ code_getvarnames(PyObject *self, void *closure)
 static PyObject *
 code_getcellvars(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return _PyCode_GetCellvars(code);
 }
@@ -2709,6 +2843,7 @@ code_getcellvars(PyObject *self, void *closure)
 static PyObject *
 code_getfreevars(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return _PyCode_GetFreevars(code);
 }
@@ -2716,6 +2851,7 @@ code_getfreevars(PyObject *self, void *closure)
 static PyObject *
 code_getcodeadaptive(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return PyBytes_FromStringAndSize(code->co_code_adaptive,
                                      _PyCode_NBYTES(code));
@@ -2724,6 +2860,7 @@ code_getcodeadaptive(PyObject *self, void *closure)
 static PyObject *
 code_getcode(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return _PyCode_GetCode(code);
 }
@@ -2743,6 +2880,7 @@ static PyGetSetDef code_getsetlist[] = {
 static PyObject *
 code_sizeof(PyObject *self, PyObject *Py_UNUSED(args))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co = _PyCodeObject_CAST(self);
     size_t res = _PyObject_VAR_SIZE(Py_TYPE(co), Py_SIZE(co));
     _PyCodeObjectExtra *co_extra = (_PyCodeObjectExtra*) co->co_extra;
@@ -2756,6 +2894,7 @@ code_sizeof(PyObject *self, PyObject *Py_UNUSED(args))
 static PyObject *
 code_linesiterator(PyObject *self, PyObject *Py_UNUSED(args))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return (PyObject *)new_linesiterator(code);
 }
@@ -2763,6 +2902,7 @@ code_linesiterator(PyObject *self, PyObject *Py_UNUSED(args))
 static PyObject *
 code_branchesiterator(PyObject *self, PyObject *Py_UNUSED(args))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = _PyCodeObject_CAST(self);
     return _PyInstrumentation_BranchesIterator(code);
 }
@@ -2807,6 +2947,7 @@ code_replace_impl(PyCodeObject *self, int co_argcount,
                   PyObject *co_exceptiontable)
 /*[clinic end generated code: output=e75c48a15def18b9 input=e944fdac8b456114]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #define CHECK_INT_ARG(ARG) \
         if (ARG < 0) { \
             PyErr_SetString(PyExc_ValueError, \
@@ -2837,6 +2978,7 @@ code_replace_impl(PyCodeObject *self, int co_argcount,
                     co_code, co_filename, co_name, co_argcount,
                     co_posonlyargcount, co_kwonlyargcount, co_nlocals,
                     co_stacksize, co_flags) < 0) {
+        assert(!PyRegion_NeedsReadBarrier(code));
         Py_XDECREF(code);
         return NULL;
     }
@@ -2875,6 +3017,10 @@ code_replace_impl(PyCodeObject *self, int co_argcount,
         co_linetable, co_exceptiontable);
 
 error:
+    assert(!PyRegion_NeedsReadBarrier(code));
+    assert(!PyRegion_NeedsReadBarrier(varnames));
+    assert(!PyRegion_NeedsReadBarrier(cellvars));
+    assert(!PyRegion_NeedsReadBarrier(freevars));
     Py_XDECREF(code);
     Py_XDECREF(varnames);
     Py_XDECREF(cellvars);
@@ -2900,7 +3046,7 @@ code__varname_from_oparg_impl(PyCodeObject *self, int oparg)
     if (name == NULL) {
         return NULL;
     }
-    return Py_NewRef(name);
+    return PyRegion_NewRef(name);
 }
 
 /* XXX code objects need to participate in GC? */
@@ -2966,6 +3112,7 @@ PyTypeObject PyCode_Type = {
     0,                                  /* tp_alloc */
     code_new,                           /* tp_new */
     .tp_reachable = code_reachable,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
@@ -2976,6 +3123,7 @@ PyTypeObject PyCode_Type = {
 PyObject*
 _PyCode_ConstantKey(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *key;
 
     /* Py_None and Py_Ellipsis are singletons. */
@@ -2987,6 +3135,7 @@ _PyCode_ConstantKey(PyObject *op)
     {
         /* Objects of these types are always different from object of other
          * type and from tuples. */
+        assert(!PyRegion_NeedsReadBarrier(op));
         key = Py_NewRef(op);
     }
     else if (PyBool_Check(op) || PyBytes_CheckExact(op)) {
@@ -3052,6 +3201,7 @@ _PyCode_ConstantKey(PyObject *op)
         }
 
         key = PyTuple_Pack(2, tuple, op);
+        assert(!PyRegion_NeedsReadBarrier(tuple));
         Py_DECREF(tuple);
     }
     else if (PyFrozenSet_CheckExact(op)) {
@@ -3072,6 +3222,7 @@ _PyCode_ConstantKey(PyObject *op)
 
             item_key = _PyCode_ConstantKey(item);
             if (item_key == NULL) {
+                assert(!PyRegion_NeedsReadBarrier(tuple));
                 Py_DECREF(tuple);
                 return NULL;
             }
@@ -3081,11 +3232,13 @@ _PyCode_ConstantKey(PyObject *op)
             i++;
         }
         set = PyFrozenSet_New(tuple);
+        assert(!PyRegion_NeedsReadBarrier(tuple));
         Py_DECREF(tuple);
         if (set == NULL)
             return NULL;
 
         key = PyTuple_Pack(2, set, op);
+        assert(!PyRegion_NeedsReadBarrier(set));
         Py_DECREF(set);
         return key;
     }
@@ -3117,8 +3270,12 @@ _PyCode_ConstantKey(PyObject *op)
         }
 
         key = PyTuple_Pack(2, slice_key, op);
+        assert(!PyRegion_NeedsReadBarrier(slice_key));
         Py_DECREF(slice_key);
-    slice_exit:
+        slice_exit:
+        assert(!PyRegion_NeedsReadBarrier(start_key));
+        assert(!PyRegion_NeedsReadBarrier(stop_key));
+        assert(!PyRegion_NeedsReadBarrier(step_key));
         Py_XDECREF(start_key);
         Py_XDECREF(stop_key);
         Py_XDECREF(step_key);
@@ -3131,6 +3288,7 @@ _PyCode_ConstantKey(PyObject *op)
             return NULL;
 
         key = PyTuple_Pack(2, obj_id, op);
+        assert(!PyRegion_NeedsReadBarrier(obj_id));
         Py_DECREF(obj_id);
     }
     return key;
