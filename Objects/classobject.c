@@ -24,6 +24,7 @@ class method "PyMethodObject *" "&PyMethod_Type"
 PyObject *
 PyMethod_Function(PyObject *im)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyMethod_Check(im)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -34,6 +35,7 @@ PyMethod_Function(PyObject *im)
 PyObject *
 PyMethod_Self(PyObject *im)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyMethod_Check(im)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -46,6 +48,7 @@ static PyObject *
 method_vectorcall(PyObject *method, PyObject *const *args,
                   size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(Py_IS_TYPE(method, &PyMethod_Type));
 
     PyThreadState *tstate = _PyThreadState_GET();
@@ -110,6 +113,7 @@ method_vectorcall(PyObject *method, PyObject *const *args,
 PyObject *
 PyMethod_New(PyObject *func, PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self == NULL) {
         PyErr_BadInternalCall();
         return NULL;
@@ -122,7 +126,7 @@ PyMethod_New(PyObject *func, PyObject *self)
         }
     }
     if (PyRegion_AddRefs(im, func, self)) {
-        Py_DECREF(im);
+        PyObject_GC_Del(im);
         return NULL;
     }
     im->im_weakreflist = NULL;
@@ -141,6 +145,7 @@ static PyObject *
 method___reduce___impl(PyMethodObject *self)
 /*[clinic end generated code: output=6c04506d0fa6fdcb input=143a0bf5e96de6e8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *funcself = PyMethod_GET_SELF(self);
     PyObject *func = PyMethod_GET_FUNCTION(self);
     PyObject *funcname = PyObject_GetAttr(func, &_Py_ID(__name__));
@@ -178,6 +183,7 @@ static PyMemberDef method_memberlist[] = {
 static PyObject *
 method_get_doc(PyObject *self, void *context)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *im = _PyMethodObject_CAST(self);
     return PyObject_GetAttr(im->im_func, &_Py_ID(__doc__));
 }
@@ -190,6 +196,7 @@ static PyGetSetDef method_getset[] = {
 static PyObject *
 method_getattro(PyObject *obj, PyObject *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *im = (PyMethodObject *)obj;
     PyTypeObject *tp = Py_TYPE(obj);
     PyObject *descr = NULL;
@@ -205,8 +212,9 @@ method_getattro(PyObject *obj, PyObject *name)
     if (descr != NULL) {
         descrgetfunc f = TP_DESCR_GET(Py_TYPE(descr));
         if (f != NULL) {
+            PyRegion_NotifyTypeUse(Py_TYPE(descr));
             PyObject *res = f(descr, obj, (PyObject *)Py_TYPE(obj));
-            Py_DECREF(descr);
+            PyRegion_CLEARLOCAL(descr);
             return res;
         }
         else {
@@ -248,11 +256,12 @@ method_new_impl(PyTypeObject *type, PyObject *function, PyObject *instance)
 static void
 method_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *im = _PyMethodObject_CAST(self);
     _PyObject_GC_UNTRACK(im);
     FT_CLEAR_WEAKREFS(self, im->im_weakreflist);
-    Py_DECREF(im->im_func);
-    Py_XDECREF(im->im_self);
+    PyRegion_CLEAR(im, im->im_func);
+    PyRegion_CLEAR(im, im->im_self);
     assert(Py_IS_TYPE(self, &PyMethod_Type));
     _Py_FREELIST_FREE_OBJ(pymethodobjects, (PyObject *)im, PyObject_GC_Del);
 }
@@ -260,6 +269,7 @@ method_dealloc(PyObject *self)
 static PyObject *
 method_richcompare(PyObject *self, PyObject *other, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *a, *b;
     PyObject *res;
     int eq;
@@ -288,6 +298,7 @@ method_richcompare(PyObject *self, PyObject *other, int op)
 static PyObject *
 method_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *a = _PyMethodObject_CAST(op);
     PyObject *self = a->im_self;
     PyObject *func = a->im_func;
@@ -302,20 +313,21 @@ method_repr(PyObject *op)
     }
 
     if (funcname != NULL && !PyUnicode_Check(funcname)) {
-        Py_SETREF(funcname, NULL);
+        PyRegion_CLEARLOCAL(funcname);
     }
 
     /* XXX Shouldn't use repr()/%R here! */
     result = PyUnicode_FromFormat("<bound method %V of %R>",
                                   funcname, defname, self);
 
-    Py_XDECREF(funcname);
+    PyRegion_CLEARLOCAL(funcname);
     return result;
 }
 
 static Py_hash_t
 method_hash(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *a = _PyMethodObject_CAST(self);
     Py_hash_t x = PyObject_GenericHash(a->im_self);
     Py_hash_t y = PyObject_Hash(a->im_func);
@@ -333,6 +345,7 @@ method_hash(PyObject *self)
 static int
 method_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMethodObject *im = _PyMethodObject_CAST(self);
     Py_VISIT(im->im_func);
     Py_VISIT(im->im_self);
@@ -342,8 +355,8 @@ method_traverse(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 method_descr_get(PyObject *meth, PyObject *obj, PyObject *cls)
 {
-    Py_INCREF(meth);
-    return meth;
+    // Pyrona: This functions was checked and no further migration is needed
+    return PyRegion_NewRef(meth);
 }
 
 PyTypeObject PyMethod_Type = {
@@ -369,6 +382,7 @@ PyTypeObject PyMethod_Type = {
     .tp_descr_get = method_descr_get,
     .tp_new = method_new,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /* ------------------------------------------------------------------------
@@ -382,10 +396,16 @@ class instancemethod "PyInstanceMethodObject *" "&PyInstanceMethod_Type"
 
 PyObject *
 PyInstanceMethod_New(PyObject *func) {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInstanceMethodObject *method;
     method = PyObject_GC_New(PyInstanceMethodObject,
                              &PyInstanceMethod_Type);
-    if (method == NULL) return NULL;
+    if (method == NULL)
+        return NULL;
+    if (PyRegion_AddRef(method, func)) {
+        PyObject_GC_Del(func);
+        return NULL;
+    }
     method->func = Py_NewRef(func);
     _PyObject_GC_TRACK(method);
     return (PyObject *)method;
@@ -394,6 +414,7 @@ PyInstanceMethod_New(PyObject *func) {
 PyObject *
 PyInstanceMethod_Function(PyObject *im)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyInstanceMethod_Check(im)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -412,6 +433,7 @@ static PyMemberDef instancemethod_memberlist[] = {
 static PyObject *
 instancemethod_get_doc(PyObject *self, void *context)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyObject_GetAttr(PyInstanceMethod_GET_FUNCTION(self),
                             &_Py_ID(__doc__));
 }
@@ -424,6 +446,7 @@ static PyGetSetDef instancemethod_getset[] = {
 static PyObject *
 instancemethod_getattro(PyObject *self, PyObject *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *tp = Py_TYPE(self);
     PyObject *descr = NULL;
 
@@ -436,8 +459,9 @@ instancemethod_getattro(PyObject *self, PyObject *name)
     if (descr != NULL) {
         descrgetfunc f = TP_DESCR_GET(Py_TYPE(descr));
         if (f != NULL) {
+            PyRegion_NotifyTypeUse(Py_TYPE(descr));
             PyObject *res = f(descr, self, (PyObject *)Py_TYPE(self));
-            Py_DECREF(descr);
+            PyRegion_CLEARLOCAL(descr);
             return res;
         }
         else {
@@ -450,13 +474,16 @@ instancemethod_getattro(PyObject *self, PyObject *name)
 
 static void
 instancemethod_dealloc(PyObject *self) {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyObject_GC_UNTRACK(self);
+    PyRegion_RemoveRef(self, PyInstanceMethod_GET_FUNCTION(self));
     Py_DECREF(PyInstanceMethod_GET_FUNCTION(self));
     PyObject_GC_Del(self);
 }
 
 static int
 instancemethod_traverse(PyObject *self, visitproc visit, void *arg) {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_VISIT(PyInstanceMethod_GET_FUNCTION(self));
     return 0;
 }
@@ -464,14 +491,16 @@ instancemethod_traverse(PyObject *self, visitproc visit, void *arg) {
 static PyObject *
 instancemethod_call(PyObject *self, PyObject *arg, PyObject *kw)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyObject_Call(PyInstanceMethod_GET_FUNCTION(self), arg, kw);
 }
 
 static PyObject *
 instancemethod_descr_get(PyObject *descr, PyObject *obj, PyObject *type) {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *func = PyInstanceMethod_GET_FUNCTION(descr);
     if (obj == NULL) {
-        return Py_NewRef(func);
+        return PyRegion_NewRef(func);
     }
     else
         return PyMethod_New(func, obj);
@@ -480,6 +509,7 @@ instancemethod_descr_get(PyObject *descr, PyObject *obj, PyObject *type) {
 static PyObject *
 instancemethod_richcompare(PyObject *self, PyObject *other, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInstanceMethodObject *a, *b;
     PyObject *res;
     int eq;
@@ -505,6 +535,7 @@ instancemethod_richcompare(PyObject *self, PyObject *other, int op)
 static PyObject *
 instancemethod_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *func = PyInstanceMethod_Function(self);
     PyObject *funcname, *result;
     const char *defname = "?";
@@ -518,13 +549,13 @@ instancemethod_repr(PyObject *self)
         return NULL;
     }
     if (funcname != NULL && !PyUnicode_Check(funcname)) {
-        Py_SETREF(funcname, NULL);
+        PyRegion_CLEARLOCAL(funcname);
     }
 
     result = PyUnicode_FromFormat("<instancemethod %V at %p>",
                                   funcname, defname, self);
 
-    Py_XDECREF(funcname);
+    PyRegion_CLEARLOCAL(funcname);
     return result;
 }
 
@@ -541,6 +572,7 @@ static PyObject *
 instancemethod_new_impl(PyTypeObject *type, PyObject *function)
 /*[clinic end generated code: output=5e0397b2bdb750be input=cfc54e8b973664a8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyCallable_Check(function)) {
         PyErr_SetString(PyExc_TypeError,
                         "first argument must be callable");
@@ -568,4 +600,5 @@ PyTypeObject PyInstanceMethod_Type = {
     .tp_descr_get = instancemethod_descr_get,
     .tp_new = instancemethod_new,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
