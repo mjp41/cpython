@@ -2097,6 +2097,7 @@ PyTypeObject PyDictProxy_Type = {
     0,                                          /* tp_alloc */
     mappingproxy_new,                           /* tp_new */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 PyTypeObject PyProperty_Type = {
@@ -2142,4 +2143,5 @@ PyTypeObject PyProperty_Type = {
     PyType_GenericNew,                          /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
     .tp_reachable = _PyObject_ReachableVisitType,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
