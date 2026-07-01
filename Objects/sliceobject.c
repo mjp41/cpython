@@ -27,6 +27,7 @@ this type and there is exactly one in existence.
 static PyObject *
 ellipsis_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PyTuple_GET_SIZE(args) || (kwargs && PyDict_GET_SIZE(kwargs))) {
         PyErr_SetString(PyExc_TypeError, "EllipsisType takes no arguments");
         return NULL;
@@ -37,6 +38,8 @@ ellipsis_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 static void
 ellipsis_dealloc(PyObject *ellipsis)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* This should never get called, but we also don't want to SEGV if
      * we accidentally decref Ellipsis out of existence. Instead,
      * since Ellipsis is an immortal object, re-set the reference count.
@@ -47,12 +50,14 @@ ellipsis_dealloc(PyObject *ellipsis)
 static PyObject *
 ellipsis_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyUnicode_FromString("Ellipsis");
 }
 
 static PyObject *
 ellipsis_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyUnicode_FromString("Ellipsis");
 }
 
@@ -105,6 +110,7 @@ PyTypeObject PyEllipsis_Type = {
     0,                                  /* tp_init */
     0,                                  /* tp_alloc */
     ellipsis_new,                       /* tp_new */
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 PyObject _Py_EllipsisObject = _PyObject_HEAD_INIT(&PyEllipsis_Type);
@@ -119,6 +125,7 @@ PyObject _Py_EllipsisObject = _PyObject_HEAD_INIT(&PyEllipsis_Type);
 static PySliceObject *
 _PyBuildSlice_Consume2(PyObject *start, PyObject *stop, PyObject *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(start != NULL && stop != NULL && step != NULL);
     PySliceObject *obj = _Py_FREELIST_POP(PySliceObject, slices);
     if (obj == NULL) {
@@ -152,6 +159,7 @@ error:
 PyObject *
 PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (step == NULL) {
         step = Py_None;
     }
@@ -171,6 +179,7 @@ PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
 PyObject *
 _PyBuildSlice_ConsumeRefs(PyObject *start, PyObject *stop)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(start != NULL && stop != NULL);
     return (PyObject *)_PyBuildSlice_Consume2(start, stop, Py_None);
 }
@@ -178,18 +187,22 @@ _PyBuildSlice_ConsumeRefs(PyObject *start, PyObject *stop)
 PyObject *
 _PySlice_FromIndices(Py_ssize_t istart, Py_ssize_t istop)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *start, *end, *slice;
     start = PyLong_FromSsize_t(istart);
     if (!start)
         return NULL;
     end = PyLong_FromSsize_t(istop);
     if (!end) {
+        assert(!PyRegion_NeedsReadBarrier(start));
         Py_DECREF(start);
         return NULL;
     }
 
     slice = PySlice_New(start, end, NULL);
+    assert(!PyRegion_NeedsReadBarrier(start));
     Py_DECREF(start);
+    assert(!PyRegion_NeedsReadBarrier(end));
     Py_DECREF(end);
     return slice;
 }
@@ -198,6 +211,7 @@ int
 PySlice_GetIndices(PyObject *_r, Py_ssize_t length,
                    Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *r = (PySliceObject*)_r;
     /* XXX support long ints */
     if (r->step == Py_None) {
@@ -230,6 +244,7 @@ int
 PySlice_Unpack(PyObject *_r,
                Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t *step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *r = (PySliceObject*)_r;
     /* this is harder to get right than you might think */
 
@@ -276,6 +291,8 @@ Py_ssize_t
 PySlice_AdjustIndices(Py_ssize_t length,
                       Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t step)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* this is harder to get right than you might think */
 
     assert(step != 0);
@@ -321,6 +338,7 @@ PySlice_GetIndicesEx(PyObject *_r, Py_ssize_t length,
                      Py_ssize_t *start, Py_ssize_t *stop, Py_ssize_t *step,
                      Py_ssize_t *slicelength)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySlice_Unpack(_r, start, stop, step) < 0)
         return -1;
     *slicelength = PySlice_AdjustIndices(length, start, stop, *step);
@@ -330,6 +348,7 @@ PySlice_GetIndicesEx(PyObject *_r, Py_ssize_t length,
 static PyObject *
 slice_new(PyTypeObject *type, PyObject *args, PyObject *kw)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *start, *stop, *step;
 
     start = stop = step = NULL;
@@ -358,17 +377,19 @@ Create a slice object.  This is used for extended slicing (e.g. a[0:10:2]).");
 static void
 slice_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *r = _PySlice_CAST(op);
     PyObject_GC_UnTrack(r);
-    Py_DECREF(r->step);
-    Py_DECREF(r->start);
-    Py_DECREF(r->stop);
+    PyRegion_CLEAR(r, r->step);
+    PyRegion_CLEAR(r, r->start);
+    PyRegion_CLEAR(r, r->stop);
     _Py_FREELIST_FREE_OBJ(slices, r, PyObject_GC_Del);
 }
 
 static PyObject *
 slice_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *r = _PySlice_CAST(op);
     return PyUnicode_FromFormat("slice(%R, %R, %R)",
                                 r->start, r->stop, r->step);
@@ -387,6 +408,7 @@ static PyMemberDef slice_members[] = {
 static PyObject*
 evaluate_slice_index(PyObject *v)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (_PyIndex_Check(v)) {
         return PyNumber_Index(v);
     }
@@ -407,6 +429,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
                         PyObject **start_ptr, PyObject **stop_ptr,
                         PyObject **step_ptr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *start=NULL, *stop=NULL, *step=NULL;
     PyObject *upper=NULL, *lower=NULL;
     int step_is_negative, cmp_result;
@@ -445,11 +468,16 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
     }
     else {
         lower = _PyLong_GetZero();
-        upper = Py_NewRef(length);
+        if (PyRegion_NeedsReadBarrier(length)) {
+            upper = PyLong_FromSsize_t(PyLong_AsSsize_t(length));
+        } else {
+            upper = Py_NewRef(length);
+        }
     }
 
     /* Compute start. */
     if (self->start == Py_None) {
+        assert(!PyRegion_NeedsReadBarrier(upper) && !PyRegion_NeedsReadBarrier(lower));
         start = Py_NewRef(step_is_negative ? upper : lower);
     }
     else {
@@ -460,6 +488,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
         if (_PyLong_IsNegative((PyLongObject *)start)) {
             /* start += length */
             PyObject *tmp = PyNumber_Add(start, length);
+            assert(!PyRegion_NeedsReadBarrier(start) && !PyRegion_NeedsReadBarrier(tmp));
             Py_SETREF(start, tmp);
             if (start == NULL)
                 goto error;
@@ -468,6 +497,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
             if (cmp_result < 0)
                 goto error;
             if (cmp_result) {
+                assert(!PyRegion_NeedsReadBarrier(start) && !PyRegion_NeedsReadBarrier(lower));
                 Py_SETREF(start, Py_NewRef(lower));
             }
         }
@@ -476,6 +506,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
             if (cmp_result < 0)
                 goto error;
             if (cmp_result) {
+                assert(!PyRegion_NeedsReadBarrier(start) && !PyRegion_NeedsReadBarrier(upper));
                 Py_SETREF(start, Py_NewRef(upper));
             }
         }
@@ -483,6 +514,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
 
     /* Compute stop. */
     if (self->stop == Py_None) {
+        assert(!PyRegion_NeedsReadBarrier(upper) && !PyRegion_NeedsReadBarrier(lower));
         stop = Py_NewRef(step_is_negative ? lower : upper);
     }
     else {
@@ -493,6 +525,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
         if (_PyLong_IsNegative((PyLongObject *)stop)) {
             /* stop += length */
             PyObject *tmp = PyNumber_Add(stop, length);
+            assert(!PyRegion_NeedsReadBarrier(stop) && !PyRegion_NeedsReadBarrier(tmp));
             Py_SETREF(stop, tmp);
             if (stop == NULL)
                 goto error;
@@ -501,6 +534,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
             if (cmp_result < 0)
                 goto error;
             if (cmp_result) {
+                assert(!PyRegion_NeedsReadBarrier(stop) && !PyRegion_NeedsReadBarrier(lower));
                 Py_SETREF(stop, Py_NewRef(lower));
             }
         }
@@ -509,6 +543,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
             if (cmp_result < 0)
                 goto error;
             if (cmp_result) {
+                assert(!PyRegion_NeedsReadBarrier(stop) && !PyRegion_NeedsReadBarrier(upper));
                 Py_SETREF(stop, Py_NewRef(upper));
             }
         }
@@ -517,16 +552,22 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
     *start_ptr = start;
     *stop_ptr = stop;
     *step_ptr = step;
+    assert(!PyRegion_NeedsReadBarrier(upper) && !PyRegion_NeedsReadBarrier(lower));
     Py_DECREF(upper);
     Py_DECREF(lower);
     return 0;
 
   error:
     *start_ptr = *stop_ptr = *step_ptr = NULL;
+    assert(!PyRegion_NeedsReadBarrier(start));
     Py_XDECREF(start);
+    assert(!PyRegion_NeedsReadBarrier(stop));
     Py_XDECREF(stop);
+    assert(!PyRegion_NeedsReadBarrier(step));
     Py_XDECREF(step);
+    assert(!PyRegion_NeedsReadBarrier(upper));
     Py_XDECREF(upper);
+    assert(!PyRegion_NeedsReadBarrier(lower));
     Py_XDECREF(lower);
     return -1;
 }
@@ -536,6 +577,7 @@ _PySlice_GetLongIndices(PySliceObject *self, PyObject *length,
 static PyObject*
 slice_indices(PyObject *op, PyObject* len)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *self = _PySlice_CAST(op);
     PyObject *start, *stop, *step;
     PyObject *length;
@@ -549,11 +591,13 @@ slice_indices(PyObject *op, PyObject* len)
     if (_PyLong_IsNegative((PyLongObject *)length)) {
         PyErr_SetString(PyExc_ValueError,
                         "length should not be negative");
+        assert(!PyRegion_NeedsReadBarrier(length));
         Py_DECREF(length);
         return NULL;
     }
 
     error = _PySlice_GetLongIndices(self, length, &start, &stop, &step);
+    assert(!PyRegion_NeedsReadBarrier(length));
     Py_DECREF(length);
     if (error == -1)
         return NULL;
@@ -572,6 +616,7 @@ handling of normal slices.");
 static PyObject *
 slice_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *self = _PySlice_CAST(op);
     return Py_BuildValue("O(OOO)", Py_TYPE(self), self->start, self->stop, self->step);
 }
@@ -587,6 +632,7 @@ static PyMethodDef slice_methods[] = {
 static PyObject *
 slice_richcompare(PyObject *v, PyObject *w, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PySlice_Check(v) || !PySlice_Check(w))
         Py_RETURN_NOTIMPLEMENTED;
 
@@ -604,6 +650,7 @@ slice_richcompare(PyObject *v, PyObject *w, int op)
             res = Py_False;
             break;
         }
+        assert(!PyRegion_NeedsReadBarrier(res));
         return Py_NewRef(res);
     }
 
@@ -621,12 +668,15 @@ slice_richcompare(PyObject *v, PyObject *w, int op)
                                 ((PySliceObject *)w)->stop,
                                 ((PySliceObject *)w)->step);
     if (t2 == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(t1));
         Py_DECREF(t1);
         return NULL;
     }
 
     PyObject *res = PyObject_RichCompare(t1, t2, op);
+    assert(!PyRegion_NeedsReadBarrier(t1));
     Py_DECREF(t1);
+    assert(!PyRegion_NeedsReadBarrier(t2));
     Py_DECREF(t2);
     return res;
 }
@@ -634,6 +684,7 @@ slice_richcompare(PyObject *v, PyObject *w, int op)
 static int
 slice_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *v = _PySlice_CAST(op);
     Py_VISIT(v->start);
     Py_VISIT(v->stop);
@@ -657,6 +708,7 @@ slice_traverse(PyObject *op, visitproc visit, void *arg)
 static Py_hash_t
 slice_hash(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PySliceObject *v = _PySlice_CAST(op);
     Py_uhash_t acc = _PyHASH_XXPRIME_5;
 #define _PyHASH_SLICE_PART(com) { \
@@ -718,4 +770,5 @@ PyTypeObject PySlice_Type = {
     0,                                          /* tp_alloc */
     slice_new,                                  /* tp_new */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };

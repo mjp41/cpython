@@ -212,6 +212,20 @@ do_mklist(const char **p_format, va_list *p_va, char endchar, Py_ssize_t n)
             Py_DECREF(v);
             return NULL;
         }
+        /* Pyrona: 'v' is a freshly-created (local) list, so this records the
+           local borrow for 'w'. PyList_SET_ITEM is a raw macro that writes the
+           pointer without a region barrier; without this AddRef the region of
+           'w' is under-counted, because list_dealloc calls PyRegion_RemoveRef
+           on every element. (AddRef from a local source cannot fail here, but
+           handle it per the migration guide.) */
+        if (PyRegion_AddRef(v, w)) {
+            assert(!PyRegion_NeedsReadBarrier(w));
+            Py_DECREF(w);
+            do_ignore(p_format, p_va, endchar, n - i - 1);
+            assert(!PyRegion_NeedsReadBarrier(v));
+            Py_DECREF(v);
+            return NULL;
+        }
         PyList_SET_ITEM(v, i, w);
     }
     if (!check_end(p_format, endchar)) {
@@ -270,6 +284,20 @@ do_mktuple(const char **p_format, va_list *p_va, char endchar, Py_ssize_t n)
         PyObject *w = do_mkvalue(p_format, p_va);
         if (w == NULL) {
             do_ignore(p_format, p_va, endchar, n - i - 1);
+            Py_DECREF(v);
+            return NULL;
+        }
+        /* Pyrona: 'v' is a freshly-created (local) tuple, so this records the
+           local borrow for 'w'. PyTuple_SET_ITEM is a raw macro that writes the
+           pointer without a region barrier; without this AddRef the region of
+           'w' is under-counted, because tupledealloc calls PyRegion_RemoveRef
+           on every element. (AddRef from a local source cannot fail here, but
+           handle it per the migration guide.) */
+        if (PyRegion_AddRef(v, w)) {
+            assert(!PyRegion_NeedsReadBarrier(w));
+            Py_DECREF(w);
+            do_ignore(p_format, p_va, endchar, n - i - 1);
+            assert(!PyRegion_NeedsReadBarrier(v));
             Py_DECREF(v);
             return NULL;
         }

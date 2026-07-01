@@ -179,6 +179,17 @@ int init_state(struct _Py_immutability_state *state)
     if (_PyImmutability_SetFreezable((PyObject*)&PyModule_Type, _Py_FREEZABLE_PROXY)) {
         return -1;
     }
+
+    PyObject *builtin_static_objects[] = {
+        Py_Ellipsis,
+        Py_NotImplemented,
+        NULL
+    };
+    for (int i = 0; builtin_static_objects[i] != NULL; i++) {
+        if (_PyImmutability_Freeze(builtin_static_objects[i])) {
+            return -1;
+        }
+    }
     return 0;
 }
 

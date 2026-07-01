@@ -765,7 +765,33 @@ gh_99240_clear_args(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+/* Pyrona: helpers to exercise Py_BuildValue's container barriers directly.
+   do_mktuple / do_mklist must register a region borrow for each stored element
+   ('O' format); these expose the tuple and list paths to Python so a region
+   test can observe the LRC bookkeeping. */
+static PyObject *
+pybuildvalue_tuple(PyObject *self, PyObject *args)
+{
+    PyObject *a, *b, *c;
+    if (!PyArg_ParseTuple(args, "OOO", &a, &b, &c)) {
+        return NULL;
+    }
+    return Py_BuildValue("(OOO)", a, b, c);
+}
+
+static PyObject *
+pybuildvalue_list(PyObject *self, PyObject *args)
+{
+    PyObject *a, *b, *c;
+    if (!PyArg_ParseTuple(args, "OOO", &a, &b, &c)) {
+        return NULL;
+    }
+    return Py_BuildValue("[OOO]", a, b, c);
+}
+
 static PyMethodDef test_methods[] = {
+    {"pybuildvalue_tuple",      pybuildvalue_tuple,              METH_VARARGS},
+    {"pybuildvalue_list",       pybuildvalue_list,               METH_VARARGS},
     {"get_args",                get_args,                        METH_VARARGS},
     {"get_kwargs", _PyCFunction_CAST(get_kwargs), METH_VARARGS|METH_KEYWORDS},
     {"getargs_B",               getargs_B,                       METH_VARARGS},
