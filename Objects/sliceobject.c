@@ -110,6 +110,7 @@ PyTypeObject PyEllipsis_Type = {
     0,                                  /* tp_init */
     0,                                  /* tp_alloc */
     ellipsis_new,                       /* tp_new */
+    .tp_reachable = _PyObject_ReachableVisitType,
     .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 

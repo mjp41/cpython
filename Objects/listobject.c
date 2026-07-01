@@ -4220,6 +4220,7 @@ PyTypeObject PyListIter_Type = {
     listiter_next,                              /* tp_iternext */
     listiter_methods,                           /* tp_methods */
     0,                                          /* tp_members */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 

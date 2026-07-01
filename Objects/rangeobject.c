@@ -910,6 +910,9 @@ PyTypeObject PyRange_Type = {
 static PyObject *
 rangeiter_next(PyObject *op)
 {
+    if (!Py_CHECKWRITE(op)) {
+        return NULL;
+    }
     // Pyrona: This functions was checked and no further migration is needed
     _PyRangeIterObject *r = (_PyRangeIterObject*)op;
     if (r->len > 0) {

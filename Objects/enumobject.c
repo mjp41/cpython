@@ -48,6 +48,7 @@ static PyObject *
 enum_new_impl(PyTypeObject *type, PyObject *iterable, PyObject *start)
 /*[clinic end generated code: output=e95e6e439f812c10 input=782e4911efcb8acf]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     enumobject *en;
 
     en = (enumobject *)type->tp_alloc(type, 0);
@@ -67,7 +68,7 @@ enum_new_impl(PyTypeObject *type, PyObject *iterable, PyObject *start)
             en->en_longindex = start;
         } else {
             en->en_longindex = NULL;
-            Py_DECREF(start);
+            PyRegion_CLEARLOCAL(start);
         }
     } else {
         en->en_index = 0;
@@ -90,6 +91,7 @@ enum_new_impl(PyTypeObject *type, PyObject *iterable, PyObject *start)
 static int check_keyword(PyObject *kwnames, int index,
                          const char *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *kw = PyTuple_GET_ITEM(kwnames, index);
     if (!_PyUnicode_EqualToASCIIString(kw, name)) {
         PyErr_Format(PyExc_TypeError,
@@ -104,6 +106,7 @@ static PyObject *
 enumerate_vectorcall(PyObject *type, PyObject *const *args,
                      size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *tp = _PyType_CAST(type);
     Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
     Py_ssize_t nkwargs = 0;
@@ -155,17 +158,19 @@ enumerate_vectorcall(PyObject *type, PyObject *const *args,
 static void
 enum_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     enumobject *en = _enumobject_CAST(op);
     PyObject_GC_UnTrack(en);
-    Py_XDECREF(en->en_sit);
-    Py_XDECREF(en->en_result);
-    Py_XDECREF(en->en_longindex);
+    PyRegion_CLEAR(en, en->en_sit);
+    PyRegion_CLEAR(en, en->en_result);
+    PyRegion_CLEAR(en, en->en_longindex);
     Py_TYPE(en)->tp_free(en);
 }
 
 static int
 enum_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     enumobject *en = _enumobject_CAST(op);
     Py_VISIT(en->en_sit);
     Py_VISIT(en->en_result);
@@ -178,6 +183,8 @@ enum_traverse(PyObject *op, visitproc visit, void *arg)
 static inline PyObject *
 increment_longindex_lock_held(enumobject *en)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+    assert(!PyRegion_NeedsReadBarrier(en->en_longindex));
     PyObject *next_index = en->en_longindex;
     if (next_index == NULL) {
         next_index = PyLong_FromSsize_t(PY_SSIZE_T_MAX);
@@ -190,6 +197,9 @@ increment_longindex_lock_held(enumobject *en)
     if (stepped_up == NULL) {
         return NULL;
     }
+    if (PyRegion_AddRef(en, stepped_up)) {
+        return NULL;
+    }
     en->en_longindex = stepped_up;
     return next_index;
 }
@@ -197,6 +207,7 @@ increment_longindex_lock_held(enumobject *en)
 static PyObject *
 enum_next_long(enumobject *en, PyObject* next_item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result = en->en_result;
     PyObject *next_index;
     PyObject *old_index;
@@ -207,27 +218,38 @@ enum_next_long(enumobject *en, PyObject* next_item)
     next_index = increment_longindex_lock_held(en);
     Py_END_CRITICAL_SECTION();
     if (next_index == NULL) {
-        Py_DECREF(next_item);
+        PyRegion_CLEARLOCAL(next_item);
         return NULL;
     }
 
-    if (_PyObject_IsUniquelyReferenced(result)) {
-        Py_INCREF(result);
-        old_index = PyTuple_GET_ITEM(result, 0);
-        old_item = PyTuple_GET_ITEM(result, 1);
-        PyTuple_SET_ITEM(result, 0, next_index);
-        PyTuple_SET_ITEM(result, 1, next_item);
-        Py_DECREF(old_index);
-        Py_DECREF(old_item);
-        // bpo-42536: The GC may have untracked this result tuple. Since we're
-        // recycling it, make sure it's tracked again:
-        _PyTuple_Recycle(result);
-        return result;
+    if (result != NULL) {
+        // Regions: If the result is not local from a previous iteration or
+        // the `next_item` item is not local we want to turn off this optimization.
+        // Same for cases where the user stores the result somewhere.
+        if (_PyObject_IsUniquelyReferenced(result)
+            && PyRegion_IsLocal(result) && PyRegion_IsLocal(next_item)
+        ) {
+            assert(!PyRegion_NeedsReadBarrier(result));
+            Py_INCREF(result);
+            old_index = PyTuple_GET_ITEM(result, 0);
+            old_item = PyTuple_GET_ITEM(result, 1);
+            PyTuple_SET_ITEM(result, 0, next_index);
+            PyTuple_SET_ITEM(result, 1, next_item);
+            PyRegion_CLEARLOCAL(old_index);
+            PyRegion_CLEARLOCAL(old_item);
+            // bpo-42536: The GC may have untracked this result tuple. Since we're
+            // recycling it, make sure it's tracked again:
+            _PyTuple_Recycle(result);
+            return result;
+        } else {
+            PyRegion_CLEAR(en, en->en_result);
+        }
     }
     result = PyTuple_New(2);
     if (result == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(next_index));
         Py_DECREF(next_index);
-        Py_DECREF(next_item);
+        PyRegion_CLEARLOCAL(next_item);
         return NULL;
     }
     PyTuple_SET_ITEM(result, 0, next_index);
@@ -238,6 +260,7 @@ enum_next_long(enumobject *en, PyObject* next_item)
 static PyObject *
 enum_next(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     enumobject *en = _enumobject_CAST(op);
     PyObject *next_index;
     PyObject *next_item;
@@ -246,6 +269,7 @@ enum_next(PyObject *op)
     PyObject *old_index;
     PyObject *old_item;
 
+    PyRegion_NotifyTypeUse(Py_TYPE(it));
     next_item = (*Py_TYPE(it)->tp_iternext)(it);
     if (next_item == NULL)
         return NULL;
@@ -256,28 +280,38 @@ enum_next(PyObject *op)
 
     next_index = PyLong_FromSsize_t(en_index);
     if (next_index == NULL) {
-        Py_DECREF(next_item);
+        PyRegion_CLEARLOCAL(next_item);
         return NULL;
     }
     FT_ATOMIC_STORE_SSIZE_RELAXED(en->en_index, en_index + 1);
 
-    if (_PyObject_IsUniquelyReferenced(result)) {
-        Py_INCREF(result);
-        old_index = PyTuple_GET_ITEM(result, 0);
-        old_item = PyTuple_GET_ITEM(result, 1);
-        PyTuple_SET_ITEM(result, 0, next_index);
-        PyTuple_SET_ITEM(result, 1, next_item);
-        Py_DECREF(old_index);
-        Py_DECREF(old_item);
-        // bpo-42536: The GC may have untracked this result tuple. Since we're
-        // recycling it, make sure it's tracked again:
-        _PyTuple_Recycle(result);
-        return result;
+    if (result != NULL) {
+        // Regions: Only do this optimization if it seems like this won't effect LRCs
+        if (_PyObject_IsUniquelyReferenced(result)
+            && PyRegion_IsLocal(result) && PyRegion_IsLocal(next_item)
+        ) {
+            assert(!PyRegion_NeedsReadBarrier(result));
+            Py_INCREF(result);
+            old_index = PyTuple_GET_ITEM(result, 0);
+            old_item = PyTuple_GET_ITEM(result, 1);
+            PyTuple_SET_ITEM(result, 0, next_index);
+            PyTuple_SET_ITEM(result, 1, next_item);
+            assert(!PyRegion_NeedsReadBarrier(old_index));
+            Py_DECREF(old_index);
+            PyRegion_CLEARLOCAL(old_item);
+            // bpo-42536: The GC may have untracked this result tuple. Since we're
+            // recycling it, make sure it's tracked again:
+            _PyTuple_Recycle(result);
+            return result;
+        } else {
+            PyRegion_CLEAR(en, en->en_result);
+        }
     }
     result = PyTuple_New(2);
     if (result == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(next_index));
         Py_DECREF(next_index);
-        Py_DECREF(next_item);
+        PyRegion_CLEARLOCAL(next_item);
         return NULL;
     }
     PyTuple_SET_ITEM(result, 0, next_index);
@@ -288,6 +322,7 @@ enum_next(PyObject *op)
 static PyObject *
 enum_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     enumobject *en = _enumobject_CAST(op);
     PyObject *result;
     Py_BEGIN_CRITICAL_SECTION(en);
@@ -351,7 +386,8 @@ PyTypeObject PyEnum_Type = {
     enum_new,                       /* tp_new */
     PyObject_GC_Del,                /* tp_free */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
-    .tp_vectorcall = enumerate_vectorcall
+    .tp_vectorcall = enumerate_vectorcall,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /* Reversed Object ***************************************************************/
