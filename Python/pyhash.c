@@ -142,6 +142,7 @@ Py_HashPointer(const void *ptr)
 Py_hash_t
 PyObject_GenericHash(PyObject *obj)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return Py_HashPointer(obj);
 }
 

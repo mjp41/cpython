@@ -3715,6 +3715,7 @@ static PyObject *
 type_mro_impl(PyTypeObject *self)
 /*[clinic end generated code: output=bffc4a39b5b57027 input=28414f4e156db28d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *seq;
     seq = mro_implementation(self);
     if (seq != NULL && !PyList_Check(seq)) {
@@ -7154,6 +7155,7 @@ static PyObject *
 type___sizeof___impl(PyTypeObject *self)
 /*[clinic end generated code: output=766f4f16cd3b1854 input=99398f24b9cf45d6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     size_t size;
     if (self->tp_flags & Py_TPFLAGS_HEAPTYPE) {
         PyHeapTypeObject* et = (PyHeapTypeObject*)self;
@@ -7414,6 +7416,7 @@ PyTypeObject PyType_Type = {
 static int
 excess_args(PyObject *args, PyObject *kwds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyTuple_GET_SIZE(args) ||
         (kwds && PyDict_Check(kwds) && PyDict_GET_SIZE(kwds));
 }
@@ -7421,6 +7424,7 @@ excess_args(PyObject *args, PyObject *kwds)
 static int
 object_init(PyObject *self, PyObject *args, PyObject *kwds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *type = Py_TYPE(self);
     if (excess_args(args, kwds)) {
         if (type->tp_init != object_init) {
@@ -7441,6 +7445,7 @@ object_init(PyObject *self, PyObject *args, PyObject *kwds)
 static PyObject *
 object_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (excess_args(args, kwds)) {
         if (type->tp_new != object_new) {
             PyErr_SetString(PyExc_TypeError,
@@ -7467,28 +7472,28 @@ object_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         if (abstract_methods == NULL)
             return NULL;
         sorted_methods = PySequence_List(abstract_methods);
-        Py_DECREF(abstract_methods);
+        PyRegion_CLEARLOCAL(abstract_methods);
         if (sorted_methods == NULL)
             return NULL;
         if (PyList_Sort(sorted_methods)) {
-            Py_DECREF(sorted_methods);
+            PyRegion_CLEARLOCAL(sorted_methods);
             return NULL;
         }
         comma_w_quotes_sep = PyUnicode_FromString("', '");
         if (!comma_w_quotes_sep) {
-            Py_DECREF(sorted_methods);
+            PyRegion_CLEARLOCAL(sorted_methods);
             return NULL;
         }
         joined = PyUnicode_Join(comma_w_quotes_sep, sorted_methods);
-        Py_DECREF(comma_w_quotes_sep);
+        PyRegion_CLEARLOCAL(comma_w_quotes_sep);
         if (joined == NULL)  {
-            Py_DECREF(sorted_methods);
+            PyRegion_CLEARLOCAL(sorted_methods);
             return NULL;
         }
         method_count = PyObject_Length(sorted_methods);
-        Py_DECREF(sorted_methods);
+        PyRegion_CLEARLOCAL(sorted_methods);
         if (method_count == -1) {
-            Py_DECREF(joined);
+            PyRegion_CLEARLOCAL(joined);
             return NULL;
         }
 
@@ -7498,7 +7503,7 @@ object_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
                      type->tp_name,
                      method_count > 1 ? "s" : "",
                      joined);
-        Py_DECREF(joined);
+        PyRegion_CLEARLOCAL(joined);
         return NULL;
     }
     PyObject *obj = type->tp_alloc(type, 0);
@@ -7511,12 +7516,14 @@ object_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static void
 object_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_TYPE(self)->tp_free(self);
 }
 
 static PyObject *
 object_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *type;
     PyObject *mod, *name, *rtn;
 
@@ -7525,11 +7532,11 @@ object_repr(PyObject *self)
     if (mod == NULL)
         PyErr_Clear();
     else if (!PyUnicode_Check(mod)) {
-        Py_SETREF(mod, NULL);
+        PyRegion_CLEARLOCAL(mod);
     }
     name = type_qualname((PyObject *)type, NULL);
     if (name == NULL) {
-        Py_XDECREF(mod);
+        PyRegion_CLEARLOCAL(mod);
         return NULL;
     }
     if (mod != NULL && !_PyUnicode_Equal(mod, &_Py_ID(builtins)))
@@ -7537,25 +7544,29 @@ object_repr(PyObject *self)
     else
         rtn = PyUnicode_FromFormat("<%s object at %p>",
                                   type->tp_name, self);
-    Py_XDECREF(mod);
-    Py_DECREF(name);
+    PyRegion_CLEARLOCAL(mod);
+    PyRegion_CLEARLOCAL(name);
     return rtn;
 }
 
 static PyObject *
 object_str(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unaryfunc f;
 
     f = Py_TYPE(self)->tp_repr;
-    if (f == NULL)
+    if (f == NULL) {
+        PyRegion_NotifyTypeUse(Py_TYPE(self));
         f = object_repr;
+    }
     return f(self);
 }
 
 static PyObject *
 object_richcompare(PyObject *self, PyObject *other, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
 
     switch (op) {
@@ -7574,10 +7585,11 @@ object_richcompare(PyObject *self, PyObject *other, int op)
             res = Py_NewRef(Py_NotImplemented);
             break;
         }
+        PyRegion_NotifyTypeUse(Py_TYPE(self));
         res = (*Py_TYPE(self)->tp_richcompare)(self, other, Py_EQ);
         if (res != NULL && res != Py_NotImplemented) {
             int ok = PyObject_IsTrue(res);
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
             if (ok < 0)
                 res = NULL;
             else {
@@ -7606,12 +7618,15 @@ _Py_BaseObject_RichCompare(PyObject* self, PyObject* other, int op)
 static PyObject *
 object_get_class(PyObject *self, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+    assert(!PyRegion_NeedsReadBarrier(Py_TYPE(self)));
     return Py_NewRef(Py_TYPE(self));
 }
 
 static int
 compatible_with_tp_base(PyTypeObject *child)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *parent = child->tp_base;
     return (parent != NULL &&
             child->tp_basicsize == parent->tp_basicsize &&
@@ -7623,6 +7638,7 @@ compatible_with_tp_base(PyTypeObject *child)
 static int
 same_slots_added(PyTypeObject *a, PyTypeObject *b)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *base = a->tp_base;
     Py_ssize_t size;
     PyObject *slots_a, *slots_b;
@@ -7831,7 +7847,7 @@ object_set_class_world_stopped(PyObject *self, PyTypeObject *newto)
 static int
 object_set_class(PyObject *self, PyObject *value, void *closure)
 {
-
+    // Pyrona: This functions was checked and no further migration is needed
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError,
                         "can't delete __class__ attribute");
@@ -7856,6 +7872,7 @@ object_set_class(PyObject *self, PyObject *value, void *closure)
     types_start_world();
     if (res == 0) {
         if (oldto->tp_flags & Py_TPFLAGS_HEAPTYPE) {
+            assert(!PyRegion_NeedsReadBarrier(oldto));
             Py_DECREF(oldto);
         }
 
@@ -7949,6 +7966,7 @@ _PyType_GetSlotNames(PyTypeObject *cls)
 static PyObject *
 object_getstate_default(PyObject *obj, int required)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *state;
     PyObject *slotnames;
 
@@ -7971,7 +7989,7 @@ object_getstate_default(PyObject *obj, int required)
 
     slotnames = _PyType_GetSlotNames(Py_TYPE(obj));
     if (slotnames == NULL) {
-        Py_DECREF(state);
+        PyRegion_CLEARLOCAL(state);
         return NULL;
     }
 
@@ -7990,8 +8008,8 @@ object_getstate_default(PyObject *obj, int required)
             basicsize += sizeof(PyObject *) * PyList_GET_SIZE(slotnames);
         }
         if (Py_TYPE(obj)->tp_basicsize > basicsize) {
-            Py_DECREF(slotnames);
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(slotnames);
+            PyRegion_CLEARLOCAL(state);
             PyErr_Format(PyExc_TypeError,
                          "cannot pickle '%.200s' object",
                          Py_TYPE(obj)->tp_name);
@@ -8005,8 +8023,8 @@ object_getstate_default(PyObject *obj, int required)
 
         slots = PyDict_New();
         if (slots == NULL) {
-            Py_DECREF(slotnames);
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(slotnames);
+            PyRegion_CLEARLOCAL(state);
             return NULL;
         }
 
@@ -8016,17 +8034,17 @@ object_getstate_default(PyObject *obj, int required)
 
             name = Py_NewRef(PyList_GET_ITEM(slotnames, i));
             if (PyObject_GetOptionalAttr(obj, name, &value) < 0) {
-                Py_DECREF(name);
+                PyRegion_CLEARLOCAL(name);
                 goto error;
             }
             if (value == NULL) {
-                Py_DECREF(name);
+                PyRegion_CLEARLOCAL(name);
                 /* It is not an error if the attribute is not present. */
             }
             else {
                 int err = PyDict_SetItem(slots, name, value);
-                Py_DECREF(name);
-                Py_DECREF(value);
+                PyRegion_CLEARLOCAL(name);
+                PyRegion_CLEARLOCAL(value);
                 if (err) {
                     goto error;
                 }
@@ -8043,9 +8061,9 @@ object_getstate_default(PyObject *obj, int required)
             /* We handle errors within the loop here. */
             if (0) {
               error:
-                Py_DECREF(slotnames);
-                Py_DECREF(slots);
-                Py_DECREF(state);
+                PyRegion_CLEARLOCAL(slotnames);
+                PyRegion_CLEARLOCAL(slots);
+                PyRegion_CLEARLOCAL(state);
                 return NULL;
             }
         }
@@ -8056,17 +8074,17 @@ object_getstate_default(PyObject *obj, int required)
             PyObject *state2;
 
             state2 = PyTuple_Pack(2, state, slots);
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(state);
             if (state2 == NULL) {
-                Py_DECREF(slotnames);
-                Py_DECREF(slots);
+                PyRegion_CLEARLOCAL(slotnames);
+                PyRegion_CLEARLOCAL(slots);
                 return NULL;
             }
             state = state2;
         }
-        Py_DECREF(slots);
+        PyRegion_CLEARLOCAL(slots);
     }
-    Py_DECREF(slotnames);
+    PyRegion_CLEARLOCAL(slotnames);
 
     return state;
 }
@@ -8110,6 +8128,7 @@ static PyObject *
 object___getstate___impl(PyObject *self)
 /*[clinic end generated code: output=5a2500dcb6217e9e input=692314d8fbe194ee]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return object_getstate_default(self, 0);
 }
 
@@ -8360,6 +8379,7 @@ reduce_newobj(PyObject *obj)
 static PyObject *
 _common_reduce(PyObject *self, int proto)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *copyreg, *res;
 
     if (proto >= 2)
@@ -8370,6 +8390,7 @@ _common_reduce(PyObject *self, int proto)
         return NULL;
 
     res = PyObject_CallMethod(copyreg, "_reduce_ex", "Oi", self, proto);
+    assert(!PyRegion_NeedsReadBarrier(copyreg));
     Py_DECREF(copyreg);
 
     return res;
@@ -8385,6 +8406,7 @@ static PyObject *
 object___reduce___impl(PyObject *self)
 /*[clinic end generated code: output=d4ca691f891c6e2f input=11562e663947e18b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _common_reduce(self, 0);
 }
 
@@ -8401,6 +8423,7 @@ static PyObject *
 object___reduce_ex___impl(PyObject *self, int protocol)
 /*[clinic end generated code: output=2e157766f6b50094 input=f326b43fb8a4c5ff]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *reduce;
     if (PyObject_GetOptionalAttr(self, &_Py_ID(__reduce__), &reduce) < 0) {
         return NULL;
@@ -8412,20 +8435,20 @@ object___reduce_ex___impl(PyObject *self, int protocol)
         cls = (PyObject *) Py_TYPE(self);
         clsreduce = PyObject_GetAttr(cls, &_Py_ID(__reduce__));
         if (clsreduce == NULL) {
-            Py_DECREF(reduce);
+            PyRegion_CLEARLOCAL(reduce);
             return NULL;
         }
 
         PyInterpreterState *interp = _PyInterpreterState_GET();
         override = (clsreduce != _Py_INTERP_CACHED_OBJECT(interp, objreduce));
-        Py_DECREF(clsreduce);
+        PyRegion_CLEARLOCAL(clsreduce);
         if (override) {
             PyObject *res = _PyObject_CallNoArgs(reduce);
-            Py_DECREF(reduce);
+            PyRegion_CLEARLOCAL(reduce);
             return res;
         }
         else
-            Py_DECREF(reduce);
+            PyRegion_CLEARLOCAL(reduce);
     }
 
     return _common_reduce(self, protocol);
@@ -8434,6 +8457,7 @@ object___reduce_ex___impl(PyObject *self, int protocol)
 static PyObject *
 object_subclasshook(PyObject *cls, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NOTIMPLEMENTED;
 }
 
@@ -8448,6 +8472,7 @@ PyDoc_STRVAR(object_subclasshook_doc,
 static PyObject *
 object_init_subclass(PyObject *cls, PyObject *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NONE;
 }
 
@@ -8472,6 +8497,8 @@ static PyObject *
 object___format___impl(PyObject *self, PyObject *format_spec)
 /*[clinic end generated code: output=34897efb543a974b input=b94d8feb006689ea]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Issue 7994: If we're converting to a string, we
        should reject format specifications */
     if (PyUnicode_GET_LENGTH(format_spec) > 0) {
@@ -8532,13 +8559,16 @@ object___dir___impl(PyObject *self)
         dict = PyDict_New();
     }
     else if (!PyDict_Check(dict)) {
-        Py_DECREF(dict);
+        PyRegion_CLEARLOCAL(dict);
         dict = PyDict_New();
     }
     else {
         /* Copy __dict__ to avoid mutating it. */
         PyObject *temp = PyDict_Copy(dict);
-        Py_SETREF(dict, temp);
+        if (PyRegion_XSETLOCALREF(dict, temp)) {
+            Py_XDECREF(temp);
+            goto error;
+        }
     }
 
     if (dict == NULL)
@@ -8556,8 +8586,8 @@ object___dir___impl(PyObject *self)
     result = PyDict_Keys(dict);
     /* fall through */
 error:
-    Py_XDECREF(itsclass);
-    Py_XDECREF(dict);
+    PyRegion_CLEARLOCAL(itsclass);
+    PyRegion_CLEARLOCAL(dict);
     return result;
 }
 
@@ -8621,6 +8651,7 @@ PyTypeObject PyBaseObject_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     object_new,                                 /* tp_new */
     PyObject_Free,                              /* tp_free */
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
