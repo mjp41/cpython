@@ -3581,6 +3581,7 @@ _PyLong_Frexp(PyLongObject *a, int64_t *e)
 double
 PyLong_AsDouble(PyObject *v)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int64_t exponent;
     double x;
 

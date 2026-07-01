@@ -346,6 +346,7 @@ _Py_string_to_number_with_underscores(
     const char *s, Py_ssize_t orig_len, const char *what, PyObject *obj, void *arg,
     PyObject *(*innerfunc)(const char *, Py_ssize_t, void *))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char prev;
     const char *p, *last;
     char *dup, *end;

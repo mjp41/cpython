@@ -31,12 +31,14 @@ class float "PyObject *" "&PyFloat_Type"
 double
 PyFloat_GetMax(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return DBL_MAX;
 }
 
 double
 PyFloat_GetMin(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return DBL_MIN;
 }
 
@@ -81,6 +83,7 @@ static PyStructSequence_Desc floatinfo_desc = {
 PyObject *
 PyFloat_GetInfo(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject* floatinfo;
     int pos = 0;
 
@@ -123,6 +126,8 @@ PyFloat_GetInfo(void)
 PyObject *
 PyFloat_FromDouble(double fval)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     PyFloatObject *op = _Py_FREELIST_POP(PyFloatObject, floats);
     if (op == NULL) {
         op = PyObject_Malloc(sizeof(PyFloatObject));
@@ -137,6 +142,7 @@ PyFloat_FromDouble(double fval)
 
 _PyStackRef _PyFloat_FromDouble_ConsumeInputs(_PyStackRef left, _PyStackRef right, double value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStackRef_CLOSE_SPECIALIZED(left, _PyFloat_ExactDealloc);
     PyStackRef_CLOSE_SPECIALIZED(right, _PyFloat_ExactDealloc);
     return PyStackRef_FromPyObjectSteal(PyFloat_FromDouble(value));
@@ -145,6 +151,7 @@ _PyStackRef _PyFloat_FromDouble_ConsumeInputs(_PyStackRef left, _PyStackRef righ
 static PyObject *
 float_from_string_inner(const char *s, Py_ssize_t len, void *obj)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double x;
     const char *end;
     const char *last = s + len;
@@ -185,6 +192,7 @@ float_from_string_inner(const char *s, Py_ssize_t len, void *obj)
 PyObject *
 PyFloat_FromString(PyObject *v)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *s;
     PyObject *s_buffer = NULL;
     Py_ssize_t len;
@@ -228,13 +236,14 @@ PyFloat_FromString(PyObject *v)
     result = _Py_string_to_number_with_underscores(s, len, "float", v, v,
                                                    float_from_string_inner);
     PyBuffer_Release(&view);
-    Py_XDECREF(s_buffer);
+    PyRegion_CLEARLOCAL(s_buffer);
     return result;
 }
 
 void
 _PyFloat_ExactDealloc(PyObject *obj)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyFloat_CheckExact(obj));
     _Py_FREELIST_FREE_OBJ(floats, obj, PyObject_Free);
 }
@@ -242,6 +251,7 @@ _PyFloat_ExactDealloc(PyObject *obj)
 static void
 float_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyFloat_Check(op));
     if (PyFloat_CheckExact(op))
         _PyFloat_ExactDealloc(op);
@@ -252,6 +262,7 @@ float_dealloc(PyObject *op)
 double
 PyFloat_AsDouble(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyNumberMethods *nb;
     PyObject *res;
     double val;
@@ -273,7 +284,7 @@ PyFloat_AsDouble(PyObject *op)
                 return -1;
             }
             double val = PyLong_AsDouble(res);
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
             return val;
         }
         PyErr_Format(PyExc_TypeError, "must be real number, not %.50s",
@@ -281,6 +292,7 @@ PyFloat_AsDouble(PyObject *op)
         return -1;
     }
 
+    PyRegion_NotifyTypeUse(Py_TYPE(op));
     res = (*nb->nb_float) (op);
     if (res == NULL) {
         return -1;
@@ -290,7 +302,7 @@ PyFloat_AsDouble(PyObject *op)
             PyErr_Format(PyExc_TypeError,
                          "%T.__float__() must return a float, not %T",
                          op, res);
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
             return -1;
         }
         if (PyErr_WarnFormat(PyExc_DeprecationWarning, 1,
@@ -298,13 +310,13 @@ PyFloat_AsDouble(PyObject *op)
                 "The ability to return an instance of a strict subclass of float "
                 "is deprecated, and may be removed in a future version of Python.",
                 op, res)) {
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
             return -1;
         }
     }
 
     val = PyFloat_AS_DOUBLE(res);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     return val;
 }
 
@@ -325,6 +337,8 @@ PyFloat_AsDouble(PyObject *op)
 int
 _Py_convert_int_to_double(PyObject **v, double *dbl)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     PyObject *obj = *v;
 
     if (PyLong_Check(obj)) {
@@ -344,6 +358,7 @@ _Py_convert_int_to_double(PyObject **v, double *dbl)
 static PyObject *
 float_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyFloatObject *v = _PyFloat_CAST(op);
     PyObject *result;
     char *buf;
@@ -481,8 +496,12 @@ float_richcompare(PyObject *v, PyObject *w, int op)
                 if (ww == NULL)
                     goto Error;
             }
-            else
+            else {
+                if (PyRegion_AddLocalRef(ww)) {
+                    goto Error;
+                }
                 Py_INCREF(ww);
+            }
 
             fracpart = modf(i, &intpart);
             vv = PyLong_FromDouble(intpart);
@@ -498,11 +517,14 @@ float_richcompare(PyObject *v, PyObject *w, int op)
                 temp = _PyLong_Lshift(ww, 1);
                 if (temp == NULL)
                     goto Error;
-                Py_SETREF(ww, temp);
+                if (PyRegion_XSETLOCALREF(ww, temp)) {
+                    goto Error;
+                }
 
                 temp = _PyLong_Lshift(vv, 1);
                 if (temp == NULL)
                     goto Error;
+                assert(!PyRegion_NeedsReadBarrier(vv));
                 Py_SETREF(vv, temp);
 
                 temp = PyNumber_Or(vv, _PyLong_GetOne());
@@ -516,8 +538,9 @@ float_richcompare(PyObject *v, PyObject *w, int op)
                 goto Error;
             result = PyBool_FromLong(r);
          Error:
+            assert(!PyRegion_NeedsReadBarrier(vv));
             Py_XDECREF(vv);
-            Py_XDECREF(ww);
+            PyRegion_CLEARLOCAL(ww);
             return result;
         }
     } /* else if (PyLong_Check(w)) */
@@ -555,6 +578,7 @@ float_richcompare(PyObject *v, PyObject *w, int op)
 static Py_hash_t
 float_hash(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyFloatObject *v = _PyFloat_CAST(op);
     return _Py_HashDouble(op, v->ob_fval);
 }
@@ -562,6 +586,7 @@ float_hash(PyObject *op)
 static PyObject *
 float_add(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double a,b;
     CONVERT_TO_DOUBLE(v, a);
     CONVERT_TO_DOUBLE(w, b);
@@ -572,6 +597,7 @@ float_add(PyObject *v, PyObject *w)
 static PyObject *
 float_sub(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double a,b;
     CONVERT_TO_DOUBLE(v, a);
     CONVERT_TO_DOUBLE(w, b);
@@ -582,6 +608,7 @@ float_sub(PyObject *v, PyObject *w)
 static PyObject *
 float_mul(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double a,b;
     CONVERT_TO_DOUBLE(v, a);
     CONVERT_TO_DOUBLE(w, b);
@@ -592,6 +619,7 @@ float_mul(PyObject *v, PyObject *w)
 static PyObject *
 float_div(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double a,b;
     CONVERT_TO_DOUBLE(v, a);
     CONVERT_TO_DOUBLE(w, b);
@@ -607,6 +635,7 @@ float_div(PyObject *v, PyObject *w)
 static PyObject *
 float_rem(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double vx, wx;
     double mod;
     CONVERT_TO_DOUBLE(v, vx);
@@ -635,6 +664,7 @@ float_rem(PyObject *v, PyObject *w)
 static void
 _float_div_mod(double vx, double wx, double *floordiv, double *mod)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double div;
     *mod = fmod(vx, wx);
     /* fmod is typically exact, so vx-mod is *mathematically* an
@@ -673,6 +703,7 @@ _float_div_mod(double vx, double wx, double *floordiv, double *mod)
 static PyObject *
 float_divmod(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double vx, wx;
     double mod, floordiv;
     CONVERT_TO_DOUBLE(v, vx);
@@ -688,6 +719,7 @@ float_divmod(PyObject *v, PyObject *w)
 static PyObject *
 float_floor_div(PyObject *v, PyObject *w)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double vx, wx;
     double mod, floordiv;
     CONVERT_TO_DOUBLE(v, vx);
@@ -707,6 +739,7 @@ float_floor_div(PyObject *v, PyObject *w)
 static PyObject *
 float_pow(PyObject *v, PyObject *w, PyObject *z)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double iv, iw, ix;
     int negate_result = 0;
 
@@ -828,6 +861,7 @@ float_pow(PyObject *v, PyObject *w, PyObject *z)
 static PyObject *
 float_neg(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyFloatObject *v = _PyFloat_CAST(op);
     return PyFloat_FromDouble(-v->ob_fval);
 }
@@ -835,6 +869,7 @@ float_neg(PyObject *op)
 static PyObject *
 float_abs(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyFloatObject *v = _PyFloat_CAST(op);
     return PyFloat_FromDouble(fabs(v->ob_fval));
 }
@@ -842,6 +877,7 @@ float_abs(PyObject *op)
 static int
 float_bool(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyFloatObject *v = _PyFloat_CAST(op);
     return v->ob_fval != 0.0;
 }
@@ -856,6 +892,7 @@ static PyObject *
 float_is_integer_impl(PyObject *self)
 /*[clinic end generated code: output=7112acf95a4d31ea input=311810d3f777e10d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double x = PyFloat_AsDouble(self);
     PyObject *o;
 
@@ -870,6 +907,7 @@ float_is_integer_impl(PyObject *self)
                              PyExc_ValueError);
         return NULL;
     }
+    assert(!PyRegion_NeedsReadBarrier(o));
     return Py_NewRef(o);
 }
 
@@ -883,6 +921,7 @@ static PyObject *
 float___trunc___impl(PyObject *self)
 /*[clinic end generated code: output=dd3e289dd4c6b538 input=591b9ba0d650fdff]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyLong_FromDouble(PyFloat_AS_DOUBLE(self));
 }
 
@@ -896,6 +935,7 @@ static PyObject *
 float___floor___impl(PyObject *self)
 /*[clinic end generated code: output=e0551dbaea8c01d1 input=77bb13eb12e268df]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double x = PyFloat_AS_DOUBLE(self);
     return PyLong_FromDouble(floor(x));
 }
@@ -910,6 +950,7 @@ static PyObject *
 float___ceil___impl(PyObject *self)
 /*[clinic end generated code: output=a2fd8858f73736f9 input=79e41ae94aa0a516]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double x = PyFloat_AS_DOUBLE(self);
     return PyLong_FromDouble(ceil(x));
 }
@@ -925,7 +966,7 @@ float___ceil___impl(PyObject *self)
 
 static PyObject *
 double_round(double x, int ndigits) {
-
+    // Pyrona: This functions was checked and no further migration is needed
     double rounded;
     Py_ssize_t buflen, mybuflen=100;
     char *buf, *buf_end, shortbuf[100], *mybuf=shortbuf;
@@ -983,6 +1024,7 @@ double_round(double x, int ndigits) {
 
 static PyObject *
 double_round(double x, int ndigits) {
+    // Pyrona: This functions was checked and no further migration is needed
     double pow1, pow2, y, z;
     if (ndigits >= 0) {
         if (ndigits > 22) {
@@ -1045,6 +1087,7 @@ static PyObject *
 float___round___impl(PyObject *self, PyObject *o_ndigits)
 /*[clinic end generated code: output=374c36aaa0f13980 input=fc0fe25924fbc9ed]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double x, rounded;
     Py_ssize_t ndigits;
 
@@ -1089,7 +1132,9 @@ float___round___impl(PyObject *self, PyObject *o_ndigits)
 static PyObject *
 float_float(PyObject *v)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PyFloat_CheckExact(v)) {
+        assert(!PyRegion_NeedsReadBarrier(v));
         return Py_NewRef(v);
     }
     else {
@@ -1107,6 +1152,7 @@ static PyObject *
 float_conjugate_impl(PyObject *self)
 /*[clinic end generated code: output=8ca292c2479194af input=82ba6f37a9ff91dd]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return float_float(self);
 }
 
@@ -1115,6 +1161,7 @@ float_conjugate_impl(PyObject *self)
 static char
 char_from_hex(int x)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(0 <= x && x < 16);
     return Py_hexdigits[x];
 }
@@ -1151,6 +1198,7 @@ _CHAR_TO_HEX[256] = {
  */
 static int
 hex_from_char(unsigned char c) {
+    // Pyrona: This functions was checked and no further migration is needed
     return _CHAR_TO_HEX[c];
 }
 
@@ -1175,6 +1223,7 @@ static PyObject *
 float_hex_impl(PyObject *self)
 /*[clinic end generated code: output=0ebc9836e4d302d4 input=bec1271a33d47e67]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double x, m;
     int e, shift, i, si, esign;
     /* Space for 1+(TOHEX_NBITS-1)/4 digits, a decimal point, and the
@@ -1246,6 +1295,7 @@ static PyObject *
 float_fromhex_impl(PyTypeObject *type, PyObject *string)
 /*[clinic end generated code: output=c54b4923552e5af5 input=0407bebd354bca89]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     double x;
     long exp, top_exp, lsb, key_digit;
@@ -1504,6 +1554,7 @@ static PyObject *
 float_as_integer_ratio_impl(PyObject *self)
 /*[clinic end generated code: output=65f25f0d8d30a712 input=75ae9be7cecd82a3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double self_double;
     double float_part;
     int exponent;
@@ -1565,8 +1616,11 @@ float_as_integer_ratio_impl(PyObject *self)
     result_pair = PyTuple_Pack(2, numerator, denominator);
 
 error:
+    assert(!PyRegion_NeedsReadBarrier(py_exponent));
     Py_XDECREF(py_exponent);
+    assert(!PyRegion_NeedsReadBarrier(denominator));
     Py_XDECREF(denominator);
+    assert(!PyRegion_NeedsReadBarrier(numerator));
     Py_XDECREF(numerator);
     return result_pair;
 }
@@ -1587,6 +1641,7 @@ static PyObject *
 float_new_impl(PyTypeObject *type, PyObject *x)
 /*[clinic end generated code: output=ccf1e8dc460ba6ba input=55909f888aa0c8a6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (type != &PyFloat_Type) {
         if (x == NULL) {
             x = _PyLong_GetZero();
@@ -1612,6 +1667,7 @@ float_new_impl(PyTypeObject *type, PyObject *x)
 static PyObject *
 float_subtype_new(PyTypeObject *type, PyObject *x)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp, *newobj;
 
     assert(PyType_IsSubtype(type, &PyFloat_Type));
@@ -1621,10 +1677,12 @@ float_subtype_new(PyTypeObject *type, PyObject *x)
     assert(PyFloat_Check(tmp));
     newobj = type->tp_alloc(type, 0);
     if (newobj == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(tmp));
         Py_DECREF(tmp);
         return NULL;
     }
     ((PyFloatObject *)newobj)->ob_fval = ((PyFloatObject *)tmp)->ob_fval;
+    assert(!PyRegion_NeedsReadBarrier(tmp));
     Py_DECREF(tmp);
     return newobj;
 }
@@ -1633,6 +1691,7 @@ static PyObject *
 float_vectorcall(PyObject *type, PyObject *const *args,
                  size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_PyArg_NoKwnames("float", kwnames)) {
         return NULL;
     }
@@ -1661,7 +1720,9 @@ static PyObject *
 float_from_number_impl(PyTypeObject *type, PyObject *number)
 /*[clinic end generated code: output=dda7e4466ab7068d input=1f8424d9bc11866a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PyFloat_CheckExact(number) && type == &PyFloat_Type) {
+        assert(!PyRegion_NeedsReadBarrier(number));
         Py_INCREF(number);
         return number;
     }
@@ -1685,6 +1746,7 @@ static PyObject *
 float___getnewargs___impl(PyObject *self)
 /*[clinic end generated code: output=873258c9d206b088 input=002279d1d77891e6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return Py_BuildValue("(d)", ((PyFloatObject *)self)->ob_fval);
 }
 
@@ -1720,6 +1782,7 @@ static PyObject *
 float___getformat___impl(PyTypeObject *type, const char *typestr)
 /*[clinic end generated code: output=2bfb987228cc9628 input=d2735823bfe8e81e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     float_format_type r;
 
     if (strcmp(typestr, "double") == 0) {
@@ -1753,12 +1816,14 @@ float___getformat___impl(PyTypeObject *type, const char *typestr)
 static PyObject *
 float_getreal(PyObject *v, void *Py_UNUSED(closure))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return float_float(v);
 }
 
 static PyObject *
 float_getimag(PyObject *Py_UNUSED(v), void *Py_UNUSED(closure))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyFloat_FromDouble(0.0);
 }
 
@@ -1775,6 +1840,7 @@ static PyObject *
 float___format___impl(PyObject *self, PyObject *format_spec)
 /*[clinic end generated code: output=b260e52a47eade56 input=2ece1052211fd0e6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyUnicodeWriter writer;
     int ret;
 
@@ -1899,11 +1965,13 @@ PyTypeObject PyFloat_Type = {
     .tp_vectorcall = float_vectorcall,
     .tp_version_tag = _Py_TYPE_VERSION_FLOAT,
     .tp_reachable = _PyObject_ReachableVisitType,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static void
 _init_global_state(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     float_format_type detected_double_format, detected_float_format;
 
     /* We attempt to determine if this machine is using IEEE
@@ -1956,6 +2024,7 @@ _init_global_state(void)
 void
 _PyFloat_InitState(PyInterpreterState *interp)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_Py_IsMainInterpreter(interp)) {
         return;
     }
@@ -1965,6 +2034,8 @@ _PyFloat_InitState(PyInterpreterState *interp)
 PyStatus
 _PyFloat_InitTypes(PyInterpreterState *interp)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Init float info */
     if (_PyStructSequence_InitBuiltin(interp, &FloatInfoType,
                                       &floatinfo_desc) < 0)
@@ -1978,6 +2049,7 @@ _PyFloat_InitTypes(PyInterpreterState *interp)
 void
 _PyFloat_FiniType(PyInterpreterState *interp)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyStructSequence_FiniBuiltin(interp, &FloatInfoType);
 }
 
@@ -1985,6 +2057,7 @@ _PyFloat_FiniType(PyInterpreterState *interp)
 void
 _PyFloat_DebugMallocStats(FILE *out)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyDebugAllocatorStats(out,
                            "free PyFloatObject",
                            _Py_FREELIST_SIZE(floats),
@@ -2006,6 +2079,7 @@ _PyFloat_DebugMallocStats(FILE *out)
 int
 PyFloat_Pack2(double x, char *data, int le)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char *p = (unsigned char *)data;
     unsigned char sign;
     int e;
@@ -2110,6 +2184,7 @@ PyFloat_Pack2(double x, char *data, int le)
 int
 PyFloat_Pack4(double x, char *data, int le)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char *p = (unsigned char *)data;
     if (float_format == unknown_format) {
         unsigned char sign;
@@ -2252,6 +2327,7 @@ PyFloat_Pack4(double x, char *data, int le)
 int
 PyFloat_Pack8(double x, char *data, int le)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char *p = (unsigned char *)data;
     if (double_format == unknown_format) {
         unsigned char sign;
@@ -2384,6 +2460,7 @@ PyFloat_Pack8(double x, char *data, int le)
 double
 PyFloat_Unpack2(const char *data, int le)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char *p = (unsigned char *)data;
     unsigned char sign;
     int e;
@@ -2440,6 +2517,7 @@ PyFloat_Unpack2(const char *data, int le)
 double
 PyFloat_Unpack4(const char *data, int le)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char *p = (unsigned char *)data;
     if (float_format == unknown_format) {
         unsigned char sign;
@@ -2554,6 +2632,7 @@ PyFloat_Unpack4(const char *data, int le)
 double
 PyFloat_Unpack8(const char *data, int le)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char *p = (unsigned char *)data;
     if (double_format == unknown_format) {
         unsigned char sign;
