@@ -92,6 +92,7 @@ static PyObject* portable_lseek(fileio *self, PyObject *posobj, int whence, bool
 int
 _PyFileIO_closed(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return (PyFileIO_CAST(self)->fd < 0);
 }
 
@@ -101,6 +102,7 @@ _PyFileIO_closed(PyObject *self)
 static PyObject *
 fileio_dealloc_warn(PyObject *op, PyObject *source)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     if (self->fd >= 0 && self->closefd) {
         PyObject *exc = PyErr_GetRaisedException();
@@ -120,6 +122,7 @@ fileio_dealloc_warn(PyObject *op, PyObject *source)
 static int
 internal_close(fileio *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int err = 0;
     int save_errno = 0;
     if (self->fd >= 0) {
@@ -160,6 +163,7 @@ static PyObject *
 _io_FileIO_close_impl(fileio *self, PyTypeObject *cls)
 /*[clinic end generated code: output=c30cbe9d1f23ca58 input=70da49e63db7c64d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     int rc;
     _PyIO_State *state = get_io_state_by_cls(cls);
@@ -177,7 +181,7 @@ _io_FileIO_close_impl(fileio *self, PyTypeObject *cls)
     if (self->finalizing) {
         PyObject *r = fileio_dealloc_warn((PyObject*)self, (PyObject *) self);
         if (r) {
-            Py_DECREF(r);
+            PyRegion_CLEARLOCAL(r);
         }
         else {
             PyErr_Clear();
@@ -188,7 +192,7 @@ _io_FileIO_close_impl(fileio *self, PyTypeObject *cls)
         _PyErr_ChainExceptions1(exc);
     }
     if (rc < 0) {
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
     }
     return res;
 }
@@ -196,6 +200,7 @@ _io_FileIO_close_impl(fileio *self, PyTypeObject *cls)
 static PyObject *
 fileio_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(type != NULL && type->tp_alloc != NULL);
 
     fileio *self = (fileio *) type->tp_alloc(type, 0);
@@ -246,6 +251,7 @@ _io_FileIO___init___impl(fileio *self, PyObject *nameobj, const char *mode,
                          int closefd, PyObject *opener)
 /*[clinic end generated code: output=23413f68e6484bbd input=588aac967e0ba74b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     wchar_t *widename = NULL;
 #else
@@ -435,14 +441,14 @@ _io_FileIO___init___impl(fileio *self, PyObject *nameobj, const char *mode,
             if (fdobj == NULL)
                 goto error;
             if (!PyLong_Check(fdobj)) {
-                Py_DECREF(fdobj);
+                PyRegion_CLEARLOCAL(fdobj);
                 PyErr_SetString(PyExc_TypeError,
                         "expected integer from opener");
                 goto error;
             }
 
             self->fd = PyLong_AsInt(fdobj);
-            Py_DECREF(fdobj);
+            PyRegion_CLEARLOCAL(fdobj);
             if (self->fd < 0) {
                 if (!PyErr_Occurred()) {
                     /* The opener returned a negative but didn't set an
@@ -515,6 +521,7 @@ _io_FileIO___init___impl(fileio *self, PyObject *nameobj, const char *mode,
         PyObject *pos = portable_lseek(self, NULL, 2, true);
         if (pos == NULL)
             goto error;
+        assert(!PyRegion_NeedsReadBarrier(pos));
         Py_DECREF(pos);
     }
 
@@ -536,13 +543,14 @@ _io_FileIO___init___impl(fileio *self, PyObject *nameobj, const char *mode,
 #ifdef MS_WINDOWS
     PyMem_Free(widename);
 #endif
-    Py_CLEAR(stringobj);
+    PyRegion_CLEARLOCAL(stringobj);
     return ret;
 }
 
 static int
 fileio_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->dict);
@@ -552,14 +560,16 @@ fileio_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 fileio_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
-    Py_CLEAR(self->dict);
+    PyRegion_CLEAR(self, self->dict);
     return 0;
 }
 
 static void
 fileio_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     self->finalizing = 1;
     if (_PyIOBase_finalize(op) < 0) {
@@ -576,12 +586,14 @@ fileio_dealloc(PyObject *op)
 
     PyTypeObject *tp = Py_TYPE(op);
     tp->tp_free(op);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
 static PyObject *
 err_closed(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyErr_SetString(PyExc_ValueError, "I/O operation on closed file");
     return NULL;
 }
@@ -589,6 +601,7 @@ err_closed(void)
 static PyObject *
 err_mode(_PyIO_State *state, const char *action)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyErr_Format(state->unsupported_operation,
                         "File not open for %s", action);
 }
@@ -603,6 +616,7 @@ static PyObject *
 _io_FileIO_fileno_impl(fileio *self)
 /*[clinic end generated code: output=a9626ce5398ece90 input=0b9b2de67335ada3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
     return PyLong_FromLong((long) self->fd);
@@ -618,6 +632,7 @@ static PyObject *
 _io_FileIO_readable_impl(fileio *self)
 /*[clinic end generated code: output=640744a6150fe9ba input=a3fdfed6eea721c5]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
     return PyBool_FromLong((long) self->readable);
@@ -633,6 +648,7 @@ static PyObject *
 _io_FileIO_writable_impl(fileio *self)
 /*[clinic end generated code: output=96cefc5446e89977 input=c204a808ca2e1748]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
     return PyBool_FromLong((long) self->writable);
@@ -648,6 +664,7 @@ static PyObject *
 _io_FileIO_seekable_impl(fileio *self)
 /*[clinic end generated code: output=47909ca0a42e9287 input=c8e5554d2fd63c7f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
     if (self->seekable < 0) {
@@ -658,6 +675,7 @@ _io_FileIO_seekable_impl(fileio *self)
             PyErr_Clear();
         }
         else {
+            assert(!PyRegion_NeedsReadBarrier(pos));
             Py_DECREF(pos);
         }
     }
@@ -677,6 +695,7 @@ static PyObject *
 _io_FileIO_readinto_impl(fileio *self, PyTypeObject *cls, Py_buffer *buffer)
 /*[clinic end generated code: output=97f0f3d69534db34 input=fd20323e18ce1ec8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n;
     int err;
 
@@ -738,6 +757,7 @@ static PyObject *
 _io_FileIO_readall_impl(fileio *self)
 /*[clinic end generated code: output=faa0292b213b4022 input=10d8b2ec403302dc]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t pos, end;
     PyBytesWriter *writer;
     Py_ssize_t bytes_read = 0;
@@ -862,6 +882,7 @@ static PyObject *
 _io_FileIO_read_impl(fileio *self, PyTypeObject *cls, Py_ssize_t size)
 /*[clinic end generated code: output=bbd749c7c224143e input=752d1ad3db8564a5]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
     if (!self->readable) {
@@ -914,6 +935,7 @@ static PyObject *
 _io_FileIO_write_impl(fileio *self, PyTypeObject *cls, Py_buffer *b)
 /*[clinic end generated code: output=927e25be80f3b77b input=2776314f043088f5]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n;
     int err;
 
@@ -945,6 +967,7 @@ _io_FileIO_write_impl(fileio *self, PyTypeObject *cls, Py_buffer *b)
 static PyObject *
 portable_lseek(fileio *self, PyObject *posobj, int whence, bool suppress_pipe_error)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t pos, res;
     int fd = self->fd;
 
@@ -1027,6 +1050,7 @@ static PyObject *
 _io_FileIO_seek_impl(fileio *self, PyObject *pos, int whence)
 /*[clinic end generated code: output=c976acdf054e6655 input=f077c492a84c9e62]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
 
@@ -1045,6 +1069,7 @@ static PyObject *
 _io_FileIO_tell_impl(fileio *self)
 /*[clinic end generated code: output=ffe2147058809d0b input=807e24ead4cec2f9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->fd < 0)
         return err_closed();
 
@@ -1068,6 +1093,7 @@ static PyObject *
 _io_FileIO_truncate_impl(fileio *self, PyTypeObject *cls, PyObject *posobj)
 /*[clinic end generated code: output=d936732a49e8d5a2 input=c367fb45d6bb2c18]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t pos;
     int ret;
     int fd;
@@ -1087,7 +1113,7 @@ _io_FileIO_truncate_impl(fileio *self, PyTypeObject *cls, PyObject *posobj)
             return NULL;
     }
     else {
-        Py_INCREF(posobj);
+        PyRegion_CLEARLOCAL(posobj);
     }
 
 #if defined(HAVE_LARGEFILE_SUPPORT)
@@ -1096,7 +1122,7 @@ _io_FileIO_truncate_impl(fileio *self, PyTypeObject *cls, PyObject *posobj)
     pos = PyLong_AsLong(posobj);
 #endif
     if (PyErr_Occurred()){
-        Py_DECREF(posobj);
+        PyRegion_CLEARLOCAL(posobj);
         return NULL;
     }
 
@@ -1113,7 +1139,7 @@ _io_FileIO_truncate_impl(fileio *self, PyTypeObject *cls, PyObject *posobj)
 
     if (ret != 0) {
         PyErr_SetFromErrno(PyExc_OSError);
-        Py_DECREF(posobj);
+        PyRegion_CLEARLOCAL(posobj);
         return NULL;
     }
 
@@ -1132,6 +1158,7 @@ _io_FileIO_truncate_impl(fileio *self, PyTypeObject *cls, PyObject *posobj)
 static const char *
 mode_string(fileio *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->created) {
         if (self->readable)
             return "xb+";
@@ -1157,6 +1184,7 @@ mode_string(fileio *self)
 static PyObject *
 fileio_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     const char *type_name = Py_TYPE(self)->tp_name;
 
@@ -1187,7 +1215,7 @@ fileio_repr(PyObject *op)
             PyErr_Format(PyExc_RuntimeError,
                          "reentrant call inside %.100s.__repr__", type_name);
         }
-        Py_DECREF(nameobj);
+        PyRegion_CLEARLOCAL(nameobj);
     }
     return res;
 }
@@ -1202,6 +1230,7 @@ static PyObject *
 _io_FileIO_isatty_impl(fileio *self)
 /*[clinic end generated code: output=932c39924e9a8070 input=cd94ca1f5e95e843]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long res;
 
     if (self->fd < 0)
@@ -1225,6 +1254,7 @@ _io_FileIO_isatty_impl(fileio *self)
 static PyObject *
 _io_FileIO_isatty_open_only(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     if (self->stat_atopen != NULL && !S_ISCHR(self->stat_atopen->st_mode)) {
         Py_RETURN_FALSE;
@@ -1259,6 +1289,7 @@ static PyMethodDef fileio_methods[] = {
 static PyObject *
 fileio_get_closed(PyObject *op, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     return PyBool_FromLong((long)(self->fd < 0));
 }
@@ -1266,6 +1297,7 @@ fileio_get_closed(PyObject *op, void *closure)
 static PyObject *
 fileio_get_closefd(PyObject *op, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     return PyBool_FromLong((long)(self->closefd));
 }
@@ -1273,6 +1305,7 @@ fileio_get_closefd(PyObject *op, void *closure)
 static PyObject *
 fileio_get_mode(PyObject *op, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     fileio *self = PyFileIO_CAST(op);
     return PyUnicode_FromString(mode_string(self));
 }
@@ -1280,6 +1313,7 @@ fileio_get_mode(PyObject *op, void *closure)
 static PyObject *
 fileio_get_blksize(PyObject *op, void *closure)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_STRUCT_STAT_ST_BLKSIZE
     fileio *self = PyFileIO_CAST(op);
     if (self->stat_atopen != NULL && self->stat_atopen->st_blksize > 1) {
@@ -1326,4 +1360,5 @@ PyType_Spec fileio_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = fileio_slots,
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
