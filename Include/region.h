@@ -64,9 +64,7 @@ PyAPI_FUNC(void) _PyRegion_RemoveLocalRef(PyObject *tgt);
 #define PyRegion_RemoveLocalRef(tgt) _PyRegion_RemoveLocalRef(_PyObject_CAST(tgt))
 
 static inline PyObject* _PyRegion_NewRef(PyObject* tgt) {
-    if (PyRegion_AddLocalRef(tgt)) {
-        return NULL;
-    }
+    PyRegion_AddLocalRef(tgt);
     return Py_NewRef(tgt);
 }
 static inline PyObject* _PyRegion_XNewRef(PyObject* tgt) {

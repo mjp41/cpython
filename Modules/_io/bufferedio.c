@@ -50,6 +50,7 @@ PyDoc_STRVAR(bufferediobase_doc,
 static PyObject *
 _bufferediobase_readinto_generic(PyObject *self, Py_buffer *buffer, char readinto1)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t len;
     PyObject *data;
 
@@ -61,7 +62,7 @@ _bufferediobase_readinto_generic(PyObject *self, Py_buffer *buffer, char readint
         return NULL;
 
     if (!PyBytes_Check(data)) {
-        Py_DECREF(data);
+        PyRegion_CLEARLOCAL(data);
         PyErr_SetString(PyExc_TypeError, "read() should return bytes");
         return NULL;
     }
@@ -72,12 +73,12 @@ _bufferediobase_readinto_generic(PyObject *self, Py_buffer *buffer, char readint
                      "read() returned too much data: "
                      "%zd bytes requested, %zd returned",
                      buffer->len, len);
-        Py_DECREF(data);
+        PyRegion_CLEARLOCAL(data);
         return NULL;
     }
     memcpy(buffer->buf, PyBytes_AS_STRING(data), len);
 
-    Py_DECREF(data);
+    PyRegion_CLEARLOCAL(data);
 
     return PyLong_FromSsize_t(len);
 }
@@ -93,6 +94,7 @@ static PyObject *
 _io__BufferedIOBase_readinto_impl(PyObject *self, Py_buffer *buffer)
 /*[clinic end generated code: output=8c8cda6684af8038 input=5273d20db7f56e1a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _bufferediobase_readinto_generic(self, buffer, 0);
 }
 
@@ -107,12 +109,14 @@ static PyObject *
 _io__BufferedIOBase_readinto1_impl(PyObject *self, Py_buffer *buffer)
 /*[clinic end generated code: output=358623e4fd2b69d3 input=d6eb723dedcee654]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _bufferediobase_readinto_generic(self, buffer, 1);
 }
 
 static PyObject *
 bufferediobase_unsupported(_PyIO_State *state, const char *message)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyErr_SetString(state->unsupported_operation, message);
     return NULL;
 }
@@ -133,6 +137,7 @@ static PyObject *
 _io__BufferedIOBase_detach_impl(PyObject *self, PyTypeObject *cls)
 /*[clinic end generated code: output=b87b135d67cd4448 input=0b61a7b4357c1ea7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return bufferediobase_unsupported(state, "detach");
 }
@@ -167,6 +172,7 @@ _io__BufferedIOBase_read_impl(PyObject *self, PyTypeObject *cls,
                               int Py_UNUSED(size))
 /*[clinic end generated code: output=aceb2765587b0a29 input=824f6f910465e61a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return bufferediobase_unsupported(state, "read");
 }
@@ -190,6 +196,7 @@ _io__BufferedIOBase_read1_impl(PyObject *self, PyTypeObject *cls,
                                int Py_UNUSED(size))
 /*[clinic end generated code: output=2e7fc62972487eaa input=1e76df255063afd6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return bufferediobase_unsupported(state, "read1");
 }
@@ -215,6 +222,7 @@ _io__BufferedIOBase_write_impl(PyObject *self, PyTypeObject *cls,
                                PyObject *Py_UNUSED(b))
 /*[clinic end generated code: output=712c635246bf2306 input=9793f5c8f71029ad]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return bufferediobase_unsupported(state, "write");
 }
@@ -294,6 +302,7 @@ typedef struct {
 static int
 _enter_buffered_busy(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int relax_locking;
     PyLockStatus st;
     if (self->owner == PyThread_get_thread_ident()) {
@@ -406,16 +415,18 @@ _enter_buffered_busy(buffered *self)
 static int
 buffered_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     buffered *self = buffered_CAST(op);
     self->ok = 0;
-    Py_CLEAR(self->raw);
-    Py_CLEAR(self->dict);
+    PyRegion_CLEAR(self, self->raw);
+    PyRegion_CLEAR(self, self->dict);
     return 0;
 }
 
 static void
 buffered_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     buffered *self = buffered_CAST(op);
     PyTypeObject *tp = Py_TYPE(self);
     self->finalizing = 1;
@@ -434,6 +445,7 @@ buffered_dealloc(PyObject *op)
     }
     (void)buffered_clear(op);
     tp->tp_free(self);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
@@ -446,6 +458,7 @@ static PyObject *
 _io__Buffered___sizeof___impl(buffered *self)
 /*[clinic end generated code: output=0231ef7f5053134e input=07a32d578073ea64]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     size_t res = _PyObject_SIZE(Py_TYPE(self));
     if (self->buffer) {
         res += (size_t)self->buffer_size;
@@ -456,6 +469,7 @@ _io__Buffered___sizeof___impl(buffered *self)
 static int
 buffered_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     buffered *self = buffered_CAST(op);
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->raw);
@@ -478,11 +492,12 @@ static PyObject *
 _io__Buffered__dealloc_warn_impl(buffered *self, PyObject *source)
 /*[clinic end generated code: output=d8db21c6dec0e614 input=8f845f2a4786391c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->ok && self->raw) {
         PyObject *r;
         r = PyObject_CallMethodOneArg(self->raw, &_Py_ID(_dealloc_warn), source);
         if (r)
-            Py_DECREF(r);
+            PyRegion_CLEARLOCAL(r);
         else
             PyErr_Clear();
     }
@@ -505,6 +520,7 @@ static PyObject *
 _io__Buffered_simple_flush_impl(buffered *self)
 /*[clinic end generated code: output=29ebb3820db1bdfd input=5248cb84a65f80bd]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_CallMethodNoArgs(self->raw, &_Py_ID(flush));
 }
@@ -512,6 +528,7 @@ _io__Buffered_simple_flush_impl(buffered *self)
 static int
 buffered_closed(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int closed;
     PyObject *res;
     CHECK_INITIALIZED_INT(self)
@@ -519,7 +536,7 @@ buffered_closed(buffered *self)
     if (res == NULL)
         return -1;
     closed = PyObject_IsTrue(res);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     return closed;
 }
 
@@ -533,6 +550,7 @@ static PyObject *
 _io__Buffered_closed_get_impl(buffered *self)
 /*[clinic end generated code: output=f08ce57290703a1a input=18eddefdfe4a3d2f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_GetAttr(self->raw, &_Py_ID(closed));
 }
@@ -546,6 +564,7 @@ static PyObject *
 _io__Buffered_close_impl(buffered *self)
 /*[clinic end generated code: output=7280b7b42033be0c input=56d95935b03fd326]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res = NULL;
     int r;
 
@@ -565,7 +584,7 @@ _io__Buffered_close_impl(buffered *self)
     if (self->finalizing) {
         PyObject *r = _io__Buffered__dealloc_warn_impl(self, (PyObject *)self);
         if (r)
-            Py_DECREF(r);
+            PyRegion_CLEARLOCAL(r);
         else
             PyErr_Clear();
     }
@@ -589,7 +608,7 @@ _io__Buffered_close_impl(buffered *self)
 
     if (exc != NULL) {
         _PyErr_ChainExceptions1(exc);
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
     }
 
     self->read_end = 0;
@@ -609,11 +628,14 @@ static PyObject *
 _io__Buffered_detach_impl(buffered *self)
 /*[clinic end generated code: output=dd0fc057b8b779f7 input=d4ef1828a678be37]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *raw;
     CHECK_INITIALIZED(self)
     if (_PyFile_Flush((PyObject *)self) < 0) {
         return NULL;
     }
+    PyRegion_AddLocalRef(self->raw);
+    PyRegion_RemoveRef(self, self->raw);
     raw = self->raw;
     self->raw = NULL;
     self->detached = 1;
@@ -632,6 +654,7 @@ static PyObject *
 _io__Buffered_seekable_impl(buffered *self)
 /*[clinic end generated code: output=90172abb5ceb6e8f input=e3a4fc1d297b2fd3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_CallMethodNoArgs(self->raw, &_Py_ID(seekable));
 }
@@ -645,6 +668,7 @@ static PyObject *
 _io__Buffered_readable_impl(buffered *self)
 /*[clinic end generated code: output=92afa07661ecb698 input=abe54107d59bca9a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_CallMethodNoArgs(self->raw, &_Py_ID(readable));
 }
@@ -658,6 +682,7 @@ static PyObject *
 _io__Buffered_writable_impl(buffered *self)
 /*[clinic end generated code: output=4e3eee8d6f9d8552 input=45eb76bf6a10e6f7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_CallMethodNoArgs(self->raw, &_Py_ID(writable));
 }
@@ -673,6 +698,7 @@ static PyObject *
 _io__Buffered_name_get_impl(buffered *self)
 /*[clinic end generated code: output=d2adf384051d3d10 input=6b84a0e6126f545e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_GetAttr(self->raw, &_Py_ID(name));
 }
@@ -687,6 +713,7 @@ static PyObject *
 _io__Buffered_mode_get_impl(buffered *self)
 /*[clinic end generated code: output=0feb205748892fa4 input=0762d5e28542fd8c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_GetAttr(self->raw, &_Py_ID(mode));
 }
@@ -702,6 +729,7 @@ static PyObject *
 _io__Buffered_fileno_impl(buffered *self)
 /*[clinic end generated code: output=b717648d58a95ee3 input=1c4fead777bae20a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_CallMethodNoArgs(self->raw, &_Py_ID(fileno));
 }
@@ -715,6 +743,7 @@ static PyObject *
 _io__Buffered_isatty_impl(buffered *self)
 /*[clinic end generated code: output=c20e55caae67baea input=e53d182d7e490e3a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return PyObject_CallMethodNoArgs(self->raw, &_Py_ID(isatty));
 }
@@ -747,13 +776,14 @@ _bufferedreader_raw_read(buffered *self, char *start, Py_ssize_t len);
 static void
 _set_BlockingIOError(const char *msg, Py_ssize_t written)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *err;
     PyErr_Clear();
     err = PyObject_CallFunction(PyExc_BlockingIOError, "isn",
                                 errno, msg, written);
     if (err)
         PyErr_SetObject(PyExc_BlockingIOError, err);
-    Py_XDECREF(err);
+    PyRegion_CLEARLOCAL(err);
 }
 
 /* Returns the address of the `written` member if a BlockingIOError was
@@ -761,6 +791,7 @@ _set_BlockingIOError(const char *msg, Py_ssize_t written)
 static Py_ssize_t *
 _buffered_check_blocking_error(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *exc = PyErr_GetRaisedException();
     if (exc == NULL || !PyErr_GivenExceptionMatches(exc, PyExc_BlockingIOError)) {
         PyErr_SetRaisedException(exc);
@@ -775,13 +806,14 @@ _buffered_check_blocking_error(void)
 static Py_off_t
 _buffered_raw_tell(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t n;
     PyObject *res;
     res = PyObject_CallMethodNoArgs(self->raw, &_Py_ID(tell));
     if (res == NULL)
         return -1;
     n = PyNumber_AsOff_t(res, PyExc_ValueError);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (n < 0) {
         if (!PyErr_Occurred())
             PyErr_Format(PyExc_OSError,
@@ -796,6 +828,7 @@ _buffered_raw_tell(buffered *self)
 static Py_off_t
 _buffered_raw_seek(buffered *self, Py_off_t target, int whence)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res, *posobj, *whenceobj;
     Py_off_t n;
 
@@ -804,17 +837,17 @@ _buffered_raw_seek(buffered *self, Py_off_t target, int whence)
         return -1;
     whenceobj = PyLong_FromLong(whence);
     if (whenceobj == NULL) {
-        Py_DECREF(posobj);
+        PyRegion_CLEARLOCAL(posobj);
         return -1;
     }
     res = PyObject_CallMethodObjArgs(self->raw, &_Py_ID(seek),
                                      posobj, whenceobj, NULL);
-    Py_DECREF(posobj);
-    Py_DECREF(whenceobj);
+    PyRegion_CLEARLOCAL(posobj);
+    PyRegion_CLEARLOCAL(whenceobj);
     if (res == NULL)
         return -1;
     n = PyNumber_AsOff_t(res, PyExc_ValueError);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (n < 0) {
         if (!PyErr_Occurred())
             PyErr_Format(PyExc_OSError,
@@ -829,6 +862,7 @@ _buffered_raw_seek(buffered *self, Py_off_t target, int whence)
 static int
 _buffered_init(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n;
     if (self->buffer_size <= 0) {
         PyErr_SetString(PyExc_ValueError,
@@ -870,6 +904,7 @@ _buffered_init(buffered *self)
 int
 _PyIO_trap_eintr(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyErr_ExceptionMatches(PyExc_OSError)) {
         return 0;
     }
@@ -899,12 +934,13 @@ _PyIO_trap_eintr(void)
 static PyObject *
 buffered_flush_and_rewind_unlocked(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
 
     res = _bufferedwriter_flush_unlocked(self);
     if (res == NULL)
         return NULL;
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
 
     if (self->readable) {
         /* Rewind the raw stream so that its position corresponds to
@@ -927,6 +963,7 @@ static PyObject *
 _io__Buffered_flush_impl(buffered *self)
 /*[clinic end generated code: output=da2674ef1ce71f3a input=6b30de9f083419c2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
 
     CHECK_INITIALIZED(self)
@@ -952,6 +989,7 @@ static PyObject *
 _io__Buffered_peek_impl(buffered *self, Py_ssize_t size)
 /*[clinic end generated code: output=ba7a097ca230102b input=56733376f926d982]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res = NULL;
 
     CHECK_INITIALIZED(self)
@@ -964,7 +1002,7 @@ _io__Buffered_peek_impl(buffered *self, Py_ssize_t size)
         res = buffered_flush_and_rewind_unlocked(self);
         if (res == NULL)
             goto end;
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
     }
     res = _bufferedreader_peek_unlocked(self);
 
@@ -984,6 +1022,7 @@ static PyObject *
 _io__Buffered_read_impl(buffered *self, Py_ssize_t n)
 /*[clinic end generated code: output=f41c78bb15b9bbe9 input=bdb4b0425b295472]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
 
     CHECK_INITIALIZED(self)
@@ -1005,7 +1044,7 @@ _io__Buffered_read_impl(buffered *self, Py_ssize_t n)
         res = _bufferedreader_read_fast(self, n);
         if (res != Py_None)
             return res;
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
         if (!ENTER_BUFFERED(self))
             return NULL;
         res = _bufferedreader_read_generic(self, n);
@@ -1026,6 +1065,7 @@ static PyObject *
 _io__Buffered_read1_impl(buffered *self, Py_ssize_t n)
 /*[clinic end generated code: output=bcc4fb4e54d103a3 input=3d0ad241aa52b36c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     if (n < 0) {
         n = self->buffer_size;
@@ -1059,7 +1099,7 @@ _io__Buffered_read1_impl(buffered *self, Py_ssize_t n)
             LEAVE_BUFFERED(self)
             return NULL;
         }
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
     }
     _bufferedreader_reset_buf(self);
 
@@ -1085,6 +1125,7 @@ _io__Buffered_read1_impl(buffered *self, Py_ssize_t n)
 static PyObject *
 _buffered_readinto_generic(buffered *self, Py_buffer *buffer, char readinto1)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n, written = 0, remaining;
     PyObject *res = NULL;
 
@@ -1110,7 +1151,7 @@ _buffered_readinto_generic(buffered *self, Py_buffer *buffer, char readinto1)
         res = buffered_flush_and_rewind_unlocked(self);
         if (res == NULL)
             goto end;
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
     }
 
     _bufferedreader_reset_buf(self);
@@ -1175,6 +1216,7 @@ static PyObject *
 _io__Buffered_readinto_impl(buffered *self, Py_buffer *buffer)
 /*[clinic end generated code: output=bcb376580b1d8170 input=777c33e7adaa2bcd]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _buffered_readinto_generic(self, buffer, 0);
 }
 
@@ -1189,6 +1231,7 @@ static PyObject *
 _io__Buffered_readinto1_impl(buffered *self, Py_buffer *buffer)
 /*[clinic end generated code: output=6e5c6ac5868205d6 input=ef03cc5fc92a6895]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _buffered_readinto_generic(self, buffer, 1);
 }
 
@@ -1196,6 +1239,7 @@ _io__Buffered_readinto1_impl(buffered *self, Py_buffer *buffer)
 static PyObject *
 _buffered_readline(buffered *self, Py_ssize_t limit)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res = NULL;
     PyObject *chunks = NULL;
     Py_ssize_t n;
@@ -1236,10 +1280,10 @@ _buffered_readline(buffered *self, Py_ssize_t limit)
         if (res == NULL)
             goto end;
         if (PyList_Append(chunks, res) < 0) {
-            Py_CLEAR(res);
+            PyRegion_CLEARLOCAL(res);
             goto end;
         }
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
         self->pos += n;
         if (limit >= 0)
             limit -= n;
@@ -1248,7 +1292,7 @@ _buffered_readline(buffered *self, Py_ssize_t limit)
         PyObject *r = buffered_flush_and_rewind_unlocked(self);
         if (r == NULL)
             goto end;
-        Py_DECREF(r);
+        PyRegion_CLEARLOCAL(r);
     }
 
     for (;;) {
@@ -1280,24 +1324,24 @@ _buffered_readline(buffered *self, Py_ssize_t limit)
             break;
         }
         if (PyList_Append(chunks, res) < 0) {
-            Py_CLEAR(res);
+            PyRegion_CLEARLOCAL(res);
             goto end;
         }
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
         if (limit >= 0)
             limit -= n;
     }
 found:
     if (res != NULL && PyList_Append(chunks, res) < 0) {
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
         goto end;
     }
-    Py_XSETREF(res, PyBytes_Join((PyObject *)&_Py_SINGLETON(bytes_empty), chunks));
+    PyRegion_XSETLOCALREF(res, PyBytes_Join((PyObject *)&_Py_SINGLETON(bytes_empty), chunks));
 
 end:
     LEAVE_BUFFERED(self)
 end_unlocked:
-    Py_XDECREF(chunks);
+    PyRegion_CLEARLOCAL(chunks);
     return res;
 }
 
@@ -1312,6 +1356,7 @@ static PyObject *
 _io__Buffered_readline_impl(buffered *self, Py_ssize_t size)
 /*[clinic end generated code: output=24dd2aa6e33be83c input=e81ca5abd4280776]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self)
     return _buffered_readline(self, size);
 }
@@ -1326,6 +1371,7 @@ static PyObject *
 _io__Buffered_tell_impl(buffered *self)
 /*[clinic end generated code: output=386972ae84716c1e input=ab12e67d8abcb42f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t pos;
 
     CHECK_INITIALIZED(self)
@@ -1353,6 +1399,7 @@ static PyObject *
 _io__Buffered_seek_impl(buffered *self, PyObject *targetobj, int whence)
 /*[clinic end generated code: output=7ae0e8dc46efdefb input=b5a12be70e0ad07b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t target, n;
     PyObject *res = NULL;
 
@@ -1425,7 +1472,7 @@ _io__Buffered_seek_impl(buffered *self, PyObject *targetobj, int whence)
         res = _bufferedwriter_flush_unlocked(self);
         if (res == NULL)
             goto end;
-        Py_CLEAR(res);
+        PyRegion_CLEARLOCAL(res);
     }
 
     /* TODO: align on block boundary and read buffer if needed? */
@@ -1456,6 +1503,7 @@ static PyObject *
 _io__Buffered_truncate_impl(buffered *self, PyTypeObject *cls, PyObject *pos)
 /*[clinic end generated code: output=fe3882fbffe79f1a input=e3cbf794575bd794]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res = NULL;
 
     CHECK_INITIALIZED(self)
@@ -1471,7 +1519,7 @@ _io__Buffered_truncate_impl(buffered *self, PyTypeObject *cls, PyObject *pos)
     if (res == NULL) {
         goto end;
     }
-    Py_CLEAR(res);
+    PyRegion_CLEARLOCAL(res);
 
     res = PyObject_CallMethodOneArg(self->raw, &_Py_ID(truncate), pos);
     if (res == NULL)
@@ -1488,6 +1536,7 @@ end:
 static PyObject *
 buffered_iternext(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     buffered *self = buffered_CAST(op);
     PyObject *line;
     PyTypeObject *tp;
@@ -1509,7 +1558,7 @@ buffered_iternext(PyObject *op)
             PyErr_Format(PyExc_OSError,
                          "readline() should have returned a bytes object, "
                          "not '%.200s'", Py_TYPE(line)->tp_name);
-            Py_DECREF(line);
+            PyRegion_CLEARLOCAL(line);
             return NULL;
         }
     }
@@ -1519,7 +1568,7 @@ buffered_iternext(PyObject *op)
 
     if (PyBytes_GET_SIZE(line) == 0) {
         /* Reached EOF or would have blocked */
-        Py_DECREF(line);
+        PyRegion_CLEARLOCAL(line);
         return NULL;
     }
 
@@ -1529,6 +1578,7 @@ buffered_iternext(PyObject *op)
 static PyObject *
 buffered_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     buffered *self = buffered_CAST(op);
     PyObject *nameobj, *res;
 
@@ -1555,7 +1605,7 @@ buffered_repr(PyObject *op)
                          "reentrant call inside %s.__repr__",
                          Py_TYPE(self)->tp_name);
         }
-        Py_DECREF(nameobj);
+        PyRegion_CLEARLOCAL(nameobj);
     }
     return res;
 }
@@ -1566,6 +1616,7 @@ buffered_repr(PyObject *op)
 
 static void _bufferedreader_reset_buf(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     self->read_end = -1;
 }
 
@@ -1582,6 +1633,7 @@ _io_BufferedReader___init___impl(buffered *self, PyObject *raw,
                                  Py_ssize_t buffer_size)
 /*[clinic end generated code: output=cddcfefa0ed294c4 input=fb887e06f11b4e48]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     self->ok = 0;
     self->detached = 0;
 
@@ -1590,7 +1642,9 @@ _io_BufferedReader___init___impl(buffered *self, PyObject *raw,
         return -1;
     }
 
-    Py_XSETREF(self->raw, Py_NewRef(raw));
+    if (PyRegion_XSETNEWREF(self, self->raw, raw)) {
+        return -1;
+    }
     self->buffer_size = buffer_size;
     self->readable = 1;
     self->writable = 0;
@@ -1611,6 +1665,7 @@ _io_BufferedReader___init___impl(buffered *self, PyObject *raw,
 static Py_ssize_t
 _bufferedreader_raw_read(buffered *self, char *start, Py_ssize_t len)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer buf;
     PyObject *memobj, *res;
     Py_ssize_t n;
@@ -1628,16 +1683,16 @@ _bufferedreader_raw_read(buffered *self, char *start, Py_ssize_t len)
     do {
         res = PyObject_CallMethodOneArg(self->raw, &_Py_ID(readinto), memobj);
     } while (res == NULL && _PyIO_trap_eintr());
-    Py_DECREF(memobj);
+    PyRegion_CLEARLOCAL(memobj);
     if (res == NULL)
         return -1;
     if (res == Py_None) {
         /* Non-blocking stream would have blocked. Special return code! */
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
         return -2;
     }
     n = PyNumber_AsSsize_t(res, PyExc_ValueError);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
 
     if (n == -1 && PyErr_Occurred()) {
         _PyErr_FormatFromCause(
@@ -1661,6 +1716,7 @@ _bufferedreader_raw_read(buffered *self, char *start, Py_ssize_t len)
 static Py_ssize_t
 _bufferedreader_fill_buffer(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t start, len, n;
     if (VALID_READ_BUFFER(self))
         start = Py_SAFE_DOWNCAST(self->read_end, Py_off_t, Py_ssize_t);
@@ -1678,6 +1734,7 @@ _bufferedreader_fill_buffer(buffered *self)
 static PyObject *
 _bufferedreader_read_all(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t current_size;
     PyObject *res = NULL, *data = NULL, *tmp = NULL, *chunks = NULL, *readall;
 
@@ -1695,7 +1752,7 @@ _bufferedreader_read_all(buffered *self)
         tmp = buffered_flush_and_rewind_unlocked(self);
         if (tmp == NULL)
             goto cleanup;
-        Py_CLEAR(tmp);
+        PyRegion_CLEARLOCAL(tmp);
     }
     _bufferedreader_reset_buf(self);
 
@@ -1704,7 +1761,7 @@ _bufferedreader_read_all(buffered *self)
     }
     if (readall) {
         tmp = _PyObject_CallNoArgs(readall);
-        Py_DECREF(readall);
+        PyRegion_CLEARLOCAL(readall);
         if (tmp == NULL)
             goto cleanup;
         if (tmp != Py_None && !PyBytes_Check(tmp)) {
@@ -1730,7 +1787,7 @@ _bufferedreader_read_all(buffered *self)
         if (data) {
             if (PyList_Append(chunks, data) < 0)
                 goto cleanup;
-            Py_CLEAR(data);
+            PyRegion_CLEARLOCAL(data);
         }
 
         /* Read until EOF or until read() would block. */
@@ -1758,10 +1815,10 @@ _bufferedreader_read_all(buffered *self)
     }
 cleanup:
     /* res is either NULL or a borrowed ref */
-    Py_XINCREF(res);
-    Py_XDECREF(data);
-    Py_XDECREF(tmp);
-    Py_XDECREF(chunks);
+    PyRegion_XNewRef(res);
+    PyRegion_CLEARLOCAL(data);
+    PyRegion_CLEARLOCAL(tmp);
+    PyRegion_CLEARLOCAL(chunks);
     return res;
 }
 
@@ -1770,6 +1827,7 @@ cleanup:
 static PyObject *
 _bufferedreader_read_fast(buffered *self, Py_ssize_t n)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t current_size;
 
     current_size = Py_SAFE_DOWNCAST(READAHEAD(self), Py_off_t, Py_ssize_t);
@@ -1789,6 +1847,7 @@ _bufferedreader_read_fast(buffered *self, Py_ssize_t n)
 static PyObject *
 _bufferedreader_read_generic(buffered *self, Py_ssize_t n)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t current_size, remaining, written;
 
     current_size = Py_SAFE_DOWNCAST(READAHEAD(self), Py_off_t, Py_ssize_t);
@@ -1814,7 +1873,7 @@ _bufferedreader_read_generic(buffered *self, Py_ssize_t n)
         PyObject *r = buffered_flush_and_rewind_unlocked(self);
         if (r == NULL)
             goto error;
-        Py_DECREF(r);
+        PyRegion_CLEARLOCAL(r);
     }
     _bufferedreader_reset_buf(self);
     while (remaining > 0) {
@@ -1882,6 +1941,7 @@ error:
 static PyObject *
 _bufferedreader_peek_unlocked(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t have, r;
 
     have = Py_SAFE_DOWNCAST(READAHEAD(self), Py_off_t, Py_ssize_t);
@@ -1913,6 +1973,7 @@ _bufferedreader_peek_unlocked(buffered *self)
 static void
 _bufferedwriter_reset_buf(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     self->write_pos = 0;
     self->write_end = -1;
 }
@@ -1934,6 +1995,7 @@ _io_BufferedWriter___init___impl(buffered *self, PyObject *raw,
                                  Py_ssize_t buffer_size)
 /*[clinic end generated code: output=c8942a020c0dee64 input=914be9b95e16007b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     self->ok = 0;
     self->detached = 0;
 
@@ -1942,8 +2004,9 @@ _io_BufferedWriter___init___impl(buffered *self, PyObject *raw,
         return -1;
     }
 
-    Py_INCREF(raw);
-    Py_XSETREF(self->raw, raw);
+    if (PyRegion_XSETNEWREF(self, self->raw, raw)) {
+        return -1;
+    }
     self->readable = 0;
     self->writable = 1;
 
@@ -1965,6 +2028,7 @@ _io_BufferedWriter___init___impl(buffered *self, PyObject *raw,
 static Py_ssize_t
 _bufferedwriter_raw_write(buffered *self, char *start, Py_ssize_t len)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer buf;
     PyObject *memobj, *res;
     Py_ssize_t n;
@@ -1985,19 +2049,19 @@ _bufferedwriter_raw_write(buffered *self, char *start, Py_ssize_t len)
         res = PyObject_CallMethodOneArg(self->raw, &_Py_ID(write), memobj);
         errnum = errno;
     } while (res == NULL && _PyIO_trap_eintr());
-    Py_DECREF(memobj);
+    PyRegion_CLEARLOCAL(memobj);
     if (res == NULL)
         return -1;
     if (res == Py_None) {
         /* Non-blocking stream would have blocked. Special return code!
            Being paranoid we reset errno in case it is changed by code
            triggered by a decref.  errno is used by _set_BlockingIOError(). */
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
         errno = errnum;
         return -2;
     }
     n = PyNumber_AsSsize_t(res, PyExc_ValueError);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (n < 0 || n > len) {
         PyErr_Format(PyExc_OSError,
                      "raw write() returned invalid length %zd "
@@ -2012,6 +2076,7 @@ _bufferedwriter_raw_write(buffered *self, char *start, Py_ssize_t len)
 static PyObject *
 _bufferedwriter_flush_unlocked(buffered *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t n, rewind;
 
     if (!VALID_WRITE_BUFFER(self) || self->write_pos == self->write_end)
@@ -2076,6 +2141,7 @@ static PyObject *
 _io_BufferedWriter_write_impl(buffered *self, Py_buffer *buffer)
 /*[clinic end generated code: output=7f8d1365759bfc6b input=6a9c041de0c337be]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res = NULL;
     Py_ssize_t written, avail, remaining;
     Py_off_t offset;
@@ -2149,7 +2215,7 @@ _io_BufferedWriter_write_impl(buffered *self, Py_buffer *buffer)
                              avail);
         goto error;
     }
-    Py_CLEAR(res);
+    PyRegion_CLEARLOCAL(res);
 
     /* Adjust the raw stream position if it is away from the logical stream
        position. This happens if the read buffer has been filled but not
@@ -2259,6 +2325,7 @@ _io_BufferedRWPair___init___impl(rwpair *self, PyObject *reader,
                                  PyObject *writer, Py_ssize_t buffer_size)
 /*[clinic end generated code: output=327e73d1aee8f984 input=620d42d71f33a031]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = find_io_state_by_def(Py_TYPE(self));
     if (_PyIOBase_check_readable(state, reader, Py_True) == NULL) {
         return -1;
@@ -2267,6 +2334,9 @@ _io_BufferedRWPair___init___impl(rwpair *self, PyObject *reader,
         return -1;
     }
 
+    // Regions: No barrier is needed, since self is local and the functions
+    // return a local references.
+    assert(!PyRegion_IsLocal(self));
     self->reader = (buffered *) PyObject_CallFunction(
             (PyObject *)state->PyBufferedReader_Type,
             "On", reader, buffer_size);
@@ -2277,7 +2347,7 @@ _io_BufferedRWPair___init___impl(rwpair *self, PyObject *reader,
             (PyObject *)state->PyBufferedWriter_Type,
             "On", writer, buffer_size);
     if (self->writer == NULL) {
-        Py_CLEAR(self->reader);
+        PyRegion_CLEAR(self, self->reader);
         return -1;
     }
 
@@ -2287,6 +2357,7 @@ _io_BufferedRWPair___init___impl(rwpair *self, PyObject *reader,
 static int
 bufferedrwpair_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->dict);
@@ -2298,28 +2369,32 @@ bufferedrwpair_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 bufferedrwpair_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
-    Py_CLEAR(self->reader);
-    Py_CLEAR(self->writer);
-    Py_CLEAR(self->dict);
+    PyRegion_CLEAR(self, self->reader);
+    PyRegion_CLEAR(self, self->writer);
+    PyRegion_CLEAR(self, self->dict);
     return 0;
 }
 
 static void
 bufferedrwpair_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     PyTypeObject *tp = Py_TYPE(self);
     _PyObject_GC_UNTRACK(self);
     FT_CLEAR_WEAKREFS(op, self->weakreflist);
     (void)bufferedrwpair_clear(op);
     tp->tp_free(self);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
 static PyObject *
 _forward_call(buffered *self, PyObject *name, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *func, *ret;
     if (self == NULL) {
         PyErr_SetString(PyExc_ValueError,
@@ -2334,13 +2409,14 @@ _forward_call(buffered *self, PyObject *name, PyObject *args)
     }
 
     ret = PyObject_CallObject(func, args);
-    Py_DECREF(func);
+    PyRegion_CLEARLOCAL(func);
     return ret;
 }
 
 static PyObject *
 bufferedrwpair_read(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->reader, &_Py_ID(read), args);
 }
@@ -2348,6 +2424,7 @@ bufferedrwpair_read(PyObject *op, PyObject *args)
 static PyObject *
 bufferedrwpair_peek(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->reader, &_Py_ID(peek), args);
 }
@@ -2355,6 +2432,7 @@ bufferedrwpair_peek(PyObject *op, PyObject *args)
 static PyObject *
 bufferedrwpair_read1(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->reader, &_Py_ID(read1), args);
 }
@@ -2362,6 +2440,7 @@ bufferedrwpair_read1(PyObject *op, PyObject *args)
 static PyObject *
 bufferedrwpair_readinto(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->reader, &_Py_ID(readinto), args);
 }
@@ -2369,6 +2448,7 @@ bufferedrwpair_readinto(PyObject *op, PyObject *args)
 static PyObject *
 bufferedrwpair_readinto1(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->reader, &_Py_ID(readinto1), args);
 }
@@ -2376,6 +2456,7 @@ bufferedrwpair_readinto1(PyObject *op, PyObject *args)
 static PyObject *
 bufferedrwpair_write(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->writer, &_Py_ID(write), args);
 }
@@ -2383,6 +2464,7 @@ bufferedrwpair_write(PyObject *op, PyObject *args)
 static PyObject *
 bufferedrwpair_flush(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->writer, &_Py_ID(flush), NULL);
 }
@@ -2390,6 +2472,7 @@ bufferedrwpair_flush(PyObject *op, PyObject *Py_UNUSED(dummy))
 static PyObject *
 bufferedrwpair_readable(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->reader, &_Py_ID(readable), NULL);
 }
@@ -2397,6 +2480,7 @@ bufferedrwpair_readable(PyObject *op, PyObject *Py_UNUSED(dummy))
 static PyObject *
 bufferedrwpair_writable(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     return _forward_call(self->writer, &_Py_ID(writable), NULL);
 }
@@ -2404,6 +2488,7 @@ bufferedrwpair_writable(PyObject *op, PyObject *Py_UNUSED(dummy))
 static PyObject *
 bufferedrwpair_close(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     PyObject *exc = NULL;
     PyObject *ret = _forward_call(self->writer, &_Py_ID(close), NULL);
@@ -2411,12 +2496,12 @@ bufferedrwpair_close(PyObject *op, PyObject *Py_UNUSED(dummy))
         exc = PyErr_GetRaisedException();
     }
     else {
-        Py_DECREF(ret);
+        PyRegion_CLEARLOCAL(ret);
     }
     ret = _forward_call(self->reader, &_Py_ID(close), NULL);
     if (exc != NULL) {
         _PyErr_ChainExceptions1(exc);
-        Py_CLEAR(ret);
+        PyRegion_CLEARLOCAL(ret);
     }
     return ret;
 }
@@ -2424,6 +2509,7 @@ bufferedrwpair_close(PyObject *op, PyObject *Py_UNUSED(dummy))
 static PyObject *
 bufferedrwpair_isatty(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     PyObject *ret = _forward_call(self->writer, &_Py_ID(isatty), NULL);
 
@@ -2431,7 +2517,7 @@ bufferedrwpair_isatty(PyObject *op, PyObject *Py_UNUSED(dummy))
         /* either True or exception */
         return ret;
     }
-    Py_DECREF(ret);
+    PyRegion_CLEARLOCAL(ret);
 
     return _forward_call(self->reader, &_Py_ID(isatty), NULL);
 }
@@ -2439,6 +2525,7 @@ bufferedrwpair_isatty(PyObject *op, PyObject *Py_UNUSED(dummy))
 static PyObject *
 bufferedrwpair_closed_get(PyObject *op, void *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     rwpair *self = rwpair_CAST(op);
     if (self->writer == NULL) {
         PyErr_SetString(PyExc_RuntimeError,
@@ -2470,6 +2557,7 @@ _io_BufferedRandom___init___impl(buffered *self, PyObject *raw,
                                  Py_ssize_t buffer_size)
 /*[clinic end generated code: output=d3d64eb0f64e64a3 input=a4e818fb86d0e50c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     self->ok = 0;
     self->detached = 0;
 
@@ -2484,8 +2572,9 @@ _io_BufferedRandom___init___impl(buffered *self, PyObject *raw,
         return -1;
     }
 
-    Py_INCREF(raw);
-    Py_XSETREF(self->raw, raw);
+    if (PyRegion_XSETNEWREF(self, self->raw, raw)) {
+        return -1;
+    }
     self->buffer_size = buffer_size;
     self->readable = 1;
     self->writable = 1;
@@ -2529,6 +2618,9 @@ PyType_Spec bufferediobase_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = bufferediobase_slots,
+    // TODO(regions): This type depends on per-module state (FOR SOME REASON).
+    // Instances of this type should therefore be marked as unmovable.
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static PyMethodDef bufferedreader_methods[] = {
@@ -2594,6 +2686,9 @@ PyType_Spec bufferedreader_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = bufferedreader_slots,
+    // TODO(regions): This type depends on per-module state (FOR SOME REASON).
+    // Instances of this type should therefore be marked as unmovable.
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 static PyMethodDef bufferedwriter_methods[] = {
@@ -2704,6 +2799,9 @@ PyType_Spec bufferedrwpair_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = bufferedrwpair_slots,
+    // TODO(regions): This type depends on per-module state (FOR SOME REASON).
+    // Instances of this type should therefore be marked as unmovable.
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
@@ -2773,4 +2871,7 @@ PyType_Spec bufferedrandom_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = bufferedrandom_slots,
+    // TODO(regions): This type depends on per-module state (FOR SOME REASON).
+    // Instances of this type should therefore be marked as unmovable.
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };

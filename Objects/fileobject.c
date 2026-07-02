@@ -33,6 +33,7 @@ PyObject *
 PyFile_FromFd(int fd, const char *name, const char *mode, int buffering, const char *encoding,
               const char *errors, const char *newline, int closefd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *open, *stream;
 
     /* import _io in case we are being used to open io.py */
@@ -42,7 +43,7 @@ PyFile_FromFd(int fd, const char *name, const char *mode, int buffering, const c
     stream = PyObject_CallFunction(open, "isisssO", fd, mode,
                                   buffering, encoding, errors,
                                   newline, closefd ? Py_True : Py_False);
-    Py_DECREF(open);
+    PyRegion_CLEARLOCAL(open);
     if (stream == NULL)
         return NULL;
     /* ignore name attribute because the name attribute of _BufferedIOMixin
@@ -53,6 +54,7 @@ PyFile_FromFd(int fd, const char *name, const char *mode, int buffering, const c
 PyObject *
 PyFile_GetLine(PyObject *f, int n)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
 
     if (f == NULL) {
@@ -70,14 +72,14 @@ PyFile_GetLine(PyObject *f, int n)
         !PyUnicode_Check(result)) {
         PyErr_Format(PyExc_TypeError,
                      "%T.readline() must return a str, not %T", f, result);
-        Py_SETREF(result, NULL);
+        PyRegion_CLEARLOCAL(result);
     }
 
     if (n < 0 && result != NULL && PyBytes_Check(result)) {
         const char *s = PyBytes_AS_STRING(result);
         Py_ssize_t len = PyBytes_GET_SIZE(result);
         if (len == 0) {
-            Py_SETREF(result, NULL);
+            PyRegion_CLEARLOCAL(result);
             PyErr_SetString(PyExc_EOFError,
                             "EOF when reading a line");
         }
@@ -88,14 +90,14 @@ PyFile_GetLine(PyObject *f, int n)
     if (n < 0 && result != NULL && PyUnicode_Check(result)) {
         Py_ssize_t len = PyUnicode_GET_LENGTH(result);
         if (len == 0) {
-            Py_SETREF(result, NULL);
+            PyRegion_CLEARLOCAL(result);
             PyErr_SetString(PyExc_EOFError,
                             "EOF when reading a line");
         }
         else if (PyUnicode_READ_CHAR(result, len-1) == '\n') {
             PyObject *v;
             v = PyUnicode_Substring(result, 0, len-1);
-            Py_SETREF(result, v);
+            PyRegion_XSETLOCALREF(result, v);
         }
     }
     return result;
@@ -126,8 +128,7 @@ PyFile_WriteObject(PyObject *v, PyObject *f, int flags)
         return -1;
     }
     result = PyObject_CallOneArg(writer, value);
-    assert(!PyRegion_NeedsReadBarrier(value));
-    Py_DECREF(value);
+    PyRegion_CLEARLOCAL(value);
     PyRegion_CLEARLOCAL(writer);
     if (result == NULL)
         return -1;
@@ -138,6 +139,7 @@ PyFile_WriteObject(PyObject *v, PyObject *f, int flags)
 int
 PyFile_WriteString(const char *s, PyObject *f)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (f == NULL) {
         /* Should be caused by a pre-existing error */
         if (!PyErr_Occurred())
@@ -151,6 +153,7 @@ PyFile_WriteString(const char *s, PyObject *f)
         if (v == NULL)
             return -1;
         err = PyFile_WriteObject(v, f, Py_PRINT_RAW);
+        assert(!PyRegion_NeedsReadBarrier(v));
         Py_DECREF(v);
         return err;
     }
@@ -186,18 +189,18 @@ PyObject_AsFileDescriptor(PyObject *o)
     }
     else if (meth != NULL) {
         PyObject *fno = _PyObject_CallNoArgs(meth);
-        Py_DECREF(meth);
+        PyRegion_CLEARLOCAL(meth);
         if (fno == NULL)
             return -1;
 
         if (PyLong_Check(fno)) {
             fd = PyLong_AsInt(fno);
-            Py_DECREF(fno);
+            PyRegion_CLEARLOCAL(fno);
         }
         else {
             PyErr_Format(PyExc_TypeError,
                          "%T.fileno() must return an int, not %T", o, fno);
-            Py_DECREF(fno);
+            PyRegion_CLEARLOCAL(fno);
             return -1;
         }
     }
@@ -221,6 +224,7 @@ PyObject_AsFileDescriptor(PyObject *o)
 int
 _PyLong_FileDescriptor_Converter(PyObject *o, void *ptr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd = PyObject_AsFileDescriptor(o);
     if (fd == -1) {
         return 0;
@@ -232,6 +236,7 @@ _PyLong_FileDescriptor_Converter(PyObject *o, void *ptr)
 char *
 _Py_UniversalNewlineFgetsWithSize(char *buf, int n, FILE *stream, PyObject *fobj, size_t* size)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char *p = buf;
     int c;
 
@@ -274,6 +279,7 @@ _Py_UniversalNewlineFgetsWithSize(char *buf, int n, FILE *stream, PyObject *fobj
 
 char *
 Py_UniversalNewlineFgets(char *buf, int n, FILE *stream, PyObject *fobj) {
+    // Pyrona: This functions was checked and no further migration is needed
     size_t size;
     return _Py_UniversalNewlineFgetsWithSize(buf, n, stream, fobj, &size);
 }
@@ -291,6 +297,7 @@ typedef struct {
 PyObject *
 PyFile_NewStdPrinter(int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStdPrinter_Object *self;
 
     if (fd != fileno(stdout) && fd != fileno(stderr)) {
@@ -309,6 +316,7 @@ PyFile_NewStdPrinter(int fd)
 static PyObject *
 stdprinter_write(PyObject *op, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStdPrinter_Object *self = (PyStdPrinter_Object*)op;
     PyObject *unicode;
     PyObject *bytes = NULL;
@@ -346,7 +354,7 @@ stdprinter_write(PyObject *op, PyObject *args)
     /* save errno, it can be modified indirectly by Py_XDECREF() */
     err = errno;
 
-    Py_XDECREF(bytes);
+    PyRegion_CLEARLOCAL(bytes);
 
     if (n == -1) {
         if (err == EAGAIN) {
@@ -362,6 +370,7 @@ stdprinter_write(PyObject *op, PyObject *args)
 static PyObject *
 stdprinter_fileno(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStdPrinter_Object *self = (PyStdPrinter_Object*)op;
     return PyLong_FromLong((long) self->fd);
 }
@@ -369,6 +378,7 @@ stdprinter_fileno(PyObject *op, PyObject *Py_UNUSED(ignored))
 static PyObject *
 stdprinter_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStdPrinter_Object *self = (PyStdPrinter_Object*)op;
     return PyUnicode_FromFormat("<stdprinter(fd=%d) object at %p>",
                                 self->fd, self);
@@ -377,12 +387,14 @@ stdprinter_repr(PyObject *op)
 static PyObject *
 stdprinter_noop(PyObject *self, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NONE;
 }
 
 static PyObject *
 stdprinter_isatty(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStdPrinter_Object *self = (PyStdPrinter_Object*)op;
     long res;
     if (self->fd < 0) {
@@ -408,18 +420,21 @@ static PyMethodDef stdprinter_methods[] = {
 static PyObject *
 get_closed(PyObject *self, void *Py_UNUSED(closure))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_FALSE;
 }
 
 static PyObject *
 get_mode(PyObject *self, void *Py_UNUSED(closure))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyUnicode_FromString("w");
 }
 
 static PyObject *
 get_encoding(PyObject *self, void *Py_UNUSED(closure))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NONE;
 }
 
@@ -471,6 +486,7 @@ PyTypeObject PyStdPrinter_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     0,                                          /* tp_new */
     PyObject_Free,                              /* tp_free */
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
@@ -481,6 +497,7 @@ PyTypeObject PyStdPrinter_Type = {
 
 int
 PyFile_SetOpenCodeHook(Py_OpenCodeHookFunction hook, void *userData) {
+    // Pyrona: This functions was checked and no further migration is needed
     if (Py_IsInitialized() &&
         PySys_Audit("setopencodehook", NULL) < 0) {
         return -1;
@@ -502,6 +519,7 @@ PyFile_SetOpenCodeHook(Py_OpenCodeHookFunction hook, void *userData) {
 PyObject *
 PyFile_OpenCodeObject(PyObject *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *f = NULL;
 
     if (!PyUnicode_Check(path)) {
@@ -517,7 +535,7 @@ PyFile_OpenCodeObject(PyObject *path)
         PyObject *open = PyImport_ImportModuleAttrString("_io", "open");
         if (open) {
             f = PyObject_CallFunction(open, "Os", path, "rb");
-            Py_DECREF(open);
+            PyRegion_CLEARLOCAL(open);
         }
     }
 
@@ -527,13 +545,14 @@ PyFile_OpenCodeObject(PyObject *path)
 PyObject *
 PyFile_OpenCode(const char *utf8path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *pathobj = PyUnicode_FromString(utf8path);
     PyObject *f;
     if (!pathobj) {
         return NULL;
     }
     f = PyFile_OpenCodeObject(pathobj);
-    Py_DECREF(pathobj);
+    PyRegion_CLEARLOCAL(pathobj);
     return f;
 }
 
@@ -541,10 +560,11 @@ PyFile_OpenCode(const char *utf8path)
 int
 _PyFile_Flush(PyObject *file)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp = PyObject_CallMethodNoArgs(file, &_Py_ID(flush));
     if (tmp == NULL) {
         return -1;
     }
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return 0;
 }

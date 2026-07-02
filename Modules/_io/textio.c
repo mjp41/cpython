@@ -48,6 +48,7 @@ PyDoc_STRVAR(textiobase_doc,
 static PyObject *
 _unsupported(_PyIO_State *state, const char *message)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyErr_SetString(state->unsupported_operation, message);
     return NULL;
 }
@@ -67,6 +68,7 @@ static PyObject *
 _io__TextIOBase_detach_impl(PyObject *self, PyTypeObject *cls)
 /*[clinic end generated code: output=50915f40c609eaa4 input=8cd0652c17d7f015]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return _unsupported(state, "detach");
 }
@@ -88,6 +90,7 @@ _io__TextIOBase_read_impl(PyObject *self, PyTypeObject *cls,
                           int Py_UNUSED(size))
 /*[clinic end generated code: output=51a5178a309ce647 input=f5e37720f9fc563f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return _unsupported(state, "read");
 }
@@ -109,6 +112,7 @@ _io__TextIOBase_readline_impl(PyObject *self, PyTypeObject *cls,
                               int Py_UNUSED(size))
 /*[clinic end generated code: output=3f47d7966d6d074e input=42eafec94107fa27]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return _unsupported(state, "readline");
 }
@@ -130,6 +134,7 @@ _io__TextIOBase_write_impl(PyObject *self, PyTypeObject *cls,
                            const char *Py_UNUSED(s))
 /*[clinic end generated code: output=18b28231460275de input=e9cabaa5f6732b07]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyIO_State *state = get_io_state_by_cls(cls);
     return _unsupported(state, "write");
 }
@@ -147,6 +152,7 @@ static PyObject *
 _io__TextIOBase_encoding_get_impl(PyObject *self)
 /*[clinic end generated code: output=e0f5d8f548b92432 input=4736d7621dd38f43]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NONE;
 }
 
@@ -165,6 +171,7 @@ static PyObject *
 _io__TextIOBase_newlines_get_impl(PyObject *self)
 /*[clinic end generated code: output=46ec147fb9f00c2a input=a5b196d076af1164]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NONE;
 }
 
@@ -181,6 +188,7 @@ static PyObject *
 _io__TextIOBase_errors_get_impl(PyObject *self)
 /*[clinic end generated code: output=c6623d6addcd087d input=974aa52d1db93a82]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_RETURN_NONE;
 }
 
@@ -204,6 +212,7 @@ static PyType_Slot textiobase_slots[] = {
     {Py_tp_doc, (void *)textiobase_doc},
     {Py_tp_methods, textiobase_methods},
     {Py_tp_getset, textiobase_getset},
+    {Py_tp_reachable, _PyObject_ReachableVisitType},
     {0, NULL},
 };
 
@@ -213,6 +222,7 @@ PyType_Spec textiobase_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = textiobase_slots,
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /* IncrementalNewlineDecoder */
@@ -250,16 +260,22 @@ _io_IncrementalNewlineDecoder___init___impl(nldecoder_object *self,
                                             PyObject *errors)
 /*[clinic end generated code: output=fbd04d443e764ec2 input=ed547aa257616b0e]*/
 {
-
+    // Pyrona: This functions was checked and no further migration is needed
+    
+    // Regions: self should always be local in init functions, this
+    // makes the following local ref usage safe
+    assert(PyRegion_IsLocal(self));
     if (errors == NULL) {
         errors = &_Py_ID(strict);
     }
     else {
-        errors = Py_NewRef(errors);
+        errors = PyRegion_NewRef(errors);
     }
 
+    assert(self->errors == NULL);
+    assert(self->decoder == NULL);
     Py_XSETREF(self->errors, errors);
-    Py_XSETREF(self->decoder, Py_NewRef(decoder));
+    Py_XSETREF(self->decoder, PyRegion_NewRef(decoder));
     self->translate = translate ? 1 : 0;
     self->seennl = 0;
     self->pendingcr = 0;
@@ -270,6 +286,7 @@ _io_IncrementalNewlineDecoder___init___impl(nldecoder_object *self,
 static int
 incrementalnewlinedecoder_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     nldecoder_object *self = nldecoder_object_CAST(op);
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->decoder);
@@ -280,33 +297,37 @@ incrementalnewlinedecoder_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 incrementalnewlinedecoder_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     nldecoder_object *self = nldecoder_object_CAST(op);
-    Py_CLEAR(self->decoder);
-    Py_CLEAR(self->errors);
+    PyRegion_CLEAR(self, self->decoder);
+    PyRegion_CLEAR(self, self->errors);
     return 0;
 }
 
 static void
 incrementalnewlinedecoder_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     nldecoder_object *self = nldecoder_object_CAST(op);
     PyTypeObject *tp = Py_TYPE(self);
     _PyObject_GC_UNTRACK(self);
     (void)incrementalnewlinedecoder_clear(op);
     tp->tp_free(self);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
 static int
 check_decoded(PyObject *decoded)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (decoded == NULL)
         return -1;
     if (!PyUnicode_Check(decoded)) {
         PyErr_Format(PyExc_TypeError,
                      "decoder should return a string result, not '%.200s'",
                      Py_TYPE(decoded)->tp_name);
-        Py_DECREF(decoded);
+            PyRegion_CLEARLOCAL(decoded);
         return -1;
     }
     return 0;
@@ -328,6 +349,7 @@ PyObject *
 _PyIncrementalNewlineDecoder_decode(PyObject *myself,
                                     PyObject *input, int final)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *output;
     Py_ssize_t output_len;
     nldecoder_object *self = nldecoder_object_CAST(myself);
@@ -340,7 +362,7 @@ _PyIncrementalNewlineDecoder_decode(PyObject *myself,
             &_Py_ID(decode), input, final ? Py_True : Py_False, NULL);
     }
     else {
-        output = Py_NewRef(input);
+        output = PyRegion_NewRef(input);
     }
 
     if (check_decoded(output) < 0)
@@ -361,7 +383,7 @@ _PyIncrementalNewlineDecoder_decode(PyObject *myself,
         out = PyUnicode_DATA(modified);
         PyUnicode_WRITE(kind, out, 0, '\r');
         memcpy(out + kind, PyUnicode_DATA(output), kind * output_len);
-        Py_SETREF(output, modified);
+        PyRegion_XSETLOCALREF(output, modified);
         self->pendingcr = 0;
         output_len++;
     }
@@ -376,7 +398,7 @@ _PyIncrementalNewlineDecoder_decode(PyObject *myself,
             PyObject *modified = PyUnicode_Substring(output, 0, output_len -1);
             if (modified == NULL)
                 goto error;
-            Py_SETREF(output, modified);
+            PyRegion_XSETLOCALREF(output, modified);
             self->pendingcr = 1;
         }
     }
@@ -502,7 +524,7 @@ _PyIncrementalNewlineDecoder_decode(PyObject *myself,
                     break;
                 PyUnicode_WRITE(kind, translated, out++, c);
             }
-            Py_DECREF(output);
+            PyRegion_CLEARLOCAL(output);
             output = PyUnicode_FromKindAndData(kind, translated, out);
             PyMem_Free(translated);
             if (!output)
@@ -514,7 +536,7 @@ _PyIncrementalNewlineDecoder_decode(PyObject *myself,
     return output;
 
   error:
-    Py_DECREF(output);
+    PyRegion_CLEARLOCAL(output);
     return NULL;
 }
 
@@ -529,6 +551,7 @@ _io_IncrementalNewlineDecoder_decode_impl(nldecoder_object *self,
                                           PyObject *input, int final)
 /*[clinic end generated code: output=0d486755bb37a66e input=90e223c70322c5cd]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyIncrementalNewlineDecoder_decode((PyObject *) self, input, final);
 }
 
@@ -540,6 +563,7 @@ static PyObject *
 _io_IncrementalNewlineDecoder_getstate_impl(nldecoder_object *self)
 /*[clinic end generated code: output=f0d2c9c136f4e0d0 input=f8ff101825e32e7f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *buffer;
     unsigned long long flag;
 
@@ -553,17 +577,17 @@ _io_IncrementalNewlineDecoder_getstate_impl(nldecoder_object *self)
         if (!PyTuple_Check(state)) {
             PyErr_SetString(PyExc_TypeError,
                             "illegal decoder state");
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(state);
             return NULL;
         }
         if (!PyArg_ParseTuple(state, "OK;illegal decoder state",
                               &buffer, &flag))
         {
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(state);
             return NULL;
         }
-        Py_INCREF(buffer);
-        Py_DECREF(state);
+        PyRegion_NewRef(buffer);
+        PyRegion_CLEARLOCAL(state);
     }
     else {
         buffer = Py_GetConstant(Py_CONSTANT_EMPTY_BYTES);
@@ -586,6 +610,7 @@ _io_IncrementalNewlineDecoder_setstate_impl(nldecoder_object *self,
                                             PyObject *state)
 /*[clinic end generated code: output=09135cb6e78a1dc8 input=c53fb505a76dbbe2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *buffer;
     unsigned long long flag;
 
@@ -621,6 +646,7 @@ static PyObject *
 _io_IncrementalNewlineDecoder_reset_impl(nldecoder_object *self)
 /*[clinic end generated code: output=32fa40c7462aa8ff input=728678ddaea776df]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED_DECODER(self);
 
     self->seennl = 0;
@@ -634,6 +660,7 @@ _io_IncrementalNewlineDecoder_reset_impl(nldecoder_object *self)
 static PyObject *
 incrementalnewlinedecoder_newlines_get(PyObject *op, void *Py_UNUSED(context))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     nldecoder_object *self = nldecoder_object_CAST(op);
     CHECK_INITIALIZED_DECODER(self);
 
@@ -726,7 +753,7 @@ struct textio
 #define textio_CAST(op) ((textio *)(op))
 
 static void
-textiowrapper_set_decoded_chars(textio *self, PyObject *chars);
+textiowrapper_clear_decoded_chars(textio *self);
 
 /* A couple of specialized cases in order to bypass the slow incremental
    encoding methods for the most popular encodings. */
@@ -734,6 +761,7 @@ textiowrapper_set_decoded_chars(textio *self, PyObject *chars);
 static PyObject *
 ascii_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_AsASCIIString(text, PyUnicode_AsUTF8(self->errors));
 }
@@ -741,6 +769,7 @@ ascii_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf16be_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_EncodeUTF16(text, PyUnicode_AsUTF8(self->errors), 1);
 }
@@ -748,6 +777,7 @@ utf16be_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf16le_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_EncodeUTF16(text, PyUnicode_AsUTF8(self->errors), -1);
 }
@@ -755,6 +785,7 @@ utf16le_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf16_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     if (!self->encoding_start_of_stream) {
         /* Skip the BOM and use native byte ordering */
@@ -770,6 +801,7 @@ utf16_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf32be_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_EncodeUTF32(text, PyUnicode_AsUTF8(self->errors), 1);
 }
@@ -777,6 +809,7 @@ utf32be_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf32le_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_EncodeUTF32(text, PyUnicode_AsUTF8(self->errors), -1);
 }
@@ -784,6 +817,7 @@ utf32le_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf32_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     if (!self->encoding_start_of_stream) {
         /* Skip the BOM and use native byte ordering */
@@ -799,6 +833,7 @@ utf32_encode(PyObject *op, PyObject *text)
 static PyObject *
 utf8_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_AsUTF8String(text, PyUnicode_AsUTF8(self->errors));
 }
@@ -806,6 +841,7 @@ utf8_encode(PyObject *op, PyObject *text)
 static PyObject *
 latin1_encode(PyObject *op, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     return _PyUnicode_AsLatin1String(text, PyUnicode_AsUTF8(self->errors));
 }
@@ -840,6 +876,7 @@ static const encodefuncentry encodefuncs[] = {
 static int
 validate_newline(const char *newline)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (newline && newline[0] != '\0'
         && !(newline[0] == '\n' && newline[1] == '\0')
         && !(newline[0] == '\r' && newline[1] == '\0')
@@ -854,6 +891,7 @@ validate_newline(const char *newline)
 static int
 set_newline(textio *self, const char *newline)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *old = self->readnl;
     if (newline == NULL) {
         self->readnl = NULL;
@@ -883,7 +921,7 @@ set_newline(textio *self, const char *newline)
         self->writenl = NULL;
 #endif
     }
-    Py_XDECREF(old);
+    PyRegion_CLEARLOCAL(old);
     return 0;
 }
 
@@ -891,6 +929,11 @@ static int
 _textiowrapper_set_decoder(textio *self, PyObject *codec_info,
                            const char *errors)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+    if (!Py_CHECKWRITE(self)) {
+        PyErr_WriteToImmutable(self);
+        return -1;
+    }
     PyObject *res;
     int r;
 
@@ -899,17 +942,23 @@ _textiowrapper_set_decoder(textio *self, PyObject *codec_info,
         return -1;
 
     r = PyObject_IsTrue(res);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (r == -1)
         return -1;
 
     if (r != 1)
         return 0;
 
-    Py_CLEAR(self->decoder);
+    PyRegion_CLEAR(self, self->decoder);
     self->decoder = _PyCodecInfo_GetIncrementalDecoder(codec_info, errors);
     if (self->decoder == NULL)
         return -1;
+    // Regions: The previous implementation allowed sideeffects of failure,
+    // on failure, we clear the decoder which is still seen as local right now.
+    if (PyRegion_TakeRef(self, self->decoder)) {
+        PyRegion_CLEARLOCAL(self->decoder);
+        return -1;
+    }
 
     if (self->readuniversal) {
         _PyIO_State *state = self->state;
@@ -918,7 +967,10 @@ _textiowrapper_set_decoder(textio *self, PyObject *codec_info,
             self->decoder, self->readtranslate ? Py_True : Py_False, NULL);
         if (incrementalDecoder == NULL)
             return -1;
-        Py_XSETREF(self->decoder, incrementalDecoder);
+        if (PyRegion_XSETREF(self, self->decoder, incrementalDecoder)) {
+            PyRegion_CLEARLOCAL(incrementalDecoder);
+            return -1;
+        }
     }
 
     return 0;
@@ -928,6 +980,7 @@ static PyObject*
 _textiowrapper_decode(_PyIO_State *state, PyObject *decoder, PyObject *bytes,
                       int eof)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *chars;
 
     if (Py_IS_TYPE(decoder, state->PyIncrementalNewlineDecoder_Type))
@@ -947,6 +1000,7 @@ static int
 _textiowrapper_set_encoder(textio *self, PyObject *codec_info,
                            const char *errors)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     int r;
 
@@ -955,18 +1009,23 @@ _textiowrapper_set_encoder(textio *self, PyObject *codec_info,
         return -1;
 
     r = PyObject_IsTrue(res);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (r == -1)
         return -1;
 
     if (r != 1)
         return 0;
 
-    Py_CLEAR(self->encoder);
+    PyRegion_CLEAR(self, self->encoder);
     self->encodefunc = NULL;
-    self->encoder = _PyCodecInfo_GetIncrementalEncoder(codec_info, errors);
-    if (self->encoder == NULL)
+    PyObject* encoder = _PyCodecInfo_GetIncrementalEncoder(codec_info, errors);
+    if (encoder == NULL)
         return -1;
+    if (PyRegion_TakeRef(self, encoder)) {
+        PyRegion_CLEARLOCAL(encoder);
+        return -1;
+    }
+    self->encoder = encoder;
 
     /* Get the normalized named of the codec */
     if (PyObject_GetOptionalAttr(codec_info, &_Py_ID(name), &res) < 0) {
@@ -982,7 +1041,7 @@ _textiowrapper_set_encoder(textio *self, PyObject *codec_info,
             e++;
         }
     }
-    Py_XDECREF(res);
+    PyRegion_CLEARLOCAL(res);
 
     return 0;
 }
@@ -990,6 +1049,7 @@ _textiowrapper_set_encoder(textio *self, PyObject *codec_info,
 static int
 _textiowrapper_fix_encoder_state(textio *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!self->seekable || !self->encoder) {
         return 0;
     }
@@ -1003,7 +1063,7 @@ _textiowrapper_fix_encoder_state(textio *self)
     }
 
     int cmp = PyObject_RichCompareBool(cookieObj, _PyLong_GetZero(), Py_EQ);
-    Py_DECREF(cookieObj);
+    PyRegion_CLEARLOCAL(cookieObj);
     if (cmp < 0) {
         return -1;
     }
@@ -1015,7 +1075,7 @@ _textiowrapper_fix_encoder_state(textio *self)
         if (res == NULL) {
             return -1;
         }
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
     }
 
     return 0;
@@ -1024,6 +1084,7 @@ _textiowrapper_fix_encoder_state(textio *self)
 static int
 io_check_errors(PyObject *errors)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(errors != NULL && errors != Py_None);
 
     PyInterpreterState *interp = _PyInterpreterState_GET();
@@ -1048,7 +1109,7 @@ io_check_errors(PyObject *errors)
     }
     PyObject *handler = PyCodec_LookupError(name);
     if (handler != NULL) {
-        Py_DECREF(handler);
+        PyRegion_CLEARLOCAL(handler);
         return 0;
     }
     return -1;
@@ -1102,9 +1163,13 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
                                 int write_through)
 /*[clinic end generated code: output=72267c0c01032ed2 input=e6cfaaaf6059d4f5]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *raw, *codec_info = NULL;
     PyObject *res;
     int r;
+
+    // Regions: self should always be local in __init__
+    assert(PyRegion_IsLocal(self));
 
     self->ok = 0;
     self->detached = 0;
@@ -1163,6 +1228,9 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
         self->encoding = &_Py_STR(utf_8);
     }
     else if (encoding == NULL || (strcmp(encoding, "locale") == 0)) {
+        // Regions: We receive a local reference, since self is local
+        // we can skip the write barrier here.
+        assert(PyRegion_IsLocal(self));
         self->encoding = _Py_GetLocaleEncodingObject();
         if (self->encoding == NULL) {
             goto error;
@@ -1176,6 +1244,9 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
             goto error;
     }
     else if (encoding != NULL) {
+        // Regions: We receive a local reference, since self is local
+        // we can skip the write barrier here.
+        assert(PyRegion_IsLocal(self));
         self->encoding = PyUnicode_FromString(encoding);
         if (self->encoding == NULL)
             goto error;
@@ -1189,7 +1260,7 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
     /* Check we have been asked for a real text encoding */
     codec_info = _PyCodec_LookupTextEncoding(encoding, NULL);
     if (codec_info == NULL) {
-        Py_CLEAR(self->encoding);
+        PyRegion_CLEARLOCAL(self->encoding);
         goto error;
     }
 
@@ -1197,15 +1268,14 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
      * of the partially constructed object (like self->encoding)
      */
 
-    self->errors = Py_NewRef(errors);
+    self->errors = PyRegion_NewRef(errors);
     self->chunk_size = 8192;
     self->line_buffering = line_buffering;
     self->write_through = write_through;
+    self->buffer = PyRegion_NewRef(buffer);
     if (set_newline(self, newline) < 0) {
         goto error;
     }
-
-    self->buffer = Py_NewRef(buffer);
 
     /* Build the decoder object */
     _PyIO_State *state = find_io_state_by_def(Py_TYPE(self));
@@ -1218,7 +1288,7 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
         goto error;
 
     /* Finished sorting out the codec details */
-    Py_CLEAR(codec_info);
+    PyRegion_CLEARLOCAL(codec_info);
 
     if (Py_IS_TYPE(buffer, state->PyBufferedReader_Type) ||
         Py_IS_TYPE(buffer, state->PyBufferedWriter_Type) ||
@@ -1228,10 +1298,11 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
             goto error;
         /* Cache the raw FileIO object to speed up 'closed' checks */
         if (raw != NULL) {
-            if (Py_IS_TYPE(raw, state->PyFileIO_Type))
+            if (Py_IS_TYPE(raw, state->PyFileIO_Type)) {
+                // Regions: No barrier needed sicne self is local
                 self->raw = raw;
-            else
-                Py_DECREF(raw);
+            } else
+                PyRegion_CLEARLOCAL(raw);
         }
     }
 
@@ -1239,7 +1310,7 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
     if (res == NULL)
         goto error;
     r = PyObject_IsTrue(res);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (r < 0)
         goto error;
     self->seekable = self->telling = r;
@@ -1259,7 +1330,7 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
     return 0;
 
   error:
-    Py_XDECREF(codec_info);
+    PyRegion_CLEARLOCAL(codec_info);
     return -1;
 }
 
@@ -1269,6 +1340,7 @@ _io_TextIOWrapper___init___impl(textio *self, PyObject *buffer,
 static int
 convert_optional_bool(PyObject *obj, int default_value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long v;
     if (obj == Py_None) {
         v = default_value;
@@ -1285,6 +1357,8 @@ static int
 textiowrapper_change_encoding(textio *self, PyObject *encoding,
                               PyObject *errors, int newline_changed)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Use existing settings where new settings are not specified */
     if (encoding == Py_None && errors == Py_None && !newline_changed) {
         return 0;  // no change
@@ -1295,7 +1369,7 @@ textiowrapper_change_encoding(textio *self, PyObject *encoding,
         if (errors == Py_None) {
             errors = self->errors;
         }
-        Py_INCREF(encoding);
+        PyRegion_NewRef(encoding);
     }
     else {
         if (_PyUnicode_EqualToASCIIString(encoding, "locale")) {
@@ -1304,43 +1378,50 @@ textiowrapper_change_encoding(textio *self, PyObject *encoding,
                 return -1;
             }
         } else {
-            Py_INCREF(encoding);
+            PyRegion_NewRef(encoding);
         }
         if (errors == Py_None) {
             errors = &_Py_ID(strict);
         }
     }
-    Py_INCREF(errors);
+    PyRegion_NewRef(errors);
 
     const char *c_encoding = PyUnicode_AsUTF8(encoding);
     if (c_encoding == NULL) {
-        Py_DECREF(encoding);
-        Py_DECREF(errors);
+        PyRegion_CLEARLOCAL(encoding);
+        PyRegion_CLEARLOCAL(errors);
         return -1;
     }
     const char *c_errors = PyUnicode_AsUTF8(errors);
     if (c_errors == NULL) {
-        Py_DECREF(encoding);
-        Py_DECREF(errors);
+        PyRegion_CLEARLOCAL(encoding);
+        PyRegion_CLEARLOCAL(errors);
         return -1;
     }
 
     // Create new encoder & decoder
     PyObject *codec_info = _PyCodec_LookupTextEncoding(c_encoding, NULL);
     if (codec_info == NULL) {
-        Py_DECREF(encoding);
-        Py_DECREF(errors);
+        PyRegion_CLEARLOCAL(encoding);
+        PyRegion_CLEARLOCAL(errors);
         return -1;
     }
     if (_textiowrapper_set_decoder(self, codec_info, c_errors) != 0 ||
             _textiowrapper_set_encoder(self, codec_info, c_errors) != 0) {
-        Py_DECREF(codec_info);
-        Py_DECREF(encoding);
-        Py_DECREF(errors);
+        PyRegion_CLEARLOCAL(codec_info);
+        PyRegion_CLEARLOCAL(encoding);
+        PyRegion_CLEARLOCAL(errors);
         return -1;
     }
-    Py_DECREF(codec_info);
+    PyRegion_CLEARLOCAL(codec_info);
 
+    if (PyRegion_TakeRefs(self, encoding, errors)) {
+        PyRegion_CLEARLOCAL(encoding);
+        PyRegion_CLEARLOCAL(errors);
+        return -1;
+    }
+    PyRegion_RemoveRef(self, self->encoding);
+    PyRegion_RemoveRef(self, self->errors);
     Py_SETREF(self->encoding, encoding);
     Py_SETREF(self->errors, errors);
 
@@ -1370,6 +1451,7 @@ _io_TextIOWrapper_reconfigure_impl(textio *self, PyObject *encoding,
                                    PyObject *write_through_obj)
 /*[clinic end generated code: output=52b812ff4b3d4b0f input=dc3bd35ebda702a7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int line_buffering;
     int write_through;
     const char *newline = NULL;
@@ -1444,26 +1526,28 @@ _io_TextIOWrapper_reconfigure_impl(textio *self, PyObject *encoding,
 static int
 textiowrapper_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     self->ok = 0;
-    Py_CLEAR(self->buffer);
-    Py_CLEAR(self->encoding);
-    Py_CLEAR(self->encoder);
-    Py_CLEAR(self->decoder);
-    Py_CLEAR(self->readnl);
-    Py_CLEAR(self->decoded_chars);
-    Py_CLEAR(self->pending_bytes);
-    Py_CLEAR(self->snapshot);
-    Py_CLEAR(self->errors);
-    Py_CLEAR(self->raw);
+    PyRegion_CLEAR(self, self->buffer);
+    PyRegion_CLEAR(self, self->encoding);
+    PyRegion_CLEAR(self, self->encoder);
+    PyRegion_CLEAR(self, self->decoder);
+    PyRegion_CLEAR(self, self->readnl);
+    PyRegion_CLEAR(self, self->decoded_chars);
+    PyRegion_CLEAR(self, self->pending_bytes);
+    PyRegion_CLEAR(self, self->snapshot);
+    PyRegion_CLEAR(self, self->errors);
+    PyRegion_CLEAR(self, self->raw);
 
-    Py_CLEAR(self->dict);
+    PyRegion_CLEAR(self, self->dict);
     return 0;
 }
 
 static void
 textiowrapper_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     PyTypeObject *tp = Py_TYPE(self);
     self->finalizing = 1;
@@ -1474,12 +1558,14 @@ textiowrapper_dealloc(PyObject *op)
     FT_CLEAR_WEAKREFS(op, self->weakreflist);
     (void)textiowrapper_clear(op);
     tp->tp_free(self);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
 static int
 textiowrapper_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     textio *self = textio_CAST(op);
     Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->buffer);
@@ -1513,7 +1599,7 @@ _io_TextIOWrapper_closed_get_impl(textio *self);
                 if (_res == NULL) \
                     return NULL; \
                 r = PyObject_IsTrue(_res); \
-                Py_DECREF(_res); \
+                PyRegion_CLEARLOCAL(_res); \
                 if (r < 0) \
                     return NULL; \
             } \
@@ -1563,11 +1649,14 @@ static PyObject *
 _io_TextIOWrapper_detach_impl(textio *self)
 /*[clinic end generated code: output=7ba3715cd032d5f2 input=c908a3b4ef203b0f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *buffer;
     CHECK_ATTACHED(self);
     if (_PyFile_Flush((PyObject *)self) < 0) {
         return NULL;
     }
+    PyRegion_AddLocalRef(self->buffer);
+    PyRegion_RemoveRef(self, self->buffer);
     buffer = self->buffer;
     self->buffer = NULL;
     self->detached = 1;
@@ -1588,7 +1677,7 @@ _textiowrapper_writeflush(textio *self)
     PyObject *b;
 
     if (PyBytes_Check(pending)) {
-        b = Py_NewRef(pending);
+        b = PyRegion_NewRef(pending);
     }
     else if (PyUnicode_Check(pending)) {
         assert(PyUnicode_IS_ASCII(pending));
@@ -1621,7 +1710,7 @@ _textiowrapper_writeflush(textio *self)
             else {
                 assert(PyBytes_Check(obj));
                 if (PyBytes_AsStringAndSize(obj, &src, &len) < 0) {
-                    Py_DECREF(b);
+                    PyRegion_CLEARLOCAL(b);
                     return -1;
                 }
             }
@@ -1631,20 +1720,20 @@ _textiowrapper_writeflush(textio *self)
         assert(pos == self->pending_bytes_count);
     }
 
+    assert(pending == self->pending_bytes);
     self->pending_bytes_count = 0;
-    self->pending_bytes = NULL;
-    Py_DECREF(pending);
+    PyRegion_CLEAR(self, self->pending_bytes);
 
     PyObject *ret;
     do {
         ret = PyObject_CallMethodOneArg(self->buffer, &_Py_ID(write), b);
     } while (ret == NULL && _PyIO_trap_eintr());
-    Py_DECREF(b);
+    PyRegion_CLEARLOCAL(b);
     // NOTE: We cleared buffer but we don't know how many bytes are actually written
     // when an error occurred.
     if (ret == NULL)
         return -1;
-    Py_DECREF(ret);
+    PyRegion_CLEARLOCAL(ret);
     return 0;
 }
 
@@ -1659,6 +1748,7 @@ static PyObject *
 _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
 /*[clinic end generated code: output=d2deb0d50771fcec input=73ec95c5c4a3489c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *ret;
     PyObject *b;
     Py_ssize_t textlen;
@@ -1672,7 +1762,7 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
         return _unsupported(self->state, "not writable");
     }
 
-    Py_INCREF(text);
+    PyRegion_NewRef(text);
 
     textlen = PyUnicode_GET_LENGTH(text);
 
@@ -1683,7 +1773,7 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
     if (haslf && self->writetranslate && self->writenl != NULL) {
         PyObject *newtext = _PyObject_CallMethod(text, &_Py_ID(replace),
                                                  "ss", "\n", self->writenl);
-        Py_DECREF(text);
+        PyRegion_CLEARLOCAL(text);
         if (newtext == NULL)
             return NULL;
         text = newtext;
@@ -1702,7 +1792,7 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
                 // See bpo-43260
                 PyUnicode_GET_LENGTH(text) <= self->chunk_size &&
                 is_asciicompat_encoding(self->encodefunc)) {
-            b = Py_NewRef(text);
+            b = PyRegion_NewRef(text);
         }
         else {
             b = (*self->encodefunc)((PyObject *) self, text);
@@ -1713,6 +1803,7 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
         b = PyObject_CallMethodOneArg(self->encoder, &_Py_ID(encode), text);
     }
 
+    PyRegion_RemoveLocalRef(text);
     Py_DECREF(text);
     if (b == NULL)
         return NULL;
@@ -1720,7 +1811,7 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
         PyErr_Format(PyExc_TypeError,
                      "encoder should return a bytes object, not '%.200s'",
                      Py_TYPE(b)->tp_name);
-        Py_DECREF(b);
+        PyRegion_CLEARLOCAL(b);
         return NULL;
     }
 
@@ -1744,7 +1835,7 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
         // https://github.com/python/cpython/issues/119506
         while (self->pending_bytes != NULL) {
             if (_textiowrapper_writeflush(self) < 0) {
-                Py_DECREF(b);
+                PyRegion_CLEARLOCAL(b);
                 return NULL;
             }
         }
@@ -1752,27 +1843,40 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
 
     if (self->pending_bytes == NULL) {
         assert(self->pending_bytes_count == 0);
-        self->pending_bytes = b;
+        if (PyRegion_XSETREF(self, self->pending_bytes, b)) {
+            PyRegion_CLEARLOCAL(b);
+            return NULL;
+        }
     }
     else if (!PyList_CheckExact(self->pending_bytes)) {
         PyObject *list = PyList_New(2);
         if (list == NULL) {
-            Py_DECREF(b);
+            PyRegion_CLEARLOCAL(b);
             return NULL;
         }
         // Since Python 3.12, allocating GC object won't trigger GC and release
         // GIL. See https://github.com/python/cpython/issues/97922
         assert(!PyList_CheckExact(self->pending_bytes));
-        PyList_SET_ITEM(list, 0, self->pending_bytes);
+        // Regions: This steals a local reference and stores it in a local object
+        // the write barrier can therefore be skipped
         PyList_SET_ITEM(list, 1, b);
+        // Regions: Make sure list is in the same region as self.
+        if (PyRegion_AddRef(self, list)) {
+            PyRegion_CLEARLOCAL(list);
+            return NULL;
+        }
+        // Regions: We can skip the write barrier since list
+        // and self are now in the same region
+        assert(PyRegion_SameRegion(self, list));
+        PyList_SET_ITEM(list, 0, self->pending_bytes);
         self->pending_bytes = list;
     }
     else {
         if (PyList_Append(self->pending_bytes, b) < 0) {
-            Py_DECREF(b);
+            PyRegion_CLEARLOCAL(b);
             return NULL;
         }
-        Py_DECREF(b);
+        PyRegion_CLEARLOCAL(b);
     }
 
     self->pending_bytes_count += bytes_len;
@@ -1789,32 +1893,45 @@ _io_TextIOWrapper_write_impl(textio *self, PyObject *text)
     }
 
     if (self->snapshot != NULL) {
-        textiowrapper_set_decoded_chars(self, NULL);
-        Py_CLEAR(self->snapshot);
+        textiowrapper_clear_decoded_chars(self);
+        PyRegion_CLEAR(self, self->snapshot);
     }
 
     if (self->decoder) {
         ret = PyObject_CallMethodNoArgs(self->decoder, &_Py_ID(reset));
         if (ret == NULL)
             return NULL;
-        Py_DECREF(ret);
+        PyRegion_CLEARLOCAL(ret);
     }
 
     return PyLong_FromSsize_t(textlen);
 }
 
+static void
+textiowrapper_clear_decoded_chars(textio *self)
+{
+    // Pyrona: This functions was checked and no further migration is needed
+    PyRegion_CLEAR(self, self->decoded_chars);
+    self->decoded_chars_used = 0;
+}
+
 /* Steal a reference to chars and store it in the decoded_char buffer;
  */
-static void
+static int
 textiowrapper_set_decoded_chars(textio *self, PyObject *chars)
 {
-    Py_XSETREF(self->decoded_chars, chars);
+    // Pyrona: This functions was checked and no further migration is needed
+    if (PyRegion_XSETREF(self, self->decoded_chars, chars)) {
+        return -1;
+    }
     self->decoded_chars_used = 0;
+    return 0;
 }
 
 static PyObject *
 textiowrapper_get_decoded_chars(textio *self, Py_ssize_t n)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *chars;
     Py_ssize_t avail;
 
@@ -1837,7 +1954,7 @@ textiowrapper_get_decoded_chars(textio *self, Py_ssize_t n)
             return NULL;
     }
     else {
-        chars = Py_NewRef(self->decoded_chars);
+        chars = PyRegion_NewRef(self->decoded_chars);
     }
 
     self->decoded_chars_used += n;
@@ -1849,6 +1966,7 @@ textiowrapper_get_decoded_chars(textio *self, Py_ssize_t n)
 static int
 textiowrapper_read_chunk(textio *self, Py_ssize_t size_hint)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *dec_buffer = NULL;
     PyObject *dec_flags = NULL;
     PyObject *input_chunk = NULL;
@@ -1882,13 +2000,13 @@ textiowrapper_read_chunk(textio *self, Py_ssize_t size_hint)
         if (!PyTuple_Check(state)) {
             PyErr_SetString(PyExc_TypeError,
                             "illegal decoder state");
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(state);
             return -1;
         }
         if (!PyArg_ParseTuple(state,
                               "OO;illegal decoder state", &dec_buffer, &dec_flags))
         {
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(state);
             return -1;
         }
 
@@ -1897,12 +2015,12 @@ textiowrapper_read_chunk(textio *self, Py_ssize_t size_hint)
                          "illegal decoder state: the first item should be a "
                          "bytes object, not '%.200s'",
                          Py_TYPE(dec_buffer)->tp_name);
-            Py_DECREF(state);
+            PyRegion_CLEARLOCAL(state);
             return -1;
         }
-        Py_INCREF(dec_buffer);
-        Py_INCREF(dec_flags);
-        Py_DECREF(state);
+        PyRegion_NewRef(dec_buffer);
+        PyRegion_NewRef(dec_flags);
+        PyRegion_CLEARLOCAL(state);
     }
 
     /* Read a chunk, decode it, and put the result in self._decoded_chars. */
@@ -1916,7 +2034,7 @@ textiowrapper_read_chunk(textio *self, Py_ssize_t size_hint)
     input_chunk = PyObject_CallMethodOneArg(self->buffer,
         (self->has_read1 ? &_Py_ID(read1): &_Py_ID(read)),
         chunk_size);
-    Py_DECREF(chunk_size);
+    PyRegion_CLEARLOCAL(chunk_size);
     if (input_chunk == NULL)
         goto fail;
 
@@ -1937,7 +2055,9 @@ textiowrapper_read_chunk(textio *self, Py_ssize_t size_hint)
     if (decoded_chars == NULL)
         goto fail;
 
-    textiowrapper_set_decoded_chars(self, decoded_chars);
+    if (textiowrapper_set_decoded_chars(self, decoded_chars)) {
+        goto fail;
+    }
     nchars = PyUnicode_GET_LENGTH(decoded_chars);
     if (nchars > 0)
         self->b2cratio = (double) nbytes / nchars;
@@ -1961,16 +2081,19 @@ textiowrapper_read_chunk(textio *self, Py_ssize_t size_hint)
             dec_flags = NULL;
             goto fail;
         }
-        Py_XSETREF(self->snapshot, snapshot);
+        if (PyRegion_XSETREF(self, self->snapshot, snapshot)) {
+            dec_flags = NULL;
+            goto fail;
+        }
     }
-    Py_DECREF(input_chunk);
+    PyRegion_CLEARLOCAL(input_chunk);
 
     return (eof == 0);
 
   fail:
-    Py_XDECREF(dec_buffer);
-    Py_XDECREF(dec_flags);
-    Py_XDECREF(input_chunk);
+    PyRegion_CLEARLOCAL(dec_buffer);
+    PyRegion_CLEARLOCAL(dec_flags);
+    PyRegion_CLEARLOCAL(input_chunk);
     return -1;
 }
 
@@ -1985,6 +2108,7 @@ static PyObject *
 _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
 /*[clinic end generated code: output=7e651ce6cc6a25a6 input=67d14c5661121377]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result = NULL, *chunks = NULL;
 
     CHECK_ATTACHED(self);
@@ -2005,7 +2129,7 @@ _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
             goto fail;
 
         if (bytes == Py_None){
-            Py_DECREF(bytes);
+            PyRegion_CLEARLOCAL(bytes);
             PyErr_SetString(PyExc_BlockingIOError, "Read returned None.");
             return NULL;
         }
@@ -2017,14 +2141,14 @@ _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
         else
             decoded = PyObject_CallMethodObjArgs(
                 self->decoder, &_Py_ID(decode), bytes, Py_True, NULL);
-        Py_DECREF(bytes);
+        PyRegion_CLEARLOCAL(bytes);
         if (check_decoded(decoded) < 0)
             goto fail;
 
         result = textiowrapper_get_decoded_chars(self, -1);
 
         if (result == NULL) {
-            Py_DECREF(decoded);
+            PyRegion_CLEARLOCAL(decoded);
             return NULL;
         }
 
@@ -2033,8 +2157,8 @@ _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
             goto fail;
 
         if (self->snapshot != NULL) {
-            textiowrapper_set_decoded_chars(self, NULL);
-            Py_CLEAR(self->snapshot);
+            textiowrapper_clear_decoded_chars(self);
+            PyRegion_CLEAR(self, self->snapshot);
         }
         return result;
     }
@@ -2068,7 +2192,7 @@ _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
             if (PyUnicode_GET_LENGTH(result) > 0 &&
                 PyList_Append(chunks, result) < 0)
                 goto fail;
-            Py_DECREF(result);
+            PyRegion_CLEARLOCAL(result);
             result = textiowrapper_get_decoded_chars(self, remaining);
             if (result == NULL)
                 goto fail;
@@ -2078,16 +2202,16 @@ _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
             if (result != NULL && PyList_Append(chunks, result) < 0)
                 goto fail;
             _Py_DECLARE_STR(empty, "");
-            Py_XSETREF(result, PyUnicode_Join(&_Py_STR(empty), chunks));
+            PyRegion_XSETLOCALREF(result, PyUnicode_Join(&_Py_STR(empty), chunks));
             if (result == NULL)
                 goto fail;
-            Py_CLEAR(chunks);
+            PyRegion_CLEARLOCAL(chunks);
         }
         return result;
     }
   fail:
-    Py_XDECREF(result);
-    Py_XDECREF(chunks);
+    PyRegion_CLEARLOCAL(result);
+    PyRegion_CLEARLOCAL(chunks);
     return NULL;
 }
 
@@ -2098,6 +2222,7 @@ _io_TextIOWrapper_read_impl(textio *self, Py_ssize_t n)
 static const char *
 find_control_char(int kind, const char *s, const char *end, Py_UCS4 ch)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (kind == PyUnicode_1BYTE_KIND) {
         assert(ch < 256);
         return (char *) memchr((const void *) s, (char) ch, end - s);
@@ -2118,6 +2243,7 @@ _PyIO_find_line_ending(
     int translated, int universal, PyObject *readnl,
     int kind, const char *start, const char *end, Py_ssize_t *consumed)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t len = (end - start)/kind;
 
     if (translated) {
@@ -2202,6 +2328,7 @@ _PyIO_find_line_ending(
 static PyObject *
 _textiowrapper_readline(textio *self, Py_ssize_t limit)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *line = NULL, *chunks = NULL, *remaining = NULL;
     Py_ssize_t start, endpos, chunked, offset_to_buffer;
     int res;
@@ -2237,14 +2364,14 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
         }
         if (res == 0) {
             /* end of file */
-            textiowrapper_set_decoded_chars(self, NULL);
-            Py_CLEAR(self->snapshot);
+            textiowrapper_clear_decoded_chars(self);
+            PyRegion_CLEAR(self, self->snapshot);
             start = endpos = offset_to_buffer = 0;
             break;
         }
 
         if (remaining == NULL) {
-            line = Py_NewRef(self->decoded_chars);
+            line = PyRegion_NewRef(self->decoded_chars);
             start = self->decoded_chars_used;
             offset_to_buffer = 0;
         }
@@ -2253,7 +2380,7 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
             line = PyUnicode_Concat(remaining, self->decoded_chars);
             start = 0;
             offset_to_buffer = PyUnicode_GET_LENGTH(remaining);
-            Py_CLEAR(remaining);
+            PyRegion_CLEARLOCAL(remaining);
             if (line == NULL)
                 goto error;
         }
@@ -2295,11 +2422,11 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
             if (s == NULL)
                 goto error;
             if (PyList_Append(chunks, s) < 0) {
-                Py_DECREF(s);
+                PyRegion_CLEARLOCAL(s);
                 goto error;
             }
             chunked += PyUnicode_GET_LENGTH(s);
-            Py_DECREF(s);
+            PyRegion_CLEARLOCAL(s);
         }
         /* There may be some remaining bytes we'll have to prepend to the
            next chunk of data */
@@ -2308,9 +2435,9 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
             if (remaining == NULL)
                 goto error;
         }
-        Py_CLEAR(line);
+        PyRegion_CLEARLOCAL(line);
         /* We have consumed the buffer */
-        textiowrapper_set_decoded_chars(self, NULL);
+        textiowrapper_clear_decoded_chars(self);
     }
 
     if (line != NULL) {
@@ -2318,7 +2445,7 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
         self->decoded_chars_used = endpos - offset_to_buffer;
         if (start > 0 || endpos < PyUnicode_GET_LENGTH(line)) {
             PyObject *s = PyUnicode_Substring(line, start, endpos);
-            Py_CLEAR(line);
+            PyRegion_CLEARLOCAL(line);
             if (s == NULL)
                 goto error;
             line = s;
@@ -2332,18 +2459,18 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
         }
         if (PyList_Append(chunks, remaining) < 0)
             goto error;
-        Py_CLEAR(remaining);
+        PyRegion_CLEARLOCAL(remaining);
     }
     if (chunks != NULL) {
         if (line != NULL) {
             if (PyList_Append(chunks, line) < 0)
                 goto error;
-            Py_DECREF(line);
+            PyRegion_CLEARLOCAL(line);
         }
         line = PyUnicode_Join(&_Py_STR(empty), chunks);
         if (line == NULL)
             goto error;
-        Py_CLEAR(chunks);
+        PyRegion_CLEARLOCAL(chunks);
     }
     if (line == NULL) {
         line = &_Py_STR(empty);
@@ -2352,9 +2479,9 @@ _textiowrapper_readline(textio *self, Py_ssize_t limit)
     return line;
 
   error:
-    Py_XDECREF(chunks);
-    Py_XDECREF(remaining);
-    Py_XDECREF(line);
+    PyRegion_CLEARLOCAL(chunks);
+    PyRegion_CLEARLOCAL(remaining);
+    PyRegion_CLEARLOCAL(line);
     return NULL;
 }
 
@@ -2369,6 +2496,7 @@ static PyObject *
 _io_TextIOWrapper_readline_impl(textio *self, Py_ssize_t size)
 /*[clinic end generated code: output=344afa98804e8b25 input=b65bab871dc3ddba]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return _textiowrapper_readline(self, size);
 }
@@ -2418,6 +2546,7 @@ typedef struct {
 static int
 textiowrapper_parse_cookie(cookie_type *cookie, PyObject *cookieObj)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char buffer[COOKIE_BUF_LEN];
     PyLongObject *cookieLong = (PyLongObject *)PyNumber_Long(cookieObj);
     if (cookieLong == NULL)
@@ -2425,9 +2554,11 @@ textiowrapper_parse_cookie(cookie_type *cookie, PyObject *cookieObj)
 
     if (_PyLong_AsByteArray(cookieLong, buffer, sizeof(buffer),
                             PY_LITTLE_ENDIAN, 0, 1) < 0) {
+        assert(!PyRegion_NeedsReadBarrier(cookieLong));
         Py_DECREF(cookieLong);
         return -1;
     }
+    assert(!PyRegion_NeedsReadBarrier(cookieLong));
     Py_DECREF(cookieLong);
 
     memcpy(&cookie->start_pos, buffer + OFF_START_POS, sizeof(cookie->start_pos));
@@ -2442,6 +2573,7 @@ textiowrapper_parse_cookie(cookie_type *cookie, PyObject *cookieObj)
 static PyObject *
 textiowrapper_build_cookie(cookie_type *cookie)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned char buffer[COOKIE_BUF_LEN];
 
     memcpy(buffer + OFF_START_POS, &cookie->start_pos, sizeof(cookie->start_pos));
@@ -2457,6 +2589,7 @@ textiowrapper_build_cookie(cookie_type *cookie)
 static int
 _textiowrapper_decoder_setstate(textio *self, cookie_type *cookie)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     /* When seeking to the start of the stream, we call decoder.reset()
        rather than decoder.getstate().
@@ -2474,13 +2607,14 @@ _textiowrapper_decoder_setstate(textio *self, cookie_type *cookie)
     if (res == NULL) {
         return -1;
     }
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     return 0;
 }
 
 static int
 _textiowrapper_encoder_reset(textio *self, int start_of_stream)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     if (start_of_stream) {
         res = PyObject_CallMethodNoArgs(self->encoder, &_Py_ID(reset));
@@ -2493,13 +2627,15 @@ _textiowrapper_encoder_reset(textio *self, int start_of_stream)
     }
     if (res == NULL)
         return -1;
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     return 0;
 }
 
 static int
 _textiowrapper_encoder_setstate(textio *self, cookie_type *cookie)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Same as _textiowrapper_decoder_setstate() above. */
     return _textiowrapper_encoder_reset(
         self, cookie->start_pos == 0 && cookie->dec_flags == 0);
@@ -2533,6 +2669,7 @@ static PyObject *
 _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
 /*[clinic end generated code: output=0a15679764e2d04d input=4bea78698be23d7e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *posobj;
     cookie_type cookie;
     PyObject *res;
@@ -2542,7 +2679,7 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
     CHECK_ATTACHED(self);
     CHECK_CLOSED(self);
 
-    Py_INCREF(cookieObj);
+    PyRegion_NewRef(cookieObj);
 
     if (!self->seekable) {
         _unsupported(self->state, "underlying stream is not seekable");
@@ -2566,7 +2703,7 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
         /* Seeking to the current position should attempt to
          * sync the underlying buffer with the current position.
          */
-        Py_DECREF(cookieObj);
+        PyRegion_CLEARLOCAL(cookieObj);
         cookieObj = PyObject_CallMethodNoArgs((PyObject *)self, &_Py_ID(tell));
         if (cookieObj == NULL)
             goto fail;
@@ -2587,24 +2724,24 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
             goto fail;
         }
 
-        textiowrapper_set_decoded_chars(self, NULL);
-        Py_CLEAR(self->snapshot);
+        textiowrapper_clear_decoded_chars(self);
+        PyRegion_CLEAR(self, self->snapshot);
         if (self->decoder) {
             res = PyObject_CallMethodNoArgs(self->decoder, &_Py_ID(reset));
             if (res == NULL)
                 goto fail;
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
         }
 
         res = _PyObject_CallMethod(self->buffer, &_Py_ID(seek), "ii", 0, 2);
-        Py_CLEAR(cookieObj);
+        PyRegion_CLEARLOCAL(cookieObj);
         if (res == NULL)
             goto fail;
         if (self->encoder) {
             /* If seek() == 0, we are at the start of stream, otherwise not */
             cmp = PyObject_RichCompareBool(res, zero, Py_EQ);
             if (cmp < 0 || _textiowrapper_encoder_reset(self, cmp)) {
-                Py_DECREF(res);
+                PyRegion_CLEARLOCAL(res);
                 goto fail;
             }
         }
@@ -2645,13 +2782,13 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
     if (posobj == NULL)
         goto fail;
     res = PyObject_CallMethodOneArg(self->buffer, &_Py_ID(seek), posobj);
-    Py_DECREF(posobj);
+    PyRegion_CLEARLOCAL(posobj);
     if (res == NULL)
         goto fail;
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
 
-    textiowrapper_set_decoded_chars(self, NULL);
-    Py_CLEAR(self->snapshot);
+    textiowrapper_clear_decoded_chars(self);
+    PyRegion_CLEAR(self, self->snapshot);
 
     /* Restore the decoder to its state from the safe start point. */
     if (self->decoder) {
@@ -2673,7 +2810,7 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
                          "underlying read() should have returned a bytes "
                          "object, not '%.200s'",
                          Py_TYPE(input_chunk)->tp_name);
-            Py_DECREF(input_chunk);
+            PyRegion_CLEARLOCAL(input_chunk);
             goto fail;
         }
 
@@ -2681,7 +2818,10 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
         if (snapshot == NULL) {
             goto fail;
         }
-        Py_XSETREF(self->snapshot, snapshot);
+        if (PyRegion_XSETREF(self, self->snapshot, snapshot)) {
+            PyRegion_CLEARLOCAL(snapshot);
+            goto fail;
+        }
 
         decoded = PyObject_CallMethodObjArgs(self->decoder, &_Py_ID(decode),
             input_chunk, cookie.need_eof ? Py_True : Py_False, NULL);
@@ -2689,7 +2829,9 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
         if (check_decoded(decoded) < 0)
             goto fail;
 
-        textiowrapper_set_decoded_chars(self, decoded);
+        if (textiowrapper_set_decoded_chars(self, decoded)) {
+            goto fail;
+        }
 
         /* Skip chars_to_skip of the decoded characters. */
         if (PyUnicode_GetLength(self->decoded_chars) < cookie.chars_to_skip) {
@@ -2702,7 +2844,10 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
         snapshot = Py_BuildValue("iy", cookie.dec_flags, "");
         if (snapshot == NULL)
             goto fail;
-        Py_XSETREF(self->snapshot, snapshot);
+        if (PyRegion_XSETREF(self, self->snapshot, snapshot)) {
+            PyRegion_CLEARLOCAL(snapshot);
+            goto fail;
+        }
     }
 
     /* Finally, reset the encoder (merely useful for proper BOM handling) */
@@ -2712,9 +2857,8 @@ _io_TextIOWrapper_seek_impl(textio *self, PyObject *cookieObj, int whence)
     }
     return cookieObj;
   fail:
-    Py_XDECREF(cookieObj);
+    PyRegion_CLEARLOCAL(cookieObj);
     return NULL;
-
 }
 
 /*[clinic input]
@@ -2731,6 +2875,7 @@ static PyObject *
 _io_TextIOWrapper_tell_impl(textio *self)
 /*[clinic end generated code: output=4f168c08bf34ad5f input=415d6b4e4f8e6e8c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     PyObject *posobj = NULL;
     cookie_type cookie = {0,0,0,0,0};
@@ -2775,7 +2920,7 @@ _io_TextIOWrapper_tell_impl(textio *self)
 #else
     cookie.start_pos = PyLong_AsLong(posobj);
 #endif
-    Py_DECREF(posobj);
+    PyRegion_CLEARLOCAL(posobj);
     if (PyErr_Occurred())
         goto fail;
 
@@ -2811,13 +2956,13 @@ _io_TextIOWrapper_tell_impl(textio *self)
         if (!PyTuple_Check(_state)) { \
             PyErr_SetString(PyExc_TypeError, \
                             "illegal decoder state"); \
-            Py_DECREF(_state); \
+            PyRegion_CLEARLOCAL(_state); \
             goto fail; \
         } \
         if (!PyArg_ParseTuple(_state, "Oi;illegal decoder state", \
                               &dec_buffer, &dec_flags)) \
         { \
-            Py_DECREF(_state); \
+            PyRegion_CLEARLOCAL(_state); \
             goto fail; \
         } \
         if (!PyBytes_Check(dec_buffer)) { \
@@ -2825,11 +2970,11 @@ _io_TextIOWrapper_tell_impl(textio *self)
                          "illegal decoder state: the first item should be a " \
                          "bytes object, not '%.200s'", \
                          Py_TYPE(dec_buffer)->tp_name); \
-            Py_DECREF(_state); \
+            PyRegion_CLEARLOCAL(_state); \
             goto fail; \
         } \
         dec_buffer_len = PyBytes_GET_SIZE(dec_buffer); \
-        Py_DECREF(_state); \
+        PyRegion_CLEARLOCAL(_state); \
     } while (0)
 
 #define DECODER_DECODE(start, len, res) do { \
@@ -2838,7 +2983,7 @@ _io_TextIOWrapper_tell_impl(textio *self)
         if (check_decoded(_decoded) < 0) \
             goto fail; \
         res = PyUnicode_GET_LENGTH(_decoded); \
-        Py_DECREF(_decoded); \
+        PyRegion_CLEARLOCAL(_decoded); \
     } while (0)
 
     /* Fast search for an acceptable start point, close to our
@@ -2920,7 +3065,7 @@ _io_TextIOWrapper_tell_impl(textio *self)
         if (check_decoded(decoded) < 0)
             goto fail;
         chars_decoded += PyUnicode_GET_LENGTH(decoded);
-        Py_DECREF(decoded);
+        PyRegion_CLEARLOCAL(decoded);
         cookie.need_eof = 1;
 
         if (chars_decoded < chars_to_skip) {
@@ -2933,10 +3078,10 @@ _io_TextIOWrapper_tell_impl(textio *self)
 finally:
     res = PyObject_CallMethodOneArg(
             self->decoder, &_Py_ID(setstate), saved_state);
-    Py_DECREF(saved_state);
+    PyRegion_CLEARLOCAL(saved_state);
     if (res == NULL)
         return NULL;
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
 
     /* The returned cookie corresponds to the last safe start point. */
     cookie.chars_to_skip = Py_SAFE_DOWNCAST(chars_to_skip, Py_ssize_t, int);
@@ -2948,8 +3093,8 @@ fail:
         res = PyObject_CallMethodOneArg(
                 self->decoder, &_Py_ID(setstate), saved_state);
         _PyErr_ChainExceptions1(exc);
-        Py_DECREF(saved_state);
-        Py_XDECREF(res);
+        PyRegion_CLEARLOCAL(saved_state);
+        PyRegion_CLEARLOCAL(res);
     }
     return NULL;
 }
@@ -2965,6 +3110,7 @@ static PyObject *
 _io_TextIOWrapper_truncate_impl(textio *self, PyObject *pos)
 /*[clinic end generated code: output=90ec2afb9bb7745f input=8bddb320834c93ee]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self)
 
     if (_PyFile_Flush((PyObject *)self) < 0) {
@@ -2977,6 +3123,7 @@ _io_TextIOWrapper_truncate_impl(textio *self, PyObject *pos)
 static PyObject *
 textiowrapper_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *nameobj, *modeobj, *res, *s;
     int status;
     textio *self = textio_CAST(op);
@@ -3006,7 +3153,7 @@ textiowrapper_repr(PyObject *op)
     }
     if (nameobj != NULL) {
         s = PyUnicode_FromFormat(" name=%R", nameobj);
-        Py_DECREF(nameobj);
+        PyRegion_CLEARLOCAL(nameobj);
         if (s == NULL)
             goto error;
         PyUnicode_AppendAndDel(&res, s);
@@ -3018,7 +3165,7 @@ textiowrapper_repr(PyObject *op)
     }
     if (modeobj != NULL) {
         s = PyUnicode_FromFormat(" mode=%R", modeobj);
-        Py_DECREF(modeobj);
+        PyRegion_CLEARLOCAL(modeobj);
         if (s == NULL)
             goto error;
         PyUnicode_AppendAndDel(&res, s);
@@ -3027,14 +3174,14 @@ textiowrapper_repr(PyObject *op)
     }
     s = PyUnicode_FromFormat("%U encoding=%R>",
                              res, self->encoding);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (status == 0) {
         Py_ReprLeave(op);
     }
     return s;
 
   error:
-    Py_XDECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (status == 0) {
         Py_ReprLeave(op);
     }
@@ -3053,6 +3200,7 @@ static PyObject *
 _io_TextIOWrapper_fileno_impl(textio *self)
 /*[clinic end generated code: output=21490a4c3da13e6c input=515e1196aceb97ab]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_CallMethodNoArgs(self->buffer, &_Py_ID(fileno));
 }
@@ -3066,6 +3214,7 @@ static PyObject *
 _io_TextIOWrapper_seekable_impl(textio *self)
 /*[clinic end generated code: output=ab223dbbcffc0f00 input=71c4c092736c549b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_CallMethodNoArgs(self->buffer, &_Py_ID(seekable));
 }
@@ -3079,6 +3228,7 @@ static PyObject *
 _io_TextIOWrapper_readable_impl(textio *self)
 /*[clinic end generated code: output=72ff7ba289a8a91b input=80438d1f01b0a89b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_CallMethodNoArgs(self->buffer, &_Py_ID(readable));
 }
@@ -3092,6 +3242,7 @@ static PyObject *
 _io_TextIOWrapper_writable_impl(textio *self)
 /*[clinic end generated code: output=a728c71790d03200 input=9d6c22befb0c340a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_CallMethodNoArgs(self->buffer, &_Py_ID(writable));
 }
@@ -3105,6 +3256,7 @@ static PyObject *
 _io_TextIOWrapper_isatty_impl(textio *self)
 /*[clinic end generated code: output=12be1a35bace882e input=7f83ff04d4d1733d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_CallMethodNoArgs(self->buffer, &_Py_ID(isatty));
 }
@@ -3118,6 +3270,7 @@ static PyObject *
 _io_TextIOWrapper_flush_impl(textio *self)
 /*[clinic end generated code: output=59de9165f9c2e4d2 input=3ac3bf521bfed59d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     CHECK_CLOSED(self);
     self->telling = self->seekable;
@@ -3135,6 +3288,7 @@ static PyObject *
 _io_TextIOWrapper_close_impl(textio *self)
 /*[clinic end generated code: output=056ccf8b4876e4f4 input=8e12d7079d5ac5c1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     int r;
     CHECK_ATTACHED(self);
@@ -3143,7 +3297,7 @@ _io_TextIOWrapper_close_impl(textio *self)
     if (res == NULL)
         return NULL;
     r = PyObject_IsTrue(res);
-    Py_DECREF(res);
+    PyRegion_CLEARLOCAL(res);
     if (r < 0)
         return NULL;
 
@@ -3156,7 +3310,7 @@ _io_TextIOWrapper_close_impl(textio *self)
             res = PyObject_CallMethodOneArg(self->buffer, &_Py_ID(_dealloc_warn),
                                             (PyObject *)self);
             if (res) {
-                Py_DECREF(res);
+                PyRegion_CLEARLOCAL(res);
             }
             else {
                 PyErr_Clear();
@@ -3169,7 +3323,7 @@ _io_TextIOWrapper_close_impl(textio *self)
         res = PyObject_CallMethodNoArgs(self->buffer, &_Py_ID(close));
         if (exc != NULL) {
             _PyErr_ChainExceptions1(exc);
-            Py_CLEAR(res);
+            PyRegion_CLEARLOCAL(res);
         }
         return res;
     }
@@ -3178,6 +3332,7 @@ _io_TextIOWrapper_close_impl(textio *self)
 static PyObject *
 textiowrapper_iternext_lock_held(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _Py_CRITICAL_SECTION_ASSERT_OBJECT_LOCKED(op);
     PyObject *line;
     textio *self = textio_CAST(op);
@@ -3195,7 +3350,7 @@ textiowrapper_iternext_lock_held(PyObject *op)
             PyErr_Format(PyExc_OSError,
                          "readline() should have returned a str object, "
                          "not '%.200s'", Py_TYPE(line)->tp_name);
-            Py_DECREF(line);
+            PyRegion_CLEARLOCAL(line);
             return NULL;
         }
     }
@@ -3205,8 +3360,8 @@ textiowrapper_iternext_lock_held(PyObject *op)
 
     if (PyUnicode_GET_LENGTH(line) == 0) {
         /* Reached EOF or would have blocked */
-        Py_DECREF(line);
-        Py_CLEAR(self->snapshot);
+        PyRegion_CLEARLOCAL(line);
+        PyRegion_CLEAR(self, self->snapshot);
         self->telling = self->seekable;
         return NULL;
     }
@@ -3217,6 +3372,7 @@ textiowrapper_iternext_lock_held(PyObject *op)
 static PyObject *
 textiowrapper_iternext(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     Py_BEGIN_CRITICAL_SECTION(op);
     result = textiowrapper_iternext_lock_held(op);
@@ -3234,6 +3390,7 @@ static PyObject *
 _io_TextIOWrapper_name_get_impl(textio *self)
 /*[clinic end generated code: output=8c2f1d6d8756af40 input=26ecec9b39e30e07]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_GetAttr(self->buffer, &_Py_ID(name));
 }
@@ -3248,6 +3405,7 @@ static PyObject *
 _io_TextIOWrapper_closed_get_impl(textio *self)
 /*[clinic end generated code: output=b49b68f443a85e3c input=7dfcf43f63c7003d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyObject_GetAttr(self->buffer, &_Py_ID(closed));
 }
@@ -3262,6 +3420,7 @@ static PyObject *
 _io_TextIOWrapper_newlines_get_impl(textio *self)
 /*[clinic end generated code: output=53aa03ac35573180 input=610df647e514b3e8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     CHECK_ATTACHED(self);
     if (self->decoder == NULL ||
@@ -3282,8 +3441,9 @@ static PyObject *
 _io_TextIOWrapper_errors_get_impl(textio *self)
 /*[clinic end generated code: output=dca3a3ef21b09484 input=b45f983e6d43c4d8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_INITIALIZED(self);
-    return Py_NewRef(self->errors);
+    return PyRegion_NewRef(self->errors);
 }
 
 /*[clinic input]
@@ -3296,6 +3456,7 @@ static PyObject *
 _io_TextIOWrapper__CHUNK_SIZE_get_impl(textio *self)
 /*[clinic end generated code: output=039925cd2df375bc input=e9715b0e06ff0fa6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_ATTACHED(self);
     return PyLong_FromSsize_t(self->chunk_size);
 }
@@ -3310,6 +3471,7 @@ static int
 _io_TextIOWrapper__CHUNK_SIZE_set_impl(textio *self, PyObject *value)
 /*[clinic end generated code: output=edb86d2db660a5ab input=32fc99861db02a0a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n;
     CHECK_ATTACHED_INT(self);
     if (value == NULL) {
@@ -3359,6 +3521,7 @@ PyType_Spec nldecoder_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = nldecoder_slots,
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
@@ -3426,4 +3589,5 @@ PyType_Spec textiowrapper_spec = {
     .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC |
               Py_TPFLAGS_IMMUTABLETYPE),
     .slots = textiowrapper_slots,
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };

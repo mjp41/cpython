@@ -132,9 +132,16 @@ Each agent has a different lens:
 > attached Migration Guide. Check specifically: every `Py_DECREF`/`Py_XDECREF`
 > on a stack-held value has a preceding `RemoveLocalRef`/`CLEARLOCAL`; every
 > exit path (`return`, `goto`) is symmetric — borrows added are removed on
-> every path; every barrier failure is handled in the function's own
-> error-handling style; if the function is inside a critical section, every
-> failure path exits it; every skipped barrier is justified with an `assert`;
+> every path; every **owning-reference** barrier failure (`AddRef`, `AddRefs`,
+> `AddRefsArray`, `TakeRef`, `TakeRefs`, `XSETREF`, `XSETNEWREF`) is handled in
+> the function's own error-handling style; local/borrow barriers never fail, so
+> flag any code that treats a local/borrow barrier's *return* as a failure
+> signal (e.g. `if (PyRegion_AddLocalRef(...)) { error }`) as a defect to remove
+> — but do NOT flag a NULL guard on the *value* passed to a barrier (e.g.
+> `if (key != NULL) PyRegion_AddLocalRef(key);`), nor a legitimate inspection of
+> the strong reference that `NewRef`/`XNewRef` return; if the function is inside
+> a critical section, every failure path exits it; every skipped barrier is
+> justified with an `assert`;
 > `TakeRef` is only used when the caller genuinely owns the stack reference
 > (never on a borrowed argument); and `AddRef` vs `TakeRef` is chosen
 > correctly per the guide's classification table. Also verify that the
@@ -227,7 +234,7 @@ add an `assert` documenting why it can be safely skipped.
 
 ---
 
-## Two facts that drive every decision
+## Three facts that drive every decision
 
 1. **Stack-held values are borrows (local references).** A value in a C local
    variable — including a value held in a `_PyStackRef` slot — is a borrow
@@ -237,9 +244,18 @@ add an `assert` documenting why it can be safely skipped.
 
 2. **References stored into a heap object are owning references and are not
    reversible.** Once an owning reference is added (`AddRef` / `TakeRef`), it
-   cannot be cheaply undone. This is why the `Add*` / `Take*` / `XSET*`
-   barriers can *fail* and must be checked: the failure is reported *before*
-   the irreversible store, so you can still bail out cleanly.
+   cannot be cheaply undone. This is why the owning-reference barriers —
+   `AddRef`, `AddRefs`, `AddRefsArray`, `TakeRef`, `TakeRefs`, `XSETREF`,
+   `XSETNEWREF` — can *fail* and must be checked: the failure is reported
+   *before* the irreversible store, so you can still bail out cleanly.
+
+3. **Local (borrow) operations always succeed.** Adding or removing a borrow —
+   `AddLocalRef`, `AddLocalRefs`, `NewRef`, `XNewRef`, `RemoveLocalRef`,
+   `CLEARLOCAL`, `XSETLOCALREF`, `XSETLOCALNEWREF` — never fails, and each (except `NewRef`) is
+   also NULL-safe (a no-op on `NULL`). The reason: to take a local ref you must
+   already hold a borrow that reaches the object, which guarantees its region
+   is open. Only creating an *owning* reference into a heap object can fail, so
+   a local operation never needs a failure-handling path.
 
 **Use proper barriers with full error handling.** Skipping a barrier in favour
 of an `assert` is permitted only when one of these specific structural
@@ -249,10 +265,11 @@ conditions holds:
    region before this point (e.g., return value of `PyList_New`, `PyDict_New`,
    `PySet_New` — functions that always return a freshly allocated object).
 2. The object is known immutable — `PyRegion_NeedsReadBarrier` would return
-   false in all cases (e.g., `Py_None`, `Py_True`, `Py_True`, small integers,
+   false in all cases (e.g., `Py_None`, `Py_True`, `Py_False`, small integers,
    interned strings).
-3. The branch verified that the referenced object is doesn't need a write barrier
-    using `PyRegion_NeedsReadBarrier`, `PyRegion_IsLocal` or `_Py_IsImmutable`.
+3. The branch has already verified that the referenced object does not need a
+   barrier, using `PyRegion_NeedsReadBarrier`, `PyRegion_IsLocal`, or
+   `_Py_IsImmutable`.
 
 The condition must be stated explicitly in a comment adjacent to the assert.
 An assert that provides no structural justification must be replaced with a
@@ -433,18 +450,19 @@ For every RC operation in the function, pick the barrier:
 |-----------|---------|
 | Returning a `PyObject*` to the caller (getter, constructed result, field) | `PyRegion_NewRef` / `PyRegion_XNewRef` |
 | `Py_DECREF` / `Py_XDECREF` on a stack-held value | `PyRegion_RemoveLocalRef` then `Py_DECREF`, or `PyRegion_CLEARLOCAL` |
+| Replacing a value held in a **stack-local** slot (2-arg, no `src`; not a heap field) | `PyRegion_XSETLOCALREF(dst, val)` (steal `val`) / `PyRegion_XSETLOCALNEWREF(dst, val)` (new ref to `val`) — never fails; see "Local replacement helpers" |
 | Storing a value you **received or are also keeping** into a heap object (you create a new owning reference; RC is incremented) | `PyRegion_AddRef` before the store, then `Py_NewRef` |
 | Storing several such new references in one logical step | `PyRegion_AddRefs` (fixed count) or `PyRegion_AddRefsArray` (runtime count) |
 | Handing off a reference you **already own on the stack** into a heap object — you are not keeping it and the RC does not change (a transfer) | `PyRegion_TakeRef` before the store |
 | **Stealing** a value from a heap field and returning it to the caller **without changing the RC** (the container loses it, the caller gains it) | `PyRegion_AddLocalRef(val)` *before* clearing the field, then clear the field, then `PyRegion_RemoveRef(src, val)` — see "Steal-and-return" below |
-| Replacing a field, stealing the value | `PyRegion_XSETREF` |
-| Replacing a field with a **new owning reference** to the value | `PyRegion_XSETNEWREF` |
+| Replacing a **heap field** (3-arg, takes `src`), stealing the value | `PyRegion_XSETREF(src, field, val)` — can fail |
+| Replacing a **heap field** (3-arg, takes `src`) with a **new owning reference** to the value | `PyRegion_XSETNEWREF(src, field, val)` — can fail |
 | `Py_SETREF(field, val)` — old value non-null | `PyRegion_XSETREF` (the X-prefix is harmless on a non-null old value) |
 | Clearing a field on a heap object | `PyRegion_CLEAR` |
 | `Py_DECREF` on a field in `dealloc` | `PyRegion_RemoveRef(self, field)` before `Py_DECREF` |
 | Dispatching through a type slot | `PyRegion_NotifyTypeUse(type)` before the dispatch |
 | Reusing/recycling an object as if newly allocated | `PyRegion_RecycleObject(obj)` |
-| Bulk loop: storing N references into one container as an all-or-nothing step | **If `src` is local** (`PyRegion_IsLocal(src)` is true), use per-item `PyRegion_AddLocalRef` with rollback via `RemoveLocalRef` on failure — no heap allocation needed. **If `src` is not local**, build the full array first, then `PyRegion_AddRefsArray(src, n, array)` before the loop; on failure propagate the error without having stored anything. Both branches share the copy loop that follows; the local branch needs no `RemoveLocalRef` cleanup after the copy. |
+| Bulk loop: storing N references into one container as an all-or-nothing step | **If `src` is local** (`PyRegion_IsLocal(src)` is true), use per-item `PyRegion_AddLocalRef` — it never fails, so no rollback and no heap allocation are needed. **If `src` is not local**, build the full array first, then `PyRegion_AddRefsArray(src, n, array)` before the loop; on failure propagate the error without having stored anything. Both branches share the copy loop that follows; the local branch needs no `RemoveLocalRef` cleanup after the copy. |
 | Copying a struct that contains `PyObject*` fields (e.g. `tmp = *self`) — the copy's fields are new stack borrows | `PyRegion_AddLocalRef` / `PyRegion_AddLocalRefs` for each non-NULL field you will use; each `AddLocalRef` must be paired with a `Py_INCREF`/`Py_XINCREF` on that field; match cleanup with `PyRegion_RemoveLocalRef` / `PyRegion_CLEARLOCAL` — see "Struct-snapshot pattern" |
 | Temporarily holding a value **borrowed from a heap field** across a call that may run Python code — e.g. `Py_INCREF(key)` to pin a table entry, call `PyObject_RichCompareBool`, then `Py_DECREF(key)` | `PyRegion_AddLocalRef(key)` before the `Py_INCREF`; `PyRegion_RemoveLocalRef(key)` before the `Py_DECREF`. The callee can remove the value from the container through arbitrary `__eq__`/`__hash__` code; the region tracker must know the borrow exists. This is the most common pattern in hash-table lookup and comparison functions. |
 
@@ -455,20 +473,20 @@ a value from a heap field and returns it to the caller **without incrementing
 the RC**. The container loses the owning reference; the caller gains a local
 borrow. The RC does not change.
 
-The safe order — `AddLocalRef` *first*, before clearing the field — means the
-object's region stays open throughout. If `AddLocalRef` is called after the
-field is already `NULL`/`dummy`, the owning reference is already gone and the
-region may have closed.
+Order matters here for **correctness, not for failure handling.** `AddLocalRef`
+never fails, but you must still call it *before* clearing the field: clearing
+drops `so`'s owning reference, after which `so`'s region may close and `key` may
+no longer be reachable to borrow. It is the pre-existing owning reference — not
+the `AddLocalRef` call — that keeps the region open until step 2. The
+never-fails guarantee assumes the region is still open at the call, so do
+**not** reorder the barrier to after the clear even though the call cannot fail.
 
 ```c
 // PATTERN: steal entry->key from 'so' and return it to caller
 key = entry->key;
 
-// 1. Record the local borrow WHILE so still owns it.
-//    Succeeds because so is locked (region is open).
-if (PyRegion_AddLocalRef(key)) {
-    return NULL;   // or use assert — see below
-}
+// 1. Record the local borrow WHILE so still owns it. AddLocalRef never fails.
+PyRegion_AddLocalRef(key);
 
 // 2. Clear the field (so no longer owns key).
 entry->key = dummy;
@@ -489,16 +507,6 @@ that applies to the *drop* case (dealloc, field replace). In steal-and-return th
 strong reference is not dropped; it is handed to the caller, so no `Py_DECREF`
 is needed and none should be added.
 
-When you can prove that `so` is locked — meaning a `Py_BEGIN_CRITICAL_SECTION`
-lock on `so` is held, which guarantees at least one borrow is active and therefore
-its region's LRC > 0 — `AddLocalRef` cannot fail; you may replace the `if` with
-an `assert`:
-```c
-int res = PyRegion_AddLocalRef(key);
-assert(res == 0 && "so is locked, its region is open");
-(void)res;
-```
-
 **`AddRef` vs `TakeRef` — decide by what you hold:**
 - You received a borrowed argument, or you are storing a value you also keep a
   reference to → you are creating a **new owning reference**: `PyRegion_AddRef`
@@ -512,7 +520,6 @@ assert(res == 0 && "so is locked, its region is open");
 ```c
 // WRONG: pointless round-trip — makes a local ref, then converts it
 PyObject *newkey = PyRegion_NewRef(key);
-if (newkey == NULL) return -1;
 if (PyRegion_TakeRef(so, newkey)) {
     PyRegion_RemoveLocalRef(newkey);
     Py_DECREF(newkey);
@@ -554,11 +561,7 @@ pattern by recognising the structure, not the names:
 ```c
 // Example from a past migration — field names are illustrative
 while (container_next(so, &pos, &entry)) {
-    int res = PyRegion_AddLocalRef(entry->val);
-    // entry->val is borrowed via so; so is borrowed, so its region is open,
-    // therefore this AddLocalRef always succeeds here.
-    assert(res == 0 && "entry->val is borrowed via so; its region is open");
-    (void) res;
+    PyRegion_AddLocalRef(entry->val);   // never fails
     PyList_SET_ITEM(keys, idx++, Py_NewRef(entry->val));
 }
 ...
@@ -571,28 +574,21 @@ listrepr = PyUnicode_Substring(listrepr, 1, PyUnicode_GET_LENGTH(listrepr)-1);
 assert(!PyRegion_NeedsReadBarrier(listrepr));
 Py_DECREF(listrepr);
 ```
-The `assert` message must reason about the object the barrier
-acts on (`entry->val`), not the container.
-
 Use the known-local optimization only when one of the three structural
-conditions listed under "Default to proper barriers" is met and stated in an
-adjacent comment. In all other cases, use the fully-safe alternative. Note that when `keys` is local, `PyRegion_AddRef(keys,
-entry->val)` is *equivalent* to `PyRegion_AddLocalRef(entry->val)` — adding a
-reference from a local object is exactly a local borrow — so this is a valid
-barrier here, not an owning cross-region edge:
-```c
-while (container_next(so, &pos, &entry)) {
-    if (PyRegion_AddRef(keys, entry->val)) {  // keys local => same as AddLocalRef
-        result = NULL;
-        goto done;                            // use the function's own cleanup
-    }
-    PyList_SET_ITEM(keys, idx++, Py_NewRef(entry->val));
-}
-```
-The failure path uses `goto done` rather than `return NULL`, because the
-original function centralizes cleanup at the `done:` label (it must run
-`Py_ReprLeave` before returning). Returning directly would skip that cleanup —
-exactly the failure-path symmetry this guide tells you to preserve.
+conditions listed under "Use proper barriers with full error handling" is met
+and stated in an adjacent comment. In all other cases, use the fully-safe
+alternative.
+
+Conceptually, when `keys` is local, `PyRegion_AddRef(keys, entry->val)` is
+*equivalent* to `PyRegion_AddLocalRef(entry->val)` — adding a reference from a
+local object is exactly a local borrow, not an owning cross-region edge. But
+**write it as `PyRegion_AddLocalRef` (as in the loop above), never as `AddRef`
+with an ignored return.** `AddRef` is an owning barrier that *can* fail and
+whose return must always be checked (fact 2); the only thing that makes it safe
+to ignore here is the invisible fact that `keys` is local. An ignored-return
+`AddRef` is exactly the shape that becomes a silent illegal store the moment it
+is copied to a site where `src` is a real region object — so do not emit it.
+When you have proven the destination is local, reach for the local form.
 
 ### Struct-snapshot pattern
 
@@ -611,10 +607,8 @@ reference is a new local borrow. Migrate it the same way as any stack-held
 
 ```c
 IterObj tmp = *iter;
-if (tmp.it_container != NULL && PyRegion_AddLocalRef(tmp.it_container)) {
-    return NULL;
-}
-Py_XINCREF(tmp.it_container);   // RC change to match the borrow
+PyRegion_AddLocalRef(tmp.it_container);   // null-safe, never fails
+Py_XINCREF(tmp.it_container);             // RC change to match the borrow
 ```
 
 And the matching cleanup:
@@ -626,8 +620,9 @@ Use `PyRegion_AddLocalRefs(a, b, ...)` when the snapshot covers multiple fields
 that must be borrowed as an all-or-nothing step.
 
 ### Handle failure the way the function already does
-Every `Add*` / `Take*` / `XSET*` barrier can fail (nonzero, or NULL for the
-`NewRef` family). On failure you must **undo what you have done so far and
+Every owning-reference barrier — `AddRef`, `AddRefs`, `AddRefsArray`,
+`TakeRef`, `TakeRefs`, `XSETREF`, `XSETNEWREF` — can fail (returns nonzero). The
+local/borrow operations never fail (see fact 3). On failure you must **undo what you have done so far and
 propagate the error in the same style the function already uses for other
 failures** — there is no single universal cleanup. The common shape is: undo
 any borrow added (`PyRegion_RemoveLocalRef` / `CLEARLOCAL`), `Py_DECREF`
@@ -700,27 +695,18 @@ of references atomically.
 
 **`IsLocal` fast-path:** `AddRefsArray` requires building a heap-allocated array
 upfront. When `PyRegion_IsLocal(src)` is true you can avoid that allocation
-entirely by using per-item `PyRegion_AddLocalRef` instead — `AddLocalRef` is
-reversible, so a failure mid-loop can be rolled back with `RemoveLocalRef` on
-the items already added:
+entirely by using per-item `PyRegion_AddLocalRef` instead — `AddLocalRef` never
+fails, so the loop needs no rollback and no array at all:
 
 ```c
 // Field names (items, capacity, count, dst_slot, src_slot) are placeholders —
 // use the real struct fields for the type you are migrating.
 if (PyRegion_IsLocal(dst)) {
-    /* local: use per-item AddLocalRef — reversible, no heap allocation */
+    /* local: per-item AddLocalRef — never fails, no rollback, no heap allocation */
     for (i = 0; i < other->capacity; i++) {
         key = other->items[i].val;
         if (key != NULL) {
-            if (PyRegion_AddLocalRef(key)) {
-                /* roll back items already added */
-                while (i > 0) {
-                    --i;
-                    PyObject *k2 = other->items[i].val;
-                    if (k2 != NULL) PyRegion_RemoveLocalRef(k2);
-                }
-                return -1;
-            }
+            PyRegion_AddLocalRef(key);
         }
     }
 } else {
@@ -747,16 +733,16 @@ for (i = 0; i < other->capacity; i++, dst_slot++, src_slot++) {
 }
 ```
 
-The key distinction: `AddLocalRef` is **reversible** (a failed borrow can be
-undone with `RemoveLocalRef`), whereas owning references recorded by
-`AddRefsArray` are not. This makes the per-item loop safe to roll back without
-needing the all-or-nothing array.
+The key distinction: `AddLocalRef` never fails, whereas the owning references
+recorded by `AddRefsArray` can (and are not reversible). This is why only the
+non-local branch needs the all-or-nothing array and an error path; the local
+branch is a plain loop.
 
 The `IsLocal` branch does **not** need a `RemoveLocalRef` cleanup loop after the
 copy — removing them would make the two branches asymmetric (the `AddRefsArray`
-branch has no corresponding cleanup). The `AddLocalRef` calls serve purely as a
-reversible pre-flight check; once `Py_NewRef` establishes proper ownership
-during the copy, no explicit release is needed.
+branch has no corresponding cleanup). The `AddLocalRef` calls record the borrows
+the copy relies on; once `Py_NewRef` establishes proper ownership during the
+copy, no explicit release is needed.
 
 Apply this pattern when `PyRegion_IsLocal(dst)` returns true at the call site,
 or when `dst` was returned by a call that always allocates a new object
@@ -840,45 +826,52 @@ PyRegion_CLEAR(self, self->traceback);
 ### Local (stack) reference management
 
 **`PyRegion_NewRef(tgt)` / `PyRegion_XNewRef(tgt)`** — replacements for
-`Py_NewRef` / `Py_XNewRef` for the **return/getter** case: a reference being
-handed back to the caller. They add a borrow (increment the target region's
-LRC) and return a new strong reference. `NewRef` returns NULL on failure, so
-where a function has cleanup to do, check it:
+`Py_NewRef` / `Py_XNewRef` that create a new **local (stack) borrow**: they add
+a borrow (increment the target region's LRC) and return a new strong reference.
+The return/getter case is the most common, but they may be used anywhere you
+need a new stack reference (see below). **Neither fails**, so no failure check
+is ever needed. As with their `Py_*` counterparts, `XNewRef` is NULL-safe
+(returns `NULL` on a `NULL` target) while `NewRef` requires a non-NULL `tgt` —
+use `XNewRef` when the value may be `NULL`:
 ```c
 return PyRegion_NewRef(self->value);   // simple getter
-
-PyObject *result = PyRegion_NewRef(self->value);
-if (!result) {
-    // cleanup as the function does elsewhere
-    return NULL;
-}
-return result;
 ```
 
-Use `NewRef`/`XNewRef` **only for returns.** It bundles "add local ref +
-incref" into one call, which is convenient when returning but obscures intent
-elsewhere. When you are not returning, keep the two steps visible with
-`PyRegion_AddLocalRef` + an explicit `Py_NewRef`/`Py_INCREF` — it reads more
-clearly and avoids the temptation to pair `NewRef` with `TakeRef` (see the
-anti-pattern under the classification table).
+`NewRef`/`XNewRef` are **not restricted to returns.** Since local barriers never
+fail, they are safe wherever you need a new **stack/local** strong reference — a
+return, a value pinned on the stack across a call, or an element stored into a
+local container you built. They fold "add local ref + incref" into one call.
+
+Two limits still apply:
+- **They create a local borrow, not an owning reference.** Never use `NewRef` to
+  populate a field of a heap object (`heapobj->field = PyRegion_NewRef(x)` is
+  wrong) — storing into a heap object requires an owning barrier (`AddRef` /
+  `TakeRef` / `XSETNEWREF`), which `NewRef` does not perform.
+- **Never pair `NewRef` with `TakeRef`.** Creating a local ref only to transfer
+  it into a heap object is the round-trip anti-pattern under the classification
+  table; go straight to `AddRef` / `TakeRef`.
 
 Which to use, in practice:
-- `PyRegion_NewRef` — only when returning a reference to the caller.
-- `PyRegion_AddLocalRef` + `Py_NewRef` — when storing into an ephemeral local
-  container you built (e.g. a freshly created list).
-- `PyRegion_AddLocalRef` + `Py_INCREF` — inside macros like `PyList_SET_ITEM`
-  that incref without a barrier.
+- `PyRegion_NewRef` / `PyRegion_XNewRef` — any case needing a new **stack/local**
+  strong reference: returning to the caller, pinning a value on the stack, or
+  storing into a local container you built (including `PyList_SET_ITEM(list, i,
+  PyRegion_NewRef(x))`, which folds the borrow and the incref into one call).
+- `PyRegion_AddLocalRef` + `Py_INCREF`/`Py_NewRef` — the explicit two-step form,
+  equivalent to `NewRef`; use it when you want the borrow and the incref visibly
+  separated, or when a macro does its own incref.
+- **Storing into a heap object** is not a local-borrow case — use the owning
+  barriers (`AddRef` / `TakeRef` / `XSETNEWREF`), never `NewRef`.
 
 **`PyRegion_AddLocalRef(tgt)`** — add a borrow (increment LRC) without creating
 the strong reference for you; use when you `Py_INCREF` manually or via
-`Py_NewRef` in a macro like `PyList_SET_ITEM`. Can fail.
+`Py_NewRef` in a macro like `PyList_SET_ITEM`. Does not fail; NULL-safe (a
+no-op on `NULL`).
 
-**`PyRegion_AddLocalRefs(tgt1, tgt2, ...)`** — variadic, all-or-nothing form
-for several local borrows established as one logical step (e.g. a key/value
-pair). Prefer it over individual `AddLocalRef` calls when multiple stack refs
-are added together: it succeeds only if a borrow can be taken for all targets,
-otherwise nothing changes — which avoids awkward partial-failure cleanup where
-the first borrow succeeded and the second failed.
+**`PyRegion_AddLocalRefs(tgt1, tgt2, ...)`** — variadic convenience form for
+several local borrows established as one logical step (e.g. a key/value pair).
+Does not fail; NULL-safe. It is purely a grouping convenience over repeated
+`AddLocalRef` calls — since individual borrows never fail there is no
+partial-failure case to guard against — so use whichever reads more clearly.
 
 **`PyRegion_RemoveLocalRef(tgt)`** — remove a borrow (decrement LRC). Call
 *before* the matching `Py_DECREF` on a stack-held value. Does not fail.
@@ -913,10 +906,10 @@ open-coding `RemoveLocalRef` + `Py_XDECREF`:
 
 **`PyRegion_XSETLOCALREF(dst, val)`** — replace local slot `dst` with `val`,
 **stealing** `val` (it becomes the new local borrow), and removing the old
-local borrow + `Py_XDECREF`ing the old value.
+local borrow + `Py_XDECREF`ing the old value. Does not fail; NULL-safe.
 
 **`PyRegion_XSETLOCALNEWREF(dst, val)`** — like the above but creates a **new**
-local borrow to `val` instead of stealing it.
+local borrow to `val` instead of stealing it. Does not fail; NULL-safe.
 
 ### Skipping a barrier safely
 
