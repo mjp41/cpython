@@ -129,8 +129,10 @@ static inline int _PyRegion_XSetNewRef(PyObject *src, PyObject **field, PyObject
 }
 #define PyRegion_XSETREF(src, dst, val) _PyRegion_XSetRef(_PyObject_CAST(src), (PyObject **)&(dst), _PyObject_CAST(val))
 #define PyRegion_XSETNEWREF(src, dst, val) _PyRegion_XSetNewRef(_PyObject_CAST(src), (PyObject **)&(dst), _PyObject_CAST(val))
+#define PyRegion_SETREF(src, dst, val) _PyRegion_XSetRef(_PyObject_CAST(src), (PyObject **)&(dst), _PyObject_CAST(val))
+#define PyRegion_SETNEWREF(src, dst, val) _PyRegion_XSetNewRef(_PyObject_CAST(src), (PyObject **)&(dst), _PyObject_CAST(val))
 
-static inline int _PyRegion_SetLocalRef(PyObject **field, PyObject *val) {
+static inline int _PyRegion_XSetLocalRef(PyObject **field, PyObject *val) {
     PyObject *old = *field;
     *field = val;
     PyRegion_RemoveLocalRef(old);
@@ -138,19 +140,19 @@ static inline int _PyRegion_SetLocalRef(PyObject **field, PyObject *val) {
 
     return 0;
 }
-static inline int _PyRegion_SetNewLocalRef(PyObject **field, PyObject *val) {
+static inline int _PyRegion_XSetNewLocalRef(PyObject **field, PyObject *val) {
     PyObject *old = *field;
-    if (PyRegion_AddLocalRef(val)) {
-        return 1;
-    }
-    *field = Py_NewRef(val);
+    PyRegion_AddLocalRef(val);
+    *field = Py_XNewRef(val);
     PyRegion_RemoveLocalRef(old);
     Py_XDECREF(old);
 
     return 0;
 }
-#define PyRegion_XSETLOCALREF(dst, val) _PyRegion_SetLocalRef((PyObject **)&(dst), _PyObject_CAST(val))
-#define PyRegion_XSETLOCALNEWREF(dst, val) _PyRegion_SetNewLocalRef((PyObject **)&(dst), _PyObject_CAST(val))
+#define PyRegion_XSETLOCALREF(dst, val) _PyRegion_XSetLocalRef((PyObject **)&(dst), _PyObject_CAST(val))
+#define PyRegion_XSETLOCALNEWREF(dst, val) _PyRegion_XSetNewLocalRef((PyObject **)&(dst), _PyObject_CAST(val))
+#define PyRegion_SETLOCALREF(dst, val) _PyRegion_XSetLocalRef((PyObject **)&(dst), _PyObject_CAST(val))
+#define PyRegion_SETLOCALNEWREF(dst, val) _PyRegion_XSetNewLocalRef((PyObject **)&(dst), _PyObject_CAST(val))
 
 static inline void _PyRegion_Clear(PyObject *src, PyObject **field) {
     PyObject* old = *field;

@@ -505,6 +505,7 @@ PyErr_NormalizeException(PyObject **exc, PyObject **val, PyObject **tb)
 
 PyObject *
 _PyErr_GetRaisedException(PyThreadState *tstate) {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *exc = tstate->current_exception;
     tstate->current_exception = NULL;
     return exc;
@@ -715,6 +716,7 @@ _PyErr_ChainExceptions(PyObject *typ, PyObject *val, PyObject *tb)
 void
 _PyErr_ChainExceptions1Tstate(PyThreadState *tstate, PyObject *exc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (exc == NULL) {
         return;
     }
@@ -731,6 +733,7 @@ _PyErr_ChainExceptions1Tstate(PyThreadState *tstate, PyObject *exc)
 void
 _PyErr_ChainExceptions1(PyObject *exc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyThreadState *tstate = _PyThreadState_GET();
     _PyErr_ChainExceptions1Tstate(tstate, exc);
 }

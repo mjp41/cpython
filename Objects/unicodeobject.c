@@ -3832,6 +3832,7 @@ PyUnicode_EncodeLocale(PyObject *unicode, const char *errors)
 PyObject *
 PyUnicode_EncodeFSDefault(PyObject *unicode)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp = _PyInterpreterState_GET();
     struct _Py_unicode_fs_codec *fs_codec = &interp->unicode.fs_codec;
     if (fs_codec->utf8) {
@@ -5786,6 +5787,7 @@ static PyObject *
 unicode_encode_utf8(PyObject *unicode, _Py_error_handler error_handler,
                     const char *errors)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyUnicode_Check(unicode)) {
         PyErr_BadArgument();
         return NULL;

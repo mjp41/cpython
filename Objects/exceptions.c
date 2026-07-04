@@ -401,6 +401,7 @@ BaseException___traceback___set_impl(PyBaseExceptionObject *self,
                                      PyObject *value)
 /*[clinic end generated code: output=a82c86d9f29f48f0 input=12676035676badad]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError, "__traceback__ may not be deleted");
         return -1;
@@ -531,17 +532,11 @@ static PyGetSetDef BaseException_getset[] = {
 PyObject *
 PyException_GetTraceback(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *traceback;
     Py_BEGIN_CRITICAL_SECTION(self);
     traceback = PyBaseExceptionObject_CAST(self)->traceback;
-    if (PyRegion_AddLocalRef(traceback)) {
-        // Regions: This should never happen, since we have a reference to self.
-        assert(false);
-        PyRegion_DirtyObjectRegion(traceback);
-        traceback = NULL;
-    } else {
-        Py_XINCREF(traceback);
-    }
+    PyRegion_XNewRef(traceback);
     Py_END_CRITICAL_SECTION();
     return traceback;
 }
@@ -550,6 +545,7 @@ PyException_GetTraceback(PyObject *self)
 int
 PyException_SetTraceback(PyObject *self, PyObject *tb)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     Py_BEGIN_CRITICAL_SECTION(self);
     res = BaseException___traceback___set_impl(PyBaseExceptionObject_CAST(self), tb);

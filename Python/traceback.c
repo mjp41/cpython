@@ -81,8 +81,10 @@ tb_create_raw(PyTracebackObject *next, PyFrameObject *frame, int lasti,
     }
     tb = PyObject_GC_New(PyTracebackObject, &PyTraceBack_Type);
     if (tb != NULL) {
-        tb->tb_next = (PyTracebackObject*)Py_XNewRef(next);
-        tb->tb_frame = (PyFrameObject*)Py_XNewRef(frame);
+        // Regions: tb is local, therefore we can use `PyRegion_XNewRef`
+        assert(PyRegion_IsLocal(tb));
+        tb->tb_next = (PyTracebackObject*)PyRegion_XNewRef(next);
+        tb->tb_frame = (PyFrameObject*)PyRegion_XNewRef(frame);
         tb->tb_lasti = lasti;
         tb->tb_lineno = lineno;
         PyObject_GC_Track(tb);
@@ -107,6 +109,7 @@ tb_new_impl(PyTypeObject *type, PyObject *tb_next, PyFrameObject *tb_frame,
             int tb_lasti, int tb_lineno)
 /*[clinic end generated code: output=fa077debd72d861a input=b88143145454cb59]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (tb_next == Py_None) {
         tb_next = NULL;
     } else if (!PyTraceBack_Check(tb_next)) {
@@ -122,6 +125,7 @@ tb_new_impl(PyTypeObject *type, PyObject *tb_next, PyFrameObject *tb_frame,
 static PyObject *
 tb_dir(PyObject *Py_UNUSED(self), PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return Py_BuildValue("[ssss]", "tb_frame", "tb_next",
                                    "tb_lasti", "tb_lineno");
 }
@@ -136,16 +140,18 @@ static PyObject *
 traceback_tb_next_get_impl(PyTracebackObject *self)
 /*[clinic end generated code: output=963634df7d5fc837 input=8f6345f2b73cb965]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject* ret = (PyObject*)self->tb_next;
     if (!ret) {
         ret = Py_None;
     }
-    return Py_NewRef(ret);
+    return PyRegion_NewRef(ret);
 }
 
 static int
 tb_get_lineno(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTracebackObject *tb = _PyTracebackObject_CAST(op);
     _PyInterpreterFrame* frame = tb->tb_frame->f_frame;
     assert(frame != NULL);
@@ -155,6 +161,7 @@ tb_get_lineno(PyObject *op)
 static PyObject *
 tb_lineno_get(PyObject *op, void *Py_UNUSED(_))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTracebackObject *self = _PyTracebackObject_CAST(op);
     int lineno = self->tb_lineno;
     if (lineno == -1) {
@@ -176,6 +183,7 @@ static int
 traceback_tb_next_set_impl(PyTracebackObject *self, PyObject *value)
 /*[clinic end generated code: output=d4868cbc48f2adac input=ce66367f85e3c443]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!value) {
         PyErr_Format(PyExc_TypeError, "can't delete tb_next attribute");
         return -1;
@@ -194,20 +202,21 @@ traceback_tb_next_set_impl(PyTracebackObject *self, PyObject *value)
 
     /* Check for loops */
     PyTracebackObject *cursor = (PyTracebackObject *)value;
-    Py_XINCREF(cursor);
+    PyRegion_XNewRef(cursor);
     while (cursor) {
         if (cursor == self) {
             PyErr_Format(PyExc_ValueError, "traceback loop detected");
-            Py_DECREF(cursor);
+            PyRegion_CLEARLOCAL(cursor);
             return -1;
         }
         Py_BEGIN_CRITICAL_SECTION(cursor);
-        Py_XINCREF(cursor->tb_next);
-        Py_SETREF(cursor, cursor->tb_next);
+        PyRegion_XSETLOCALNEWREF(cursor, cursor->tb_next);
         Py_END_CRITICAL_SECTION();
     }
 
-    Py_XSETREF(self->tb_next, (PyTracebackObject *)Py_XNewRef(value));
+    if (PyRegion_XSETNEWREF(self, self->tb_next, (PyTracebackObject *)value)) {
+        return -1;
+    }
 
     return 0;
 }
@@ -233,16 +242,18 @@ static PyGetSetDef tb_getsetters[] = {
 static void
 tb_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTracebackObject *tb = _PyTracebackObject_CAST(op);
     PyObject_GC_UnTrack(tb);
-    Py_XDECREF(tb->tb_next);
-    Py_XDECREF(tb->tb_frame);
+    PyRegion_CLEAR(tb, tb->tb_next);
+    PyRegion_CLEAR(tb, tb->tb_frame);
     PyObject_GC_Del(tb);
 }
 
 static int
 tb_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTracebackObject *tb = _PyTracebackObject_CAST(op);
     Py_VISIT(tb->tb_next);
     Py_VISIT(tb->tb_frame);
@@ -252,9 +263,10 @@ tb_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 tb_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTracebackObject *tb = _PyTracebackObject_CAST(op);
-    Py_CLEAR(tb->tb_next);
-    Py_CLEAR(tb->tb_frame);
+    PyRegion_CLEAR(tb, tb->tb_next);
+    PyRegion_CLEAR(tb, tb->tb_frame);
     return 0;
 }
 
@@ -297,12 +309,15 @@ PyTypeObject PyTraceBack_Type = {
     0,                                          /* tp_init */
     0,                                          /* tp_alloc */
     tb_new,                                     /* tp_new */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
 PyObject*
 _PyTraceBack_FromFrame(PyObject *tb_next, PyFrameObject *frame)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(tb_next == NULL || PyTraceBack_Check(tb_next));
     assert(frame != NULL);
     int addr = _PyInterpreterFrame_LASTI(frame->f_frame) * sizeof(_Py_CODEUNIT);
@@ -313,17 +328,20 @@ _PyTraceBack_FromFrame(PyObject *tb_next, PyFrameObject *frame)
 int
 PyTraceBack_Here(PyFrameObject *frame)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *exc = PyErr_GetRaisedException();
     assert(PyExceptionInstance_Check(exc));
     PyObject *tb = PyException_GetTraceback(exc);
     PyObject *newtb = _PyTraceBack_FromFrame(tb, frame);
-    Py_XDECREF(tb);
+    PyRegion_CLEARLOCAL(tb);
     if (newtb == NULL) {
         _PyErr_ChainExceptions1(exc);
         return -1;
     }
-    PyException_SetTraceback(exc, newtb);
-    Py_XDECREF(newtb);
+    if (PyException_SetTraceback(exc, newtb)) {
+        return -1;
+    }
+    PyRegion_CLEARLOCAL(newtb);
     PyErr_SetRaisedException(exc);
     return 0;
 }
@@ -331,6 +349,7 @@ PyTraceBack_Here(PyFrameObject *frame)
 /* Insert a frame into the traceback for (funcname, filename, lineno). */
 void _PyTraceback_Add(const char *funcname, const char *filename, int lineno)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *globals;
     PyCodeObject *code;
     PyFrameObject *frame;
@@ -346,19 +365,19 @@ void _PyTraceback_Add(const char *funcname, const char *filename, int lineno)
         goto error;
     code = PyCode_NewEmpty(filename, funcname, lineno);
     if (!code) {
-        Py_DECREF(globals);
+        PyRegion_CLEARLOCAL(globals);
         goto error;
     }
     frame = PyFrame_New(tstate, code, globals, NULL);
-    Py_DECREF(globals);
-    Py_DECREF(code);
+    PyRegion_CLEARLOCAL(globals);
+    PyRegion_CLEARLOCAL(code);
     if (!frame)
         goto error;
     frame->f_lineno = lineno;
 
     _PyErr_SetRaisedException(tstate, exc);
     PyTraceBack_Here(frame);
-    Py_DECREF(frame);
+    PyRegion_CLEARLOCAL(frame);
     return;
 
 error:
@@ -423,11 +442,11 @@ _Py_FindSourceFile(PyObject *filename, char* namebuf, size_t namelen, PyObject *
         }
         len = PyBytes_GET_SIZE(path);
         if (len + 1 + (Py_ssize_t)taillen >= (Py_ssize_t)namelen - 1) {
-            Py_DECREF(path);
+            PyRegion_CLEARLOCAL(path);
             continue; /* Too long */
         }
         strcpy(namebuf, PyBytes_AS_STRING(path));
-        Py_DECREF(path);
+        PyRegion_CLEARLOCAL(path);
         if (strlen(namebuf) != (size_t)len)
             continue; /* v contains '\0' */
         if (len > 0 && namebuf[len-1] != SEP)
@@ -446,9 +465,9 @@ _Py_FindSourceFile(PyObject *filename, char* namebuf, size_t namelen, PyObject *
 error:
     result = NULL;
 finally:
-    Py_XDECREF(open);
-    Py_XDECREF(syspath);
-    Py_DECREF(filebytes);
+    PyRegion_CLEARLOCAL(open);
+    PyRegion_CLEARLOCAL(syspath);
+    PyRegion_CLEARLOCAL(filebytes);
     return result;
 }
 
@@ -457,6 +476,7 @@ finally:
 int
 _Py_WriteIndent(int indent, PyObject *f)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char buf[11] = "          ";
     assert(strlen(buf) == 10);
     while (indent > 0) {
@@ -475,6 +495,7 @@ static int
 display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
                     int *truncation, PyObject **line)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd;
     int i;
     char *found_encoding;
@@ -512,7 +533,7 @@ display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
 
         binary = _Py_FindSourceFile(filename, buf, sizeof(buf), io);
         if (binary == NULL) {
-            Py_DECREF(io);
+            PyRegion_CLEARLOCAL(io);
             return -1;
         }
     }
@@ -520,8 +541,8 @@ display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
     /* use the right encoding to decode the file as unicode */
     fd = PyObject_AsFileDescriptor(binary);
     if (fd < 0) {
-        Py_DECREF(io);
-        Py_DECREF(binary);
+        PyRegion_CLEARLOCAL(io);
+        PyRegion_CLEARLOCAL(binary);
         return 0;
     }
     found_encoding = _PyTokenizer_FindEncodingFilename(fd, filename);
@@ -530,32 +551,32 @@ display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
     encoding = (found_encoding != NULL) ? found_encoding : "utf-8";
     /* Reset position */
     if (lseek(fd, 0, SEEK_SET) == (off_t)-1) {
-        Py_DECREF(io);
-        Py_DECREF(binary);
+        PyRegion_CLEARLOCAL(io);
+        PyRegion_CLEARLOCAL(binary);
         PyMem_Free(found_encoding);
         return 0;
     }
     fob = _PyObject_CallMethod(io, &_Py_ID(TextIOWrapper),
                                "Os", binary, encoding);
-    Py_DECREF(io);
+    PyRegion_CLEARLOCAL(io);
     PyMem_Free(found_encoding);
 
     if (fob == NULL) {
         PyErr_Clear();
 
         res = PyObject_CallMethodNoArgs(binary, &_Py_ID(close));
-        Py_DECREF(binary);
+        PyRegion_CLEARLOCAL(binary);
         if (res)
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
         else
             PyErr_Clear();
         return 0;
     }
-    Py_DECREF(binary);
+    PyRegion_CLEARLOCAL(binary);
 
     /* get the line number lineno */
     for (i = 0; i < lineno; i++) {
-        Py_XDECREF(lineobj);
+        PyRegion_CLEARLOCAL(lineobj);
         lineobj = PyFile_GetLine(fob, -1);
         if (!lineobj) {
             PyErr_Clear();
@@ -564,19 +585,19 @@ display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
     }
     res = PyObject_CallMethodNoArgs(fob, &_Py_ID(close));
     if (res) {
-        Py_DECREF(res);
+        PyRegion_CLEARLOCAL(res);
     }
     else {
         PyErr_Clear();
     }
-    Py_DECREF(fob);
+    PyRegion_CLEARLOCAL(fob);
     if (!lineobj || !PyUnicode_Check(lineobj)) {
-        Py_XDECREF(lineobj);
+        PyRegion_CLEARLOCAL(lineobj);
         return -1;
     }
 
     if (line) {
-        *line = Py_NewRef(lineobj);
+        *line = PyRegion_NewRef(lineobj);
     }
 
     /* remove the indentation of the line */
@@ -591,7 +612,7 @@ display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
         PyObject *truncated;
         truncated = PyUnicode_Substring(lineobj, i, PyUnicode_GET_LENGTH(lineobj));
         if (truncated) {
-            Py_SETREF(lineobj, truncated);
+            PyRegion_SETLOCALREF(lineobj, truncated);
         } else {
             PyErr_Clear();
         }
@@ -615,10 +636,10 @@ display_source_line(PyObject *f, PyObject *filename, int lineno, int indent,
         goto error;
     }
 
-    Py_DECREF(lineobj);
+    PyRegion_CLEARLOCAL(lineobj);
     return 0;
 error:
-    Py_DECREF(lineobj);
+    PyRegion_CLEARLOCAL(lineobj);
     return -1;
 }
 
@@ -626,6 +647,7 @@ int
 _Py_DisplaySourceLine(PyObject *f, PyObject *filename, int lineno, int indent,
                       int *truncation, PyObject **line)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return display_source_line(f, filename, lineno, indent, truncation, line);
 }
 
@@ -635,6 +657,7 @@ _Py_DisplaySourceLine(PyObject *f, PyObject *filename, int lineno, int indent,
 
 static inline int
 ignore_source_errors(void) {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PyErr_Occurred()) {
         if (PyErr_ExceptionMatches(PyExc_KeyboardInterrupt)) {
             return -1;
@@ -648,6 +671,7 @@ static int
 tb_displayline(PyTracebackObject* tb, PyObject *f, PyObject *filename, int lineno,
                PyFrameObject *frame, PyObject *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (filename == NULL || name == NULL) {
         return -1;
     }
@@ -659,6 +683,7 @@ tb_displayline(PyTracebackObject* tb, PyObject *f, PyObject *filename, int linen
     }
 
     int res = PyFile_WriteObject(line, f, Py_PRINT_RAW);
+    assert(!PyRegion_NeedsReadBarrier(line));
     Py_DECREF(line);
     if (res < 0) {
         return -1;
@@ -675,7 +700,7 @@ tb_displayline(PyTracebackObject* tb, PyObject *f, PyObject *filename, int linen
         /* ignore errors since we can't report them, can we? */
         err = ignore_source_errors();
     }
-    Py_XDECREF(source_line);
+    PyRegion_CLEARLOCAL(source_line);
     return err;
 }
 
@@ -684,6 +709,7 @@ static const int TB_RECURSIVE_CUTOFF = 3; // Also hardcoded in traceback.py.
 static int
 tb_print_line_repeated(PyObject *f, long cnt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     cnt -= TB_RECURSIVE_CUTOFF;
     PyObject *line = PyUnicode_FromFormat(
         (cnt > 1)
@@ -694,6 +720,7 @@ tb_print_line_repeated(PyObject *f, long cnt)
         return -1;
     }
     int err = PyFile_WriteObject(line, f, Py_PRINT_RAW);
+    assert(!PyRegion_NeedsReadBarrier(line));
     Py_DECREF(line);
     return err;
 }
@@ -701,6 +728,7 @@ tb_print_line_repeated(PyObject *f, long cnt)
 static int
 tb_printinternal(PyTracebackObject *tb, PyObject *f, long limit)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *code = NULL;
     Py_ssize_t depth = 0;
     PyObject *last_file = NULL;
@@ -747,7 +775,7 @@ tb_printinternal(PyTracebackObject *tb, PyObject *f, long limit)
                 goto error;
             }
         }
-        Py_CLEAR(code);
+        PyRegion_CLEARLOCAL(code);
         tb = tb->tb_next;
     }
     if (cnt > TB_RECURSIVE_CUTOFF) {
@@ -757,7 +785,7 @@ tb_printinternal(PyTracebackObject *tb, PyObject *f, long limit)
     }
     return 0;
 error:
-    Py_XDECREF(code);
+    PyRegion_CLEARLOCAL(code);
     return -1;
 }
 
@@ -766,6 +794,7 @@ error:
 int
 _PyTraceBack_Print(PyObject *v, const char *header, PyObject *f)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *limitv;
     long limit = PyTraceBack_LIMIT;
 
@@ -786,11 +815,11 @@ _PyTraceBack_Print(PyObject *v, const char *header, PyObject *f)
             limit = LONG_MAX;
         }
         else if (limit <= 0) {
-            Py_DECREF(limitv);
+            PyRegion_CLEARLOCAL(limitv);
             return 0;
         }
     }
-    Py_XDECREF(limitv);
+    PyRegion_CLEARLOCAL(limitv);
 
     if (PyFile_WriteString(header, f) < 0) {
         return -1;
@@ -806,6 +835,7 @@ _PyTraceBack_Print(PyObject *v, const char *header, PyObject *f)
 int
 PyTraceBack_Print(PyObject *v, PyObject *f)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *header = EXCEPTION_TB_HEADER;
     return _PyTraceBack_Print(v, header, f);
 }
@@ -818,6 +848,8 @@ PyTraceBack_Print(PyObject *v, PyObject *f)
 void
 _Py_DumpDecimal(int fd, size_t value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* maximum number of characters required for output of %lld or %p.
        We need at most ceil(log10(256)*SIZEOF_LONG_LONG) digits,
        plus 1 for the null byte.  53/22 is an upper bound for log10(256). */
@@ -842,6 +874,7 @@ _Py_DumpDecimal(int fd, size_t value)
 static void
 dump_hexadecimal(int fd, uintptr_t value, Py_ssize_t width, int strip_zeros)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char buffer[sizeof(uintptr_t) * 2 + 1], *ptr, *end;
     Py_ssize_t size = Py_ARRAY_LENGTH(buffer) - 1;
 
@@ -873,6 +906,7 @@ dump_hexadecimal(int fd, uintptr_t value, Py_ssize_t width, int strip_zeros)
 void
 _Py_DumpHexadecimal(int fd, uintptr_t value, Py_ssize_t width)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     dump_hexadecimal(fd, value, width, 0);
 }
 
@@ -888,6 +922,7 @@ dump_pointer(int fd, void *ptr)
 static void
 dump_char(int fd, char ch)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char buf[1] = {ch};
     (void)_Py_write_noraise(fd, buf, 1);
 }
@@ -895,6 +930,7 @@ dump_char(int fd, char ch)
 void
 _Py_DumpASCII(int fd, PyObject *text)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyASCIIObject *ascii = _PyASCIIObject_CAST(text);
     Py_ssize_t i, size;
     int truncated;
@@ -980,6 +1016,7 @@ done:
 static void
 dump_frame(int fd, _PyInterpreterFrame *frame)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(frame->owner < FRAME_OWNED_BY_INTERPRETER);
 
     PyCodeObject *code =_PyFrame_GetCode(frame);
@@ -1018,6 +1055,7 @@ dump_frame(int fd, _PyInterpreterFrame *frame)
 static int
 tstate_is_freed(PyThreadState *tstate)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (_PyMem_IsPtrFreed(tstate)) {
         return 1;
     }
@@ -1031,6 +1069,7 @@ tstate_is_freed(PyThreadState *tstate)
 static int
 interp_is_freed(PyInterpreterState *interp)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyMem_IsPtrFreed(interp);
 }
 
@@ -1038,6 +1077,7 @@ interp_is_freed(PyInterpreterState *interp)
 static void
 dump_traceback(int fd, PyThreadState *tstate, int write_header)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (write_header) {
         PUTS(fd, "Stack (most recent call first):\n");
     }
@@ -1093,6 +1133,7 @@ dump_traceback(int fd, PyThreadState *tstate, int write_header)
 void
 _Py_DumpTraceback(int fd, PyThreadState *tstate)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     dump_traceback(fd, tstate, 1);
 }
 
@@ -1115,6 +1156,7 @@ _Py_DumpTraceback(int fd, PyThreadState *tstate)
 static void
 write_thread_id(int fd, PyThreadState *tstate, int is_current)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (is_current)
         PUTS(fd, "Current thread 0x");
     else
@@ -1156,6 +1198,7 @@ const char*
 _Py_DumpTracebackThreads(int fd, PyInterpreterState *interp,
                          PyThreadState *current_tstate)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (current_tstate == NULL) {
         /* _Py_DumpTracebackThreads() is called from signal handlers by
            faulthandler.
@@ -1228,6 +1271,7 @@ _Py_DumpTracebackThreads(int fd, PyInterpreterState *interp,
 void
 _Py_backtrace_symbols_fd(int fd, void *const *array, Py_ssize_t size)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     VLA(Dl_info, info, size);
     VLA(int, status, size);
     /* Fill in the information we can get from dladdr() */
@@ -1301,6 +1345,7 @@ _Py_backtrace_symbols_fd(int fd, void *const *array, Py_ssize_t size)
 void
 _Py_DumpStack(int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #define BACKTRACE_SIZE 32
     PUTS(fd, "Current thread's C stack trace (most recent call first):\n");
     VLA(void *, callstack, BACKTRACE_SIZE);
@@ -1322,6 +1367,7 @@ _Py_DumpStack(int fd)
 void
 _Py_DumpStack(int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PUTS(fd, "Current thread's C stack trace (most recent call first):\n");
     PUTS(fd, "  <cannot get C stack on this system>\n");
 }

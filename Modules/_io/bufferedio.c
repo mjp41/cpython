@@ -2336,7 +2336,7 @@ _io_BufferedRWPair___init___impl(rwpair *self, PyObject *reader,
 
     // Regions: No barrier is needed, since self is local and the functions
     // return a local references.
-    assert(!PyRegion_IsLocal(self));
+    assert(PyRegion_IsLocal(self));
     self->reader = (buffered *) PyObject_CallFunction(
             (PyObject *)state->PyBufferedReader_Type,
             "On", reader, buffer_size);
