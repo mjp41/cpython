@@ -92,6 +92,7 @@ PyMutex _PyWeakref_Lock;
 Py_ssize_t
 _PyWeakref_GetWeakrefCount(PyObject *obj)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_PyType_SUPPORTS_WEAKREFS(Py_TYPE(obj))) {
         return 0;
     }
@@ -112,6 +113,7 @@ static PyObject *weakref_vectorcall(PyObject *self, PyObject *const *args, size_
 static void
 init_weakref(PyWeakReference *self, PyObject *ob, PyObject *callback)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     self->hash = -1;
     self->wr_object = ob;
     self->wr_prev = NULL;
@@ -135,6 +137,7 @@ init_weakref(PyWeakReference *self, PyObject *ob, PyObject *callback)
 static void
 clear_weakref_lock_held(PyWeakReference *self, PyObject **callback)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->wr_object != Py_None) {
         PyWeakReference **list = GET_WEAKREFS_LISTPTR(self->wr_object);
         if (*list == self) {
@@ -155,10 +158,7 @@ clear_weakref_lock_held(PyWeakReference *self, PyObject **callback)
     }
     if (callback != NULL) {
         *callback = self->wr_callback;
-        if (PyRegion_AddLocalRef(*callback)) {
-            PyRegion_DirtyObjectRegion(*callback);
-            PyErr_Clear();
-        }
+        PyRegion_AddLocalRef(*callback);
         PyRegion_RemoveRef(self, *callback);
         self->wr_callback = NULL;
     }
@@ -168,6 +168,7 @@ clear_weakref_lock_held(PyWeakReference *self, PyObject **callback)
 static void
 clear_weakref(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyWeakReference *self = _PyWeakref_CAST(op);
     PyObject *callback = NULL;
 
@@ -194,6 +195,7 @@ clear_weakref(PyObject *op)
 void
 _PyWeakref_ClearRef(PyWeakReference *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(self != NULL);
     assert(PyWeakref_Check(self));
     clear_weakref_lock_held(self, NULL);
@@ -202,6 +204,7 @@ _PyWeakref_ClearRef(PyWeakReference *self)
 static void
 weakref_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject_GC_UnTrack(self);
     clear_weakref(self);
     Py_TYPE(self)->tp_free(self);
@@ -211,6 +214,7 @@ weakref_dealloc(PyObject *self)
 static int
 gc_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyWeakReference *self = _PyWeakref_CAST(op);
     Py_VISIT(self->wr_callback);
     return 0;
@@ -220,6 +224,7 @@ gc_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 gc_clear(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyWeakReference *self = _PyWeakref_CAST(op);
     PyObject *callback;
     // The world is stopped during GC in free-threaded builds. It's safe to
@@ -234,6 +239,7 @@ static PyObject *
 weakref_vectorcall(PyObject *self, PyObject *const *args,
                    size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!_PyArg_NoKwnames("weakref", kwnames)) {
         return NULL;
     }
@@ -251,6 +257,8 @@ weakref_vectorcall(PyObject *self, PyObject *const *args,
 static Py_hash_t
 weakref_hash(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // Immutable objects and free-threaded builds require atomic operations
     PyWeakReference *self = _PyWeakref_CAST(op);
     Py_hash_t hash = _Py_atomic_load_ssize_relaxed(&self->hash);
@@ -412,11 +420,7 @@ try_reuse_basic_ref(PyWeakReference *list, PyTypeObject *type,
         return NULL;
     }
 
-    if (PyRegion_AddLocalRef(cand)) {
-        Py_DECREF(cand);
-        return NULL;
-    }
-    return cand;
+    return PyRegion_NewRef(cand);
 }
 
 static int
@@ -474,7 +478,7 @@ immutable_make_weakref_safe(PyWeakReference *self)
     else {
         // Pre-emptively increment the weakref's refcount.
         // See the comment at the start of this file for details.
-        Py_INCREF(self);
+        PyRegion_NewRef(self);
     }
 
 }
@@ -625,6 +629,7 @@ _PyWeakref_RefType = {
     .tp_alloc = PyType_GenericAlloc,
     .tp_new = weakref___new__,
     .tp_free = PyObject_GC_Del,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
