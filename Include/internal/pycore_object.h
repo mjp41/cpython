@@ -339,6 +339,7 @@ extern int _PyDict_CheckConsistency(PyObject *mp, int check_content);
 // Fast inlined version of PyType_HasFeature()
 static inline int
 _PyType_HasFeature(PyTypeObject *type, unsigned long feature) {
+    // Pyrona: This functions was checked and no further migration is needed
     return ((type->tp_flags) & feature) != 0;
 }
 

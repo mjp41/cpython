@@ -12573,18 +12573,20 @@ static PyMemberDef super_members[] = {
 static void
 super_dealloc(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     superobject *su = superobject_CAST(self);
 
     _PyObject_GC_UNTRACK(self);
-    Py_XDECREF(su->obj);
-    Py_XDECREF(su->type);
-    Py_XDECREF(su->obj_type);
+    PyRegion_CLEAR(su, su->obj);
+    PyRegion_CLEAR(su, su->type);
+    PyRegion_CLEAR(su, su->obj_type);
     Py_TYPE(self)->tp_free(self);
 }
 
 static PyObject *
 super_repr(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     superobject *su = superobject_CAST(self);
 
     if (su->obj_type)
@@ -12605,6 +12607,7 @@ May return NULL with or without an exception set, like PyDict_GetItemWithError. 
 static PyObject *
 _super_lookup_descr(PyTypeObject *su_type, PyTypeObject *su_obj_type, PyObject *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *mro, *res;
     Py_ssize_t i, n;
 
@@ -12614,7 +12617,7 @@ _super_lookup_descr(PyTypeObject *su_type, PyTypeObject *su_obj_type, PyObject *
        replaced during PyDict_GetItemRef(dict, name, &res) and because
        another thread can modify it after we end the critical section
        below  */
-    Py_XINCREF(mro);
+    PyRegion_XNewRef(mro);
     END_TYPE_LOCK();
 
     if (mro == NULL)
@@ -12630,6 +12633,7 @@ _super_lookup_descr(PyTypeObject *su_type, PyTypeObject *su_obj_type, PyObject *
     }
     i++;  /* skip su->type (if any)  */
     if (i >= n) {
+        PyRegion_RemoveLocalRef(mro);
         Py_DECREF(mro);
         return NULL;
     }
@@ -12641,13 +12645,13 @@ _super_lookup_descr(PyTypeObject *su_type, PyTypeObject *su_obj_type, PyObject *
 
         if (PyDict_GetItemRef(dict, name, &res) != 0) {
             // found or error
-            Py_DECREF(mro);
+            PyRegion_CLEARLOCAL(mro);
             return res;
         }
 
         i++;
     } while (i < n);
-    Py_DECREF(mro);
+    PyRegion_CLEARLOCAL(mro);
     return NULL;
 }
 
@@ -12657,6 +12661,7 @@ static PyObject *
 do_super_lookup(superobject *su, PyTypeObject *su_type, PyObject *su_obj,
                 PyTypeObject *su_obj_type, PyObject *name, int *method)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     int temp_su = 0;
 
@@ -12673,12 +12678,13 @@ do_super_lookup(superobject *su, PyTypeObject *su_type, PyObject *su_obj,
             descrgetfunc f = Py_TYPE(res)->tp_descr_get;
             if (f != NULL) {
                 PyObject *res2;
+                PyRegion_NotifyTypeUse(su_type);
                 res2 = f(res,
                     /* Only pass 'obj' param if this is instance-mode super
                     (See SF ID #743627)  */
                     (su_obj == (PyObject *)su_obj_type) ? NULL : su_obj,
                     (PyObject *)su_obj_type);
-                Py_SETREF(res, res2);
+                PyRegion_SETLOCALREF(res, res2);
             }
         }
 
@@ -12699,7 +12705,7 @@ do_super_lookup(superobject *su, PyTypeObject *su_type, PyObject *su_obj,
     }
     res = PyObject_GenericGetAttr((PyObject *)su, name);
     if (temp_su) {
-        Py_DECREF(su);
+        PyRegion_CLEARLOCAL(su);
     }
     return res;
 }
@@ -12707,6 +12713,7 @@ do_super_lookup(superobject *su, PyTypeObject *su_type, PyObject *su_obj,
 static PyObject *
 super_getattro(PyObject *self, PyObject *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     superobject *su = superobject_CAST(self);
 
     /* We want __class__ to return the class of the super object
@@ -12800,12 +12807,13 @@ _PySuper_Lookup(PyTypeObject *su_type, PyObject *su_obj, PyObject *name, int *me
 static PyObject *
 super_descr_get(PyObject *self, PyObject *obj, PyObject *type)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     superobject *su = superobject_CAST(self);
     superobject *newobj;
 
     if (obj == NULL || obj == Py_None || su->obj != NULL) {
         /* Not binding to an object, or already bound */
-        return Py_NewRef(self);
+        return PyRegion_NewRef(self);
     }
     if (!Py_IS_TYPE(su, &PySuper_Type))
         /* If su is an instance of a (strict) subclass of super,
@@ -12820,11 +12828,11 @@ super_descr_get(PyObject *self, PyObject *obj, PyObject *type)
         newobj = (superobject *)PySuper_Type.tp_new(&PySuper_Type,
                                                  NULL, NULL);
         if (newobj == NULL) {
-            Py_DECREF(obj_type);
+            PyRegion_CLEARLOCAL(obj_type);
             return NULL;
         }
-        newobj->type = (PyTypeObject*)Py_NewRef(su->type);
-        newobj->obj = Py_NewRef(obj);
+        newobj->type = (PyTypeObject*)PyRegion_NewRef(su->type);
+        newobj->obj = PyRegion_NewRef(obj);
         newobj->obj_type = obj_type;
         return (PyObject *)newobj;
     }
@@ -12834,6 +12842,7 @@ static int
 super_init_without_args(_PyInterpreterFrame *cframe, PyTypeObject **type_p,
                         PyObject **obj_p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyCodeObject *co = _PyFrame_GetCode(cframe);
     if (co->co_argcount == 0) {
         PyErr_SetString(PyExc_RuntimeError,
@@ -12864,7 +12873,7 @@ super_init_without_args(_PyInterpreterFrame *cframe, PyTypeObject **type_p,
         }
     }
     else {
-        Py_INCREF(firstarg);
+        PyRegion_NewRef(firstarg);
     }
 
     // Look for __class__ in the free vars.
@@ -12879,22 +12888,22 @@ super_init_without_args(_PyInterpreterFrame *cframe, PyTypeObject **type_p,
             if (cell == NULL || !PyCell_Check(cell)) {
                 PyErr_SetString(PyExc_RuntimeError,
                   "super(): bad __class__ cell");
-                Py_DECREF(firstarg);
+                PyRegion_CLEARLOCAL(firstarg);
                 return -1;
             }
             type = (PyTypeObject *) PyCell_GetRef((PyCellObject *)cell);
             if (type == NULL) {
                 PyErr_SetString(PyExc_RuntimeError,
                   "super(): empty __class__ cell");
-                Py_DECREF(firstarg);
+                PyRegion_CLEARLOCAL(firstarg);
                 return -1;
             }
             if (!PyType_Check(type)) {
                 PyErr_Format(PyExc_RuntimeError,
                   "super(): __class__ is not a type (%s)",
                   Py_TYPE(type)->tp_name);
-                Py_DECREF(type);
-                Py_DECREF(firstarg);
+                PyRegion_CLEARLOCAL(type);
+                PyRegion_CLEARLOCAL(firstarg);
                 return -1;
             }
             break;
@@ -12903,10 +12912,13 @@ super_init_without_args(_PyInterpreterFrame *cframe, PyTypeObject **type_p,
     if (type == NULL) {
         PyErr_SetString(PyExc_RuntimeError,
                         "super(): __class__ cell not found");
-        Py_DECREF(firstarg);
+        PyRegion_CLEARLOCAL(firstarg);
         return -1;
     }
 
+    // Regions: type_p, obj_p are both vatiables on the stack, meaning that
+    // this represents a local assignment. Since no RC's change, we don't
+    // need a barrier
     *type_p = type;
     *obj_p = firstarg;
     return 0;
@@ -12917,6 +12929,7 @@ static int super_init_impl(PyObject *self, PyTypeObject *type, PyObject *obj);
 static int
 super_init(PyObject *self, PyObject *args, PyObject *kwds)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *type = NULL;
     PyObject *obj = NULL;
 
@@ -12932,6 +12945,7 @@ super_init(PyObject *self, PyObject *args, PyObject *kwds)
 
 static inline int
 super_init_impl(PyObject *self, PyTypeObject *type, PyObject *obj) {
+    // Pyrona: This functions was checked and no further migration is needed
     superobject *su = superobject_CAST(self);
     PyTypeObject *obj_type = NULL;
     if (type == NULL) {
@@ -12951,22 +12965,24 @@ super_init_impl(PyObject *self, PyTypeObject *type, PyObject *obj) {
         }
     }
     else {
-        Py_INCREF(type);
-        Py_XINCREF(obj);
+        PyRegion_NewRef(type);
+        PyRegion_XNewRef(obj);
     }
 
     if (obj == Py_None) {
-        Py_DECREF(obj);
-        obj = NULL;
+        PyRegion_CLEARLOCAL(obj);
     }
     if (obj != NULL) {
         obj_type = supercheck(type, obj);
         if (obj_type == NULL) {
-            Py_DECREF(type);
-            Py_DECREF(obj);
+            PyRegion_CLEARLOCAL(type);
+            PyRegion_CLEARLOCAL(obj);
             return -1;
         }
     }
+    // Regions: This is called from the init function where su should always
+    // be local, this allows us to skip the barriers
+    assert(PyRegion_IsLocal(su));
     Py_XSETREF(su->type, (PyTypeObject*)type);
     Py_XSETREF(su->obj, obj);
     Py_XSETREF(su->obj_type, obj_type);
@@ -13004,6 +13020,7 @@ static PyObject *
 super_vectorcall(PyObject *self, PyObject *const *args,
     size_t nargsf, PyObject *kwnames)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyType_Check(self));
     if (!_PyArg_NoKwnames("super", kwnames)) {
         return NULL;
@@ -13037,7 +13054,7 @@ super_vectorcall(PyObject *self, PyObject *const *args,
     }
     return su;
 fail:
-    Py_DECREF(su);
+    PyRegion_CLEARLOCAL(su);
     return NULL;
 }
 
@@ -13084,6 +13101,8 @@ PyTypeObject PySuper_Type = {
     PyType_GenericNew,                          /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
     .tp_vectorcall = super_vectorcall,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE
 };
 
 
