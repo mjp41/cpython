@@ -405,6 +405,11 @@ PyModule_FromDefAndSpec2(PyModuleDef* def, PyObject *spec, int module_api_versio
                     goto error;
                 }
                 break;
+            case Py_mod_pyrona:
+                // FIXME(regions): The module has declared that it knows about
+                // Pyrona if it can be trusted. Add a way to store this in the
+                // module object for future accesses.
+                break;
             default:
                 assert(cur_slot->slot < 0 || cur_slot->slot > _Py_mod_LAST_SLOT);
                 PyErr_Format(
@@ -581,6 +586,7 @@ PyModule_ExecDef(PyObject *module, PyModuleDef *def)
             case Py_mod_multiple_interpreters:
             case Py_mod_gil:
             case Py_mod_abi:
+            case Py_mod_pyrona:
                 /* handled in PyModule_FromDefAndSpec2 */
                 break;
             default:

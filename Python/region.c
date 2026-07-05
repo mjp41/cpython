@@ -2641,6 +2641,7 @@ void PyRegion_RecycleObject(PyObject *obj) {
 // TODO(regions): xFrednet: Migrate call.c
 // TODO(regions): xFrednet: Migrate ceval.c
 // TODO(regions): xFrednet: Migrate typeobject.c
+// TODO(regions): xFrednet: Migrate Objects/structseq.c
 // TODO(regions): xFrednet: Currently it can happen that the managed dictionary of an object is
 //                          inside a region while the owning object is in the local regions. This
 //                          is BAD because:

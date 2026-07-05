@@ -625,6 +625,7 @@ corresponding Unix manual entries for more information on calls.");
 static void
 run_at_forkers(PyObject *lst, int reverse)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
     PyObject *cpy;
 
@@ -651,10 +652,10 @@ run_at_forkers(PyObject *lst, int reverse)
                                            "in atfork callback %R", func);
                 }
                 else {
-                    Py_DECREF(res);
+                    PyRegion_CLEARLOCAL(res);
                 }
             }
-            Py_DECREF(cpy);
+            PyRegion_CLEARLOCAL(cpy);
         }
     }
 }
@@ -662,6 +663,7 @@ run_at_forkers(PyObject *lst, int reverse)
 void
 PyOS_BeforeFork(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp = _PyInterpreterState_GET();
     run_at_forkers(interp->before_forkers, 1);
 
@@ -673,6 +675,7 @@ PyOS_BeforeFork(void)
 void
 PyOS_AfterFork_Parent(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HEAD_UNLOCK(&_PyRuntime);
     _PyEval_StartTheWorldAll(&_PyRuntime);
 
@@ -684,6 +687,7 @@ PyOS_AfterFork_Parent(void)
 static void
 reset_remotedebug_data(PyThreadState *tstate)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     tstate->remote_debugger_support.debugger_pending_call = 0;
     memset(tstate->remote_debugger_support.debugger_script_path, 0,
            _Py_MAX_SCRIPT_PATH_SIZE);
@@ -692,6 +696,7 @@ reset_remotedebug_data(PyThreadState *tstate)
 static void
 reset_asyncio_state(_PyThreadStateImpl *tstate)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     llist_init(&tstate->asyncio_tasks_head);
     tstate->asyncio_running_loop = NULL;
     tstate->asyncio_running_task = NULL;
@@ -701,6 +706,7 @@ reset_asyncio_state(_PyThreadStateImpl *tstate)
 void
 PyOS_AfterFork_Child(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStatus status;
     _PyRuntimeState *runtime = &_PyRuntime;
 
@@ -769,6 +775,7 @@ fatal_error:
 static int
 register_at_forker(PyObject **lst, PyObject *func)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (func == NULL)  /* nothing to register? do nothing. */
         return 0;
     if (*lst == NULL) {
@@ -785,6 +792,7 @@ register_at_forker(PyObject **lst, PyObject *func)
 void
 PyOS_AfterFork(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_FORK
     PyOS_AfterFork_Child();
 #endif
@@ -806,6 +814,7 @@ void _Py_stat_basic_info_to_stat(FILE_STAT_BASIC_INFORMATION *,
 PyObject *
 _PyLong_FromUid(uid_t uid)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (uid == (uid_t)-1)
         return PyLong_FromLong(-1);
     return PyLong_FromUnsignedLong(uid);
@@ -814,6 +823,7 @@ _PyLong_FromUid(uid_t uid)
 PyObject *
 _PyLong_FromGid(gid_t gid)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (gid == (gid_t)-1)
         return PyLong_FromLong(-1);
     return PyLong_FromUnsignedLong(gid);
@@ -822,6 +832,7 @@ _PyLong_FromGid(gid_t gid)
 int
 _Py_Uid_Converter(PyObject *obj, uid_t *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     uid_t uid;
     PyObject *index;
     int overflow;
@@ -906,7 +917,7 @@ _Py_Uid_Converter(PyObject *obj, uid_t *p)
     /* fallthrough */
 
 success:
-    Py_DECREF(index);
+    PyRegion_CLEARLOCAL(index);
     *p = uid;
     return 1;
 
@@ -921,13 +932,14 @@ overflow:
     /* fallthrough */
 
 fail:
-    Py_DECREF(index);
+    PyRegion_CLEARLOCAL(index);
     return 0;
 }
 
 int
 _Py_Gid_Converter(PyObject *obj, gid_t *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     gid_t gid;
     PyObject *index;
     int overflow;
@@ -1013,7 +1025,7 @@ _Py_Gid_Converter(PyObject *obj, gid_t *p)
     /* fallthrough */
 
 success:
-    Py_DECREF(index);
+    PyRegion_CLEARLOCAL(index);
     *p = gid;
     return 1;
 
@@ -1028,7 +1040,7 @@ overflow:
     /* fallthrough */
 
 fail:
-    Py_DECREF(index);
+    PyRegion_CLEARLOCAL(index);
     return 0;
 }
 #endif /* MS_WINDOWS */
@@ -1037,6 +1049,7 @@ fail:
 static PyObject *
 _PyLong_FromDev(dev_t dev)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef NODEV
     if (dev == NODEV) {
         return PyLong_FromLongLong((long long)dev);
@@ -1050,6 +1063,7 @@ _PyLong_FromDev(dev_t dev)
 static int
 _Py_Dev_Converter(PyObject *obj, void *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyLong_Check(obj)) {
         obj = _PyNumber_Index(obj);
         if (obj == NULL) {
@@ -1057,7 +1071,7 @@ _Py_Dev_Converter(PyObject *obj, void *p)
         }
     }
     else {
-        Py_INCREF(obj);
+        PyRegion_NewRef(obj);
     }
     assert(PyLong_Check(obj));
 #ifdef NODEV
@@ -1065,19 +1079,19 @@ _Py_Dev_Converter(PyObject *obj, void *p)
         int overflow;
         long long result = PyLong_AsLongLongAndOverflow(obj, &overflow);
         if (result == -1 && PyErr_Occurred()) {
-            Py_DECREF(obj);
+            PyRegion_CLEARLOCAL(obj);
             return 0;
         }
         if (!overflow && result == (long long)NODEV) {
             *((dev_t *)p) = NODEV;
-            Py_DECREF(obj);
+            PyRegion_CLEARLOCAL(obj);
             return 1;
         }
     }
 #endif
 
     unsigned long long result = PyLong_AsUnsignedLongLong(obj);
-    Py_DECREF(obj);
+    PyRegion_CLEARLOCAL(obj);
     if (result == (unsigned long long)-1 && PyErr_Occurred()) {
         return 0;
     }
@@ -1108,6 +1122,7 @@ _Py_Dev_Converter(PyObject *obj, void *p)
 static int
 _fd_converter(PyObject *o, int *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int overflow;
     long long_value;
 
@@ -1125,7 +1140,7 @@ _fd_converter(PyObject *o, int *p)
 
     assert(PyLong_Check(index));
     long_value = PyLong_AsLongAndOverflow(index, &overflow);
-    Py_DECREF(index);
+    PyRegion_CLEARLOCAL(index);
     assert(!PyErr_Occurred());
     if (overflow > 0 || long_value > INT_MAX) {
         PyErr_SetString(PyExc_OverflowError,
@@ -1145,6 +1160,7 @@ _fd_converter(PyObject *o, int *p)
 static int
 dir_fd_converter(PyObject *o, void *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (o == Py_None) {
         *(int *)p = DEFAULT_DIR_FD;
         return 1;
@@ -1328,16 +1344,20 @@ typedef struct {
 static void
 path_cleanup(path_t *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     wchar_t *wide = (wchar_t *)path->wide;
     path->wide = NULL;
     PyMem_Free(wide);
-    Py_CLEAR(path->object);
-    Py_CLEAR(path->cleanup);
+    // Regions: path is a C struct, these references are therefore counted
+    // as local references
+    PyRegion_CLEARLOCAL(path->object);
+    PyRegion_CLEARLOCAL(path->cleanup);
 }
 
 static int
 path_converter(PyObject *o, void *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     path_t *path = (path_t *)p;
     PyObject *bytes = NULL;
     Py_ssize_t length = 0;
@@ -1361,7 +1381,7 @@ path_converter(PyObject *o, void *p)
     /* Ensure it's always safe to call path_cleanup(). */
     path->object = path->cleanup = NULL;
     /* path->object owns a reference to the original object */
-    Py_INCREF(o);
+    PyRegion_NewRef(o);
 
     if ((o == Py_None) && path->nullable) {
         path->wide = NULL;
@@ -1385,7 +1405,7 @@ path_converter(PyObject *o, void *p)
             goto error_format;
         }
         res = _PyObject_CallNoArgs(func);
-        Py_DECREF(func);
+        PyRegion_CLEARLOCAL(func);
         if (NULL == res) {
             goto error_exit;
         }
@@ -1400,12 +1420,12 @@ path_converter(PyObject *o, void *p)
                  "expected %.200s.__fspath__() to return str or bytes, "
                  "not %.200s", _PyType_Name(Py_TYPE(o)),
                  _PyType_Name(Py_TYPE(res)));
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
             goto error_exit;
         }
 
         /* still owns a reference to the original object */
-        Py_SETREF(o, res);
+        PyRegion_SETLOCALREF(o, res);
     }
 
     if (is_unicode) {
@@ -1438,7 +1458,7 @@ path_converter(PyObject *o, void *p)
         }
     }
     else if (is_bytes) {
-        bytes = Py_NewRef(o);
+        bytes = PyRegion_NewRef(o);
     }
     else if (is_index) {
         if (!_fd_converter(o, &path->fd)) {
@@ -1477,7 +1497,7 @@ path_converter(PyObject *o, void *p)
         }
 
         wide = PyUnicode_AsWideCharString(wo, &length);
-        Py_DECREF(wo);
+        PyRegion_CLEARLOCAL(wo);
         if (!wide) {
             goto error_exit;
         }
@@ -1494,7 +1514,7 @@ path_converter(PyObject *o, void *p)
         }
         path->wide = wide;
         path->narrow = NULL;
-        Py_DECREF(bytes);
+        PyRegion_CLEARLOCAL(bytes);
         wide = NULL;
     }
     else {
@@ -1503,7 +1523,7 @@ path_converter(PyObject *o, void *p)
         if (bytes == o) {
             /* Still a reference owned by path->object, don't have to
             worry about path->narrow is used after free. */
-            Py_DECREF(bytes);
+            PyRegion_CLEARLOCAL(bytes);
         }
         else {
             path->cleanup = bytes;
@@ -1518,8 +1538,8 @@ path_converter(PyObject *o, void *p)
     return Py_CLEANUP_SUPPORTED;
 
  error_exit:
-    Py_XDECREF(o);
-    Py_XDECREF(bytes);
+    PyRegion_CLEARLOCAL(o);
+    PyRegion_CLEARLOCAL(bytes);
     PyMem_Free(wide);
     if (!path->suppress_value_error ||
         !PyErr_ExceptionMatches(PyExc_ValueError))
@@ -1539,6 +1559,7 @@ path_converter(PyObject *o, void *p)
 static void
 argument_unavailable_error(const char *function_name, const char *argument_name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyErr_Format(PyExc_NotImplementedError,
         "%s%s%s unavailable on this platform",
         (function_name != NULL) ? function_name : "",
@@ -1549,6 +1570,7 @@ argument_unavailable_error(const char *function_name, const char *argument_name)
 static int
 dir_fd_unavailable(PyObject *o, void *p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int dir_fd;
     if (!dir_fd_converter(o, &dir_fd))
         return 0;
@@ -1563,6 +1585,7 @@ dir_fd_unavailable(PyObject *o, void *p)
 static int
 fd_specified(const char *function_name, int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (fd == -1)
         return 0;
 
@@ -1573,6 +1596,7 @@ fd_specified(const char *function_name, int fd)
 static int
 follow_symlinks_specified(const char *function_name, int follow_symlinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (follow_symlinks)
         return 0;
 
@@ -1583,6 +1607,7 @@ follow_symlinks_specified(const char *function_name, int follow_symlinks)
 static int
 path_and_dir_fd_invalid(const char *function_name, path_t *path, int dir_fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!path->wide && (dir_fd != DEFAULT_DIR_FD) && !path->narrow) {
         PyErr_Format(PyExc_ValueError,
                      "%s: can't specify dir_fd without matching path",
@@ -1595,6 +1620,7 @@ path_and_dir_fd_invalid(const char *function_name, path_t *path, int dir_fd)
 static int
 dir_fd_and_fd_invalid(const char *function_name, int dir_fd, int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if ((dir_fd != DEFAULT_DIR_FD) && (fd != -1)) {
         PyErr_Format(PyExc_ValueError,
                      "%s: can't specify both dir_fd and fd",
@@ -1608,6 +1634,7 @@ static int
 fd_and_follow_symlinks_invalid(const char *function_name, int fd,
                                int follow_symlinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if ((fd > 0) && (!follow_symlinks)) {
         PyErr_Format(PyExc_ValueError,
                      "%s: cannot use fd and follow_symlinks together",
@@ -1621,6 +1648,7 @@ static int
 dir_fd_and_follow_symlinks_invalid(const char *function_name, int dir_fd,
                                    int follow_symlinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if ((dir_fd != DEFAULT_DIR_FD) && (!follow_symlinks)) {
         PyErr_Format(PyExc_ValueError,
                      "%s: cannot use dir_fd and follow_symlinks together",
@@ -1634,6 +1662,7 @@ dir_fd_and_follow_symlinks_invalid(const char *function_name, int dir_fd,
 static int
 idtype_t_converter(PyObject *arg, void *addr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int value = PyLong_AsInt(arg);
     if (value == -1 && PyErr_Occurred()) {
         return 0;
@@ -1652,6 +1681,7 @@ idtype_t_converter(PyObject *arg, void *addr)
 static int
 Py_off_t_converter(PyObject *arg, void *addr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_LARGEFILE_SUPPORT
     *((Py_off_t *)addr) = PyLong_AsLongLong(arg);
 #else
@@ -1665,6 +1695,7 @@ Py_off_t_converter(PyObject *arg, void *addr)
 static PyObject *
 PyLong_FromPy_off_t(Py_off_t offset)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_LARGEFILE_SUPPORT
     return PyLong_FromLongLong(offset);
 #else
@@ -1678,6 +1709,7 @@ PyLong_FromPy_off_t(Py_off_t offset)
 int
 _Py_Sigset_Converter(PyObject *obj, void *addr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     sigset_t *mask = (sigset_t *)addr;
     PyObject *iterator, *item;
     long signum;
@@ -1697,6 +1729,7 @@ _Py_Sigset_Converter(PyObject *obj, void *addr)
 
     while ((item = PyIter_Next(iterator)) != NULL) {
         signum = PyLong_AsLongAndOverflow(item, &overflow);
+        PyRegion_RemoveLocalRef(item);
         Py_DECREF(item);
         if (signum <= 0 || signum >= Py_NSIG) {
             if (overflow || signum != -1 || !PyErr_Occurred()) {
@@ -1723,12 +1756,12 @@ _Py_Sigset_Converter(PyObject *obj, void *addr)
         }
     }
     if (!PyErr_Occurred()) {
-        Py_DECREF(iterator);
+        PyRegion_CLEARLOCAL(iterator);
         return 1;
     }
 
 error:
-    Py_DECREF(iterator);
+    PyRegion_CLEARLOCAL(iterator);
     return 0;
 }
 #endif /* HAVE_SIGSET_T */
@@ -1748,6 +1781,7 @@ extern char **environ;
 static PyObject *
 convertenviron(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *d;
 #ifdef MS_WINDOWS
     wchar_t **e;
@@ -1789,7 +1823,7 @@ convertenviron(void)
         k = PyBytes_FromStringAndSize(*e, (int)(p-*e));
 #endif
         if (k == NULL) {
-            Py_DECREF(d);
+            PyRegion_CLEARLOCAL(d);
             return NULL;
         }
 #ifdef MS_WINDOWS
@@ -1798,18 +1832,18 @@ convertenviron(void)
         v = PyBytes_FromStringAndSize(p+1, strlen(p+1));
 #endif
         if (v == NULL) {
-            Py_DECREF(k);
-            Py_DECREF(d);
+            PyRegion_CLEARLOCAL(k);
+            PyRegion_CLEARLOCAL(d);
             return NULL;
         }
         if (PyDict_SetDefaultRef(d, k, v, NULL) < 0) {
-            Py_DECREF(v);
-            Py_DECREF(k);
-            Py_DECREF(d);
+            PyRegion_CLEARLOCAL(v);
+            PyRegion_CLEARLOCAL(k);
+            PyRegion_CLEARLOCAL(d);
             return NULL;
         }
-        Py_DECREF(k);
-        Py_DECREF(v);
+        PyRegion_CLEARLOCAL(k);
+        PyRegion_CLEARLOCAL(v);
     }
     return d;
 }
@@ -1819,6 +1853,7 @@ convertenviron(void)
 static PyObject *
 posix_error(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyErr_SetFromErrno(PyExc_OSError);
 }
 
@@ -1826,6 +1861,8 @@ posix_error(void)
 static PyObject *
 win32_error(const char* function, const char* filename)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* XXX We should pass the function name along in the future.
        (winreg.c also wants to pass the function name.)
        This would however require an additional param to the
@@ -1841,6 +1878,8 @@ win32_error(const char* function, const char* filename)
 static PyObject *
 win32_error_object_err(const char* function, PyObject* filename, DWORD err)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* XXX - see win32_error for comments on 'function' */
     if (filename)
         return PyErr_SetExcFromWindowsErrWithFilenameObject(
@@ -1854,6 +1893,7 @@ win32_error_object_err(const char* function, PyObject* filename, DWORD err)
 static PyObject *
 win32_error_object(const char* function, PyObject* filename)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     errno = GetLastError();
     return win32_error_object_err(function, filename, errno);
 }
@@ -1863,12 +1903,14 @@ win32_error_object(const char* function, PyObject* filename)
 static PyObject *
 posix_path_object_error(PyObject *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, path);
 }
 
 static PyObject *
 path_object_error(PyObject *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     return PyErr_SetExcFromWindowsErrWithFilenameObject(
                 PyExc_OSError, 0, path);
@@ -1880,6 +1922,7 @@ path_object_error(PyObject *path)
 static PyObject *
 path_object_error2(PyObject *path, PyObject *path2)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     return PyErr_SetExcFromWindowsErrWithFilenameObjects(
                 PyExc_OSError, 0, path, path2);
@@ -1891,18 +1934,21 @@ path_object_error2(PyObject *path, PyObject *path2)
 static PyObject *
 path_error(path_t *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return path_object_error(path->object);
 }
 
 static PyObject *
 posix_path_error(path_t *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return posix_path_object_error(path->object);
 }
 
 static PyObject *
 path_error2(path_t *path, path_t *path2)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return path_object_error2(path->object, path2->object);
 }
 
@@ -1912,6 +1958,7 @@ path_error2(path_t *path, path_t *path2)
 static PyObject *
 posix_fildes_fd(int fd, int (*func)(int))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     int async_err = 0;
 
@@ -1937,6 +1984,7 @@ posix_fildes_fd(int fd, int (*func)(int))
 static BOOL __stdcall
 win32_wchdir(LPCWSTR path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     wchar_t path_buf[MAX_PATH], *new_path = path_buf;
     int result;
     wchar_t env[4] = L"=x:";
@@ -1986,6 +2034,7 @@ find_data_to_file_info(WIN32_FIND_DATAW *pFileData,
                        BY_HANDLE_FILE_INFORMATION *info,
                        ULONG *reparse_tag)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     memset(info, 0, sizeof(*info));
     info->dwFileAttributes = pFileData->dwFileAttributes;
     info->ftCreationTime   = pFileData->ftCreationTime;
@@ -2003,6 +2052,7 @@ find_data_to_file_info(WIN32_FIND_DATAW *pFileData,
 static BOOL
 attributes_from_dir(LPCWSTR pszFile, BY_HANDLE_FILE_INFORMATION *info, ULONG *reparse_tag)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HANDLE hFindFile;
     WIN32_FIND_DATAW FileData;
     LPCWSTR filename = pszFile;
@@ -2041,6 +2091,7 @@ static void
 update_st_mode_from_path(const wchar_t *path, DWORD attr,
                          struct _Py_stat_struct *result)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
         /* Fix the file execute permissions. This hack sets S_IEXEC if
            the filename has an extension that is commonly used by files
@@ -2065,6 +2116,7 @@ static int
 win32_xstat_slow_impl(const wchar_t *path, struct _Py_stat_struct *result,
                       BOOL traverse)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HANDLE hFile;
     BY_HANDLE_FILE_INFORMATION fileInfo;
     FILE_BASIC_INFO basicInfo;
@@ -2253,6 +2305,7 @@ static int
 win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
                  BOOL traverse)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     FILE_STAT_BASIC_INFORMATION statInfo;
     if (_Py_GetFileInformationByName(path, FileStatBasicByNameInfo,
                                      &statInfo, sizeof(statInfo))) {
@@ -2285,6 +2338,8 @@ win32_xstat_impl(const wchar_t *path, struct _Py_stat_struct *result,
 static int
 win32_xstat(const wchar_t *path, struct _Py_stat_struct *result, BOOL traverse)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Protocol violation: we explicitly clear errno, instead of
        setting it to a POSIX error. Callers should use GetLastError. */
     int code = win32_xstat_impl(path, result, traverse);
@@ -2308,12 +2363,14 @@ win32_xstat(const wchar_t *path, struct _Py_stat_struct *result, BOOL traverse)
 static int
 win32_lstat(const wchar_t* path, struct _Py_stat_struct *result)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return win32_xstat(path, result, FALSE);
 }
 
 static int
 win32_stat(const wchar_t* path, struct _Py_stat_struct *result)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return win32_xstat(path, result, TRUE);
 }
 
@@ -2445,7 +2502,7 @@ static PyStructSequence_Desc stat_result_desc = {
     "stat_result", /* name */
     stat_result__doc__, /* doc */
     stat_result_fields,
-    10
+    10,
 };
 
 PyDoc_STRVAR(statvfs_result__doc__,
@@ -2517,7 +2574,7 @@ statresult_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         return NULL;
     }
     _posixstate *state = get_posix_state(mod);
-    Py_DECREF(mod);
+    PyRegion_CLEARLOCAL(mod);
     if (state == NULL) {
         return NULL;
     }
@@ -2531,8 +2588,10 @@ statresult_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
        from the int slots.  */
     for (i = 7; i <= 9; i++) {
         if (result->ob_item[i+3] == Py_None) {
-            Py_DECREF(Py_None);
-            result->ob_item[i+3] = Py_NewRef(result->ob_item[i]);
+            if (PyRegion_SETNEWREF(result, result->ob_item[i+3], result->ob_item[i])) {
+                PyRegion_CLEARLOCAL(result);
+                return NULL;
+            }
         }
     }
     return (PyObject*)result;
@@ -2541,31 +2600,33 @@ statresult_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 _posix_clear(PyObject *module)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _posixstate *state = get_posix_state(module);
-    Py_CLEAR(state->billion);
-    Py_CLEAR(state->DirEntryType);
-    Py_CLEAR(state->ScandirIteratorType);
+    PyRegion_CLEAR(module, state->billion);
+    PyRegion_CLEAR(module, state->DirEntryType);
+    PyRegion_CLEAR(module, state->ScandirIteratorType);
 #if defined(HAVE_SCHED_SETPARAM) || defined(HAVE_SCHED_SETSCHEDULER) || defined(POSIX_SPAWN_SETSCHEDULER) || defined(POSIX_SPAWN_SETSCHEDPARAM)
-    Py_CLEAR(state->SchedParamType);
+    PyRegion_CLEAR(module, state->SchedParamType);
 #endif
-    Py_CLEAR(state->StatResultType);
-    Py_CLEAR(state->StatVFSResultType);
-    Py_CLEAR(state->TerminalSizeType);
-    Py_CLEAR(state->TimesResultType);
-    Py_CLEAR(state->UnameResultType);
+    PyRegion_CLEAR(module, state->StatResultType);
+    PyRegion_CLEAR(module, state->StatVFSResultType);
+    PyRegion_CLEAR(module, state->TerminalSizeType);
+    PyRegion_CLEAR(module, state->TimesResultType);
+    PyRegion_CLEAR(module, state->UnameResultType);
 #if defined(HAVE_WAITID)
-    Py_CLEAR(state->WaitidResultType);
+    PyRegion_CLEAR(module, state->WaitidResultType);
 #endif
 #if defined(HAVE_WAIT3) || defined(HAVE_WAIT4)
-    Py_CLEAR(state->struct_rusage);
+    PyRegion_CLEAR(module, state->struct_rusage);
 #endif
-    Py_CLEAR(state->st_mode);
+    PyRegion_CLEAR(module, state->st_mode);
     return 0;
 }
 
 static int
 _posix_traverse(PyObject *module, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _posixstate *state = get_posix_state(module);
     Py_VISIT(state->billion);
     Py_VISIT(state->DirEntryType);
@@ -2591,6 +2652,7 @@ _posix_traverse(PyObject *module, visitproc visit, void *arg)
 static void
 _posix_free(void *module)
 {
+    // Pyrona: This functions was checked and no further migration is needed
    _posix_clear((PyObject *)module);
 }
 
@@ -2607,12 +2669,23 @@ fill_time(_posixstate *state, PyObject *v, int s_index, int f_index,
         if (s == NULL) {
             return -1;
         }
+        // `SET_ITEM` steals `s`; hand off the owned stack reference into `v`
+        // without changing the refcount -> transfer barrier.
+        if (PyRegion_TakeRef(v, s)) {
+            PyRegion_CLEARLOCAL(s);
+            return -1;
+        }
         PyStructSequence_SET_ITEM(v, s_index, s);
     }
 
     if (f_index >= 0) {
         PyObject *float_s = PyFloat_FromDouble((double)sec + 1e-9 * nsec);
         if (float_s == NULL) {
+            return -1;
+        }
+        // `SET_ITEM` steals `float_s`; transfer the owned stack reference.
+        if (PyRegion_TakeRef(v, float_s)) {
+            PyRegion_CLEARLOCAL(float_s);
             return -1;
         }
         PyStructSequence_SET_ITEM(v, f_index, float_s);
@@ -2624,6 +2697,11 @@ fill_time(_posixstate *state, PyObject *v, int s_index, int f_index,
         if ((LLONG_MIN/SEC_TO_NS) <= sec && sec <= (LLONG_MAX/SEC_TO_NS - 1)) {
             PyObject *ns_total = PyLong_FromLongLong(sec * SEC_TO_NS + nsec);
             if (ns_total == NULL) {
+                return -1;
+            }
+            // `SET_ITEM` steals `ns_total`; transfer the owned stack reference.
+            if (PyRegion_TakeRef(v, ns_total)) {
+                PyRegion_CLEARLOCAL(ns_total);
                 return -1;
             }
             PyStructSequence_SET_ITEM(v, ns_index, ns_total);
@@ -2648,14 +2726,21 @@ fill_time(_posixstate *state, PyObject *v, int s_index, int f_index,
             if (ns_total == NULL) {
                 goto exit;
             }
+            // `SET_ITEM` steals `ns_total`; transfer the owned stack reference.
+            // On failure free `ns_total` (the exit cleanup below does not
+            // cover it) and leave `res` == -1.
+            if (PyRegion_TakeRef(v, ns_total)) {
+                PyRegion_CLEARLOCAL(ns_total);
+                goto exit;
+            }
             PyStructSequence_SET_ITEM(v, ns_index, ns_total);
             assert(!PyErr_Occurred());
             res = 0;
 
         exit:
-            Py_XDECREF(s);
-            Py_XDECREF(ns_fractional);
-            Py_XDECREF(s_in_ns);
+            PyRegion_CLEARLOCAL(s);
+            PyRegion_CLEARLOCAL(ns_fractional);
+            PyRegion_CLEARLOCAL(s_in_ns);
         }
     }
 
@@ -2667,6 +2752,7 @@ fill_time(_posixstate *state, PyObject *v, int s_index, int f_index,
 static PyObject*
 _pystat_l128_from_l64_l64(uint64_t low, uint64_t high)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *o_low = PyLong_FromUnsignedLongLong(low);
     if (!o_low || !high) {
         return o_low;
@@ -2674,16 +2760,23 @@ _pystat_l128_from_l64_l64(uint64_t low, uint64_t high)
     PyObject *o_high = PyLong_FromUnsignedLongLong(high);
     PyObject *l64 = o_high ? PyLong_FromLong(64) : NULL;
     if (!l64) {
+        assert(!PyRegion_NeedsReadBarrier(o_high));
+        assert(!PyRegion_NeedsReadBarrier(o_low));
         Py_XDECREF(o_high);
         Py_DECREF(o_low);
         return NULL;
     }
+    assert(!PyRegion_NeedsReadBarrier(o_high));
+    assert(!PyRegion_NeedsReadBarrier(l64));
     Py_SETREF(o_high, PyNumber_Lshift(o_high, l64));
     Py_DECREF(l64);
     if (!o_high) {
+        assert(!PyRegion_NeedsReadBarrier(o_low));
         Py_DECREF(o_low);
         return NULL;
     }
+    assert(!PyRegion_NeedsReadBarrier(o_low));
+    assert(!PyRegion_NeedsReadBarrier(o_high));
     Py_SETREF(o_low, PyNumber_Add(o_low, o_high));
     Py_DECREF(o_high);
     return o_low;
@@ -2695,6 +2788,7 @@ _pystat_l128_from_l64_l64(uint64_t low, uint64_t high)
 static PyObject*
 _pystat_fromstructstat(PyObject *module, STRUCT_STAT *st)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(!PyErr_Occurred());
 
     _posixstate *state = get_posix_state(module);
@@ -2708,6 +2802,11 @@ _pystat_fromstructstat(PyObject *module, STRUCT_STAT *st)
     do { \
         PyObject *obj = (expr); \
         if (obj == NULL) { \
+            goto error; \
+        } \
+        /* SET_ITEM steals `obj`; transfer the owned stack reference. */ \
+        if (PyRegion_TakeRef(v, obj)) { \
+            PyRegion_CLEARLOCAL(obj); \
             goto error; \
         } \
         PyStructSequence_SET_ITEM(v, (pos), obj); \
@@ -2809,7 +2908,7 @@ _pystat_fromstructstat(PyObject *module, STRUCT_STAT *st)
     return v;
 
 error:
-    Py_DECREF(v);
+    PyRegion_CLEARLOCAL(v);
     return NULL;
 
 #undef SET_ITEM
@@ -2822,6 +2921,7 @@ static PyObject *
 posix_do_stat(PyObject *module, const char *function_name, path_t *path,
               int dir_fd, int follow_symlinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     STRUCT_STAT st;
     int result;
 
@@ -3247,6 +3347,7 @@ static PyObject *
 os_stat_impl(PyObject *module, path_t *path, int dir_fd, int follow_symlinks)
 /*[clinic end generated code: output=7d4976e6f18a59c5 input=01d362ebcc06996b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return posix_do_stat(module, "stat", path, dir_fd, follow_symlinks);
 }
 
@@ -3271,6 +3372,7 @@ static PyObject *
 os_lstat_impl(PyObject *module, path_t *path, int dir_fd)
 /*[clinic end generated code: output=ef82a5d35ce8ab37 input=024102124f88e743]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int follow_symlinks = 0;
     return posix_do_stat(module, "lstat", path, dir_fd, follow_symlinks);
 }
@@ -3320,6 +3422,7 @@ os_access_impl(PyObject *module, path_t *path, int mode, int dir_fd,
                int effective_ids, int follow_symlinks)
 /*[clinic end generated code: output=cf84158bc90b1a77 input=c33565f7584b99e4]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int return_value;
 
 #ifdef MS_WINDOWS
@@ -3436,7 +3539,7 @@ static PyObject *
 os_ttyname_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=c424d2e9d1cd636a input=9ff5a58b08115c55]*/
 {
-
+    // Pyrona: This functions was checked and no further migration is needed
     long size = sysconf(_SC_TTY_NAME_MAX);
     if (size == -1) {
         return posix_error();
@@ -3468,6 +3571,7 @@ static PyObject *
 os_ctermid_impl(PyObject *module)
 /*[clinic end generated code: output=02f017e6c9e620db input=3b87fdd52556382d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char *ret;
     char buffer[L_ctermid];
 
@@ -3499,6 +3603,7 @@ static PyObject *
 os_chdir_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=3be6400eee26eaae input=a74ceab5d72adf74]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
     if (PySys_Audit("os.chdir", "(O)", path->object) < 0) {
@@ -3544,6 +3649,7 @@ static PyObject *
 os_fchdir_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=42e064ec4dc00ab0 input=18e816479a2fa985]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.chdir", "(i)", fd) < 0) {
         return NULL;
     }
@@ -3561,6 +3667,7 @@ os_fchdir_impl(PyObject *module, int fd)
 static int
 win32_lchmod(LPCWSTR path, int mode)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DWORD attr = GetFileAttributesW(path);
     if (attr == INVALID_FILE_ATTRIBUTES) {
         return 0;
@@ -3577,6 +3684,7 @@ win32_lchmod(LPCWSTR path, int mode)
 static int
 win32_hchmod(HANDLE hfile, int mode)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     FILE_BASIC_INFO info;
     if (!GetFileInformationByHandleEx(hfile, FileBasicInfo,
                                       &info, sizeof(info)))
@@ -3596,6 +3704,7 @@ win32_hchmod(HANDLE hfile, int mode)
 static int
 win32_fchmod(int fd, int mode)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HANDLE hfile = _Py_get_osfhandle_noraise(fd);
     if (hfile == INVALID_HANDLE_VALUE) {
         SetLastError(ERROR_INVALID_HANDLE);
@@ -3647,6 +3756,7 @@ os_chmod_impl(PyObject *module, path_t *path, int mode, int dir_fd,
               int follow_symlinks)
 /*[clinic end generated code: output=5cf6a94915cc7bff input=fcf115d174b9f3d8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
 #ifdef HAVE_FCHMODAT
@@ -3793,6 +3903,7 @@ static PyObject *
 os_fchmod_impl(PyObject *module, int fd, int mode)
 /*[clinic end generated code: output=afd9bc05b4e426b3 input=b5594618bbbc22df]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
 
     if (PySys_Audit("os.chmod", "iii", fd, mode, -1) < 0) {
@@ -3840,6 +3951,7 @@ static PyObject *
 os_lchmod_impl(PyObject *module, path_t *path, int mode)
 /*[clinic end generated code: output=082344022b51a1d5 input=90c5663c7465d24f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     if (PySys_Audit("os.chmod", "Oii", path->object, mode, -1) < 0) {
         return NULL;
@@ -3889,6 +4001,7 @@ os_chflags_impl(PyObject *module, path_t *path, unsigned long flags,
                 int follow_symlinks)
 /*[clinic end generated code: output=85571c6737661ce9 input=0327e29feb876236]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
 #ifndef HAVE_LCHFLAGS
@@ -3934,6 +4047,7 @@ static PyObject *
 os_lchflags_impl(PyObject *module, path_t *path, unsigned long flags)
 /*[clinic end generated code: output=30ae958695c07316 input=f9f82ea8b585ca9d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     if (PySys_Audit("os.chflags", "Ok", path->object, flags) < 0) {
         return NULL;
@@ -3962,6 +4076,7 @@ static PyObject *
 os_chroot_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=de80befc763a4475 input=14822965652c3dc3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     Py_BEGIN_ALLOW_THREADS
     res = chroot(path->narrow);
@@ -3986,6 +4101,7 @@ static PyObject *
 os_fsync_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=4a10d773f52b3584 input=21c3645c056967f2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return posix_fildes_fd(fd, fsync);
 }
 #endif /* HAVE_FSYNC */
@@ -4002,6 +4118,7 @@ static PyObject *
 os_sync_impl(PyObject *module)
 /*[clinic end generated code: output=2796b1f0818cd71c input=84749fe5e9b404ff]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_BEGIN_ALLOW_THREADS
     sync();
     Py_END_ALLOW_THREADS
@@ -4027,6 +4144,7 @@ static PyObject *
 os_fdatasync_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=b4b9698b5d7e26dd input=bc74791ee54dd291]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return posix_fildes_fd(fd, fdatasync);
 }
 #endif /* HAVE_FDATASYNC */
@@ -4077,6 +4195,7 @@ os_chown_impl(PyObject *module, path_t *path, uid_t uid, gid_t gid,
               int dir_fd, int follow_symlinks)
 /*[clinic end generated code: output=4beadab0db5f70cd input=b08c5ec67996a97d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
 #if defined(HAVE_FCHOWNAT)
@@ -4156,6 +4275,7 @@ static PyObject *
 os_fchown_impl(PyObject *module, int fd, uid_t uid, gid_t gid)
 /*[clinic end generated code: output=97d21cbd5a4350a6 input=3af544ba1b13a0d7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     int async_err = 0;
 
@@ -4194,6 +4314,7 @@ static PyObject *
 os_lchown_impl(PyObject *module, path_t *path, uid_t uid, gid_t gid)
 /*[clinic end generated code: output=25eaf6af412fdf2f input=b1c6014d563a7161]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     if (PySys_Audit("os.chown", "OIIi", path->object, uid, gid, -1) < 0) {
         return NULL;
@@ -4212,6 +4333,7 @@ os_lchown_impl(PyObject *module, path_t *path, uid_t uid, gid_t gid)
 static PyObject *
 posix_getcwd(int use_bytes)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     wchar_t wbuf[MAXPATHLEN];
     wchar_t *wbuf2 = wbuf;
@@ -4255,7 +4377,7 @@ posix_getcwd(int use_bytes)
         if (resobj == NULL) {
             return NULL;
         }
-        Py_SETREF(resobj, PyUnicode_EncodeFSDefault(resobj));
+        PyRegion_SETLOCALREF(resobj, PyUnicode_EncodeFSDefault(resobj));
     }
 
     return resobj;
@@ -4334,6 +4456,7 @@ static PyObject *
 os_getcwd_impl(PyObject *module)
 /*[clinic end generated code: output=21badfae2ea99ddc input=f069211bb70e3d39]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return posix_getcwd(0);
 }
 
@@ -4348,6 +4471,7 @@ static PyObject *
 os_getcwdb_impl(PyObject *module)
 /*[clinic end generated code: output=3dd47909480e4824 input=f6f6a378dad3d9cb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return posix_getcwd(1);
 }
 
@@ -4387,6 +4511,7 @@ os_link_impl(PyObject *module, path_t *src, path_t *dst, int src_dir_fd,
              int dst_dir_fd, int follow_symlinks)
 /*[clinic end generated code: output=7f00f6007fd5269a input=e2a50a6497050e44]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     BOOL result = FALSE;
 #else
@@ -4468,6 +4593,7 @@ os_link_impl(PyObject *module, path_t *src, path_t *dst, int src_dir_fd,
 static PyObject *
 _listdir_windows_no_opendir(path_t *path, PyObject *list)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *v;
     HANDLE hFindFile = INVALID_HANDLE_VALUE;
     BOOL result, return_bytes;
@@ -4512,7 +4638,7 @@ _listdir_windows_no_opendir(path_t *path, PyObject *list)
         if (error == ERROR_FILE_NOT_FOUND)
             goto exit;
         path_error(path);
-        Py_CLEAR(list);
+        PyRegion_CLEARLOCAL(list);
         goto exit;
     }
     do {
@@ -4522,18 +4648,18 @@ _listdir_windows_no_opendir(path_t *path, PyObject *list)
             v = PyUnicode_FromWideChar(wFileData.cFileName,
                                        wcslen(wFileData.cFileName));
             if (return_bytes && v) {
-                Py_SETREF(v, PyUnicode_EncodeFSDefault(v));
+                PyRegion_SETLOCALREF(v, PyUnicode_EncodeFSDefault(v));
             }
             if (v == NULL) {
-                Py_CLEAR(list);
+                PyRegion_CLEARLOCAL(list);
                 break;
             }
             if (PyList_Append(list, v) != 0) {
-                Py_DECREF(v);
-                Py_CLEAR(list);
+                PyRegion_CLEARLOCAL(v);
+                PyRegion_CLEARLOCAL(list);
                 break;
             }
-            Py_DECREF(v);
+            PyRegion_CLEARLOCAL(v);
         }
         Py_BEGIN_ALLOW_THREADS
         result = FindNextFileW(hFindFile, &wFileData);
@@ -4542,7 +4668,7 @@ _listdir_windows_no_opendir(path_t *path, PyObject *list)
            it got to the end of the directory. */
         if (!result && GetLastError() != ERROR_NO_MORE_FILES) {
             path_error(path);
-            Py_CLEAR(list);
+            PyRegion_CLEARLOCAL(list);
             goto exit;
         }
     } while (result == TRUE);
@@ -4552,7 +4678,7 @@ exit:
         if (FindClose(hFindFile) == FALSE) {
             if (list != NULL) {
                 path_error(path);
-                Py_CLEAR(list);
+                PyRegion_CLEARLOCAL(list);
             }
         }
     }
@@ -4566,6 +4692,7 @@ exit:
 static PyObject *
 _posix_listdir(path_t *path, PyObject *list)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *v;
     DIR *dirp = NULL;
     struct dirent *ep;
@@ -4638,7 +4765,7 @@ _posix_listdir(path_t *path, PyObject *list)
                 break;
             } else {
                 path_error(path);
-                Py_CLEAR(list);
+                PyRegion_CLEARLOCAL(list);
                 goto exit;
             }
         }
@@ -4651,15 +4778,15 @@ _posix_listdir(path_t *path, PyObject *list)
         else
             v = PyBytes_FromStringAndSize(ep->d_name, NAMLEN(ep));
         if (v == NULL) {
-            Py_CLEAR(list);
+            PyRegion_CLEARLOCAL(list);
             break;
         }
         if (PyList_Append(list, v) != 0) {
-            Py_DECREF(v);
-            Py_CLEAR(list);
+            PyRegion_CLEARLOCAL(v);
+            PyRegion_CLEARLOCAL(list);
             break;
         }
-        Py_DECREF(v);
+        PyRegion_CLEARLOCAL(v);
     }
 
 exit:
@@ -4704,6 +4831,7 @@ static PyObject *
 os_listdir_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=293045673fcd1a75 input=0bd1728387391b9a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.listdir", "O",
                     path->object ? path->object : Py_None) < 0) {
         return NULL;
@@ -4731,6 +4859,8 @@ static PyObject *
 os_listdrives_impl(PyObject *module)
 /*[clinic end generated code: output=aaece9dacdf682b5 input=1af9ccc9e583798e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Number of possible drives is limited, so 256 should always be enough.
        On the day when it is not, listmounts() will have to be used. */
     wchar_t buffer[256];
@@ -4758,9 +4888,9 @@ os_listdrives_impl(PyObject *module)
         PyObject *nullchar = PyUnicode_FromStringAndSize("\0", 1);
         if (nullchar) {
             result = PyUnicode_Split(str, nullchar, -1);
-            Py_DECREF(nullchar);
+            PyRegion_CLEARLOCAL(nullchar);
         }
-        Py_DECREF(str);
+        PyRegion_CLEARLOCAL(str);
     }
     return result;
 }
@@ -4782,6 +4912,7 @@ static PyObject *
 os_listvolumes_impl(PyObject *module)
 /*[clinic end generated code: output=534e10ea2bf9d386 input=f6e4e70371f11e99]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result = PyList_New(0);
     HANDLE find = INVALID_HANDLE_VALUE;
     wchar_t buffer[MAX_PATH + 1];
@@ -4789,7 +4920,7 @@ os_listvolumes_impl(PyObject *module)
         return NULL;
     }
     if (PySys_Audit("os.listvolumes", NULL) < 0) {
-        Py_DECREF(result);
+        PyRegion_CLEARLOCAL(result);
         return NULL;
     }
 
@@ -4804,11 +4935,11 @@ os_listvolumes_impl(PyObject *module)
     while (!err) {
         PyObject *s = PyUnicode_FromWideChar(buffer, -1);
         if (!s || PyList_Append(result, s) < 0) {
-            Py_XDECREF(s);
-            Py_CLEAR(result);
+            PyRegion_CLEARLOCAL(s);
+            PyRegion_CLEARLOCAL(result);
             break;
         }
-        Py_DECREF(s);
+        PyRegion_CLEARLOCAL(s);
 
         Py_BEGIN_ALLOW_THREADS;
         if (!FindNextVolumeW(find, buffer, Py_ARRAY_LENGTH(buffer))) {
@@ -4824,7 +4955,7 @@ os_listvolumes_impl(PyObject *module)
     }
     if (err && err != ERROR_NO_MORE_FILES) {
         PyErr_SetFromWindowsErr(err);
-        Py_XDECREF(result);
+        PyRegion_CLEARLOCAL(result);
         result = NULL;
     }
     return result;
@@ -4849,6 +4980,7 @@ static PyObject *
 os_listmounts_impl(PyObject *module, path_t *volume)
 /*[clinic end generated code: output=06da49679de4512e input=a8a27178e3f67845]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     wchar_t default_buffer[MAX_PATH + 1];
     DWORD buflen = Py_ARRAY_LENGTH(default_buffer);
     LPWSTR buffer = default_buffer;
@@ -4908,8 +5040,8 @@ exit:
     if (buffer != default_buffer) {
         PyMem_Free(buffer);
     }
-    Py_XDECREF(nullchar);
-    Py_XDECREF(str);
+    PyRegion_CLEARLOCAL(nullchar);
+    PyRegion_CLEARLOCAL(str);
     return result;
 }
 
@@ -4930,6 +5062,7 @@ static PyObject *
 os__path_isdevdrive_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=1f437ea6677433a2 input=ee83e4996a48e23d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifndef PERSISTENT_VOLUME_STATE_DEV_VOLUME
     /* This flag will be documented at
        https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_fs_persistent_volume_information
@@ -4999,7 +5132,7 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
     }
 
     if (r) {
-        return Py_NewRef(r);
+        return PyRegion_NewRef(r);
     }
 
     return NULL;
@@ -5009,6 +5142,7 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
 int
 _PyOS_getfullpathname(const wchar_t *path, wchar_t **abspath_p)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     wchar_t woutbuf[MAX_PATH], *woutbufp = woutbuf;
     DWORD result;
 
@@ -5061,6 +5195,7 @@ static PyObject *
 os__getfullpathname_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=bb8679d56845bc9b input=332ed537c29d0a3e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     wchar_t *abspath;
 
     if (_PyOS_getfullpathname(path->wide, &abspath) < 0) {
@@ -5076,7 +5211,7 @@ os__getfullpathname_impl(PyObject *module, path_t *path)
         return NULL;
     }
     if (PyBytes_Check(path->object)) {
-        Py_SETREF(str, PyUnicode_EncodeFSDefault(str));
+        PyRegion_SETLOCALREF(str, PyUnicode_EncodeFSDefault(str));
     }
     return str;
 }
@@ -5095,6 +5230,7 @@ static PyObject *
 os__getfinalpathname_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=621a3c79bc29ebfa input=2b6b6c7cbad5fb84]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HANDLE hFile;
     wchar_t buf[MAXPATHLEN], *target_path = buf;
     int buf_size = Py_ARRAY_LENGTH(buf);
@@ -5149,7 +5285,7 @@ os__getfinalpathname_impl(PyObject *module, path_t *path)
 
     result = PyUnicode_FromWideChar(target_path, result_length);
     if (result && PyBytes_Check(path->object)) {
-        Py_SETREF(result, PyUnicode_EncodeFSDefault(result));
+        PyRegion_SETLOCALREF(result, PyUnicode_EncodeFSDefault(result));
     }
 
 cleanup:
@@ -5171,6 +5307,7 @@ static PyObject *
 os__findfirstfile_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=106dd3f0779c83dd input=0734dff70f60e1a8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     HANDLE hFindFile;
     WIN32_FIND_DATAW wFileData;
@@ -5204,6 +5341,7 @@ static PyObject *
 os__getvolumepathname_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=804c63fd13a1330b input=722b40565fa21552]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     wchar_t *mountpath=NULL;
     size_t buflen;
@@ -5232,7 +5370,7 @@ os__getvolumepathname_impl(PyObject *module, path_t *path)
     }
     result = PyUnicode_FromWideChar(mountpath, -1);
     if (PyBytes_Check(path->object))
-        Py_SETREF(result, PyUnicode_EncodeFSDefault(result));
+        PyRegion_SETLOCALREF(result, PyUnicode_EncodeFSDefault(result));
 
 exit:
     PyMem_Free(mountpath);
@@ -5253,6 +5391,7 @@ static PyObject *
 os__path_splitroot_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=ab7f1a88b654581c input=42831e41f8458f6d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     wchar_t *buffer;
     wchar_t *end;
     PyObject *result = NULL;
@@ -5297,6 +5436,7 @@ os__path_splitroot_impl(PyObject *module, path_t *path)
 static inline BOOL
 _testInfo(DWORD attributes, DWORD reparseTag, BOOL diskDevice, int testedType)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     switch (testedType) {
     case PY_IFREG:
         return diskDevice && attributes &&
@@ -5323,6 +5463,7 @@ _testInfo(DWORD attributes, DWORD reparseTag, BOOL diskDevice, int testedType)
 static BOOL
 _testFileTypeByHandle(HANDLE hfile, int testedType, BOOL diskOnly)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(testedType == PY_IFREG || testedType == PY_IFDIR ||
            testedType == PY_IFLNK || testedType == PY_IFMNT ||
            testedType == PY_IFLRP || testedType == PY_IFRRP);
@@ -5347,6 +5488,7 @@ _testFileTypeByHandle(HANDLE hfile, int testedType, BOOL diskOnly)
 static BOOL
 _testFileTypeByName(LPCWSTR path, int testedType)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(testedType == PY_IFREG || testedType == PY_IFDIR ||
            testedType == PY_IFLNK || testedType == PY_IFMNT ||
            testedType == PY_IFLRP || testedType == PY_IFRRP);
@@ -5412,6 +5554,7 @@ _testFileTypeByName(LPCWSTR path, int testedType)
 static BOOL
 _testFileExistsByName(LPCWSTR path, BOOL followLinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     FILE_STAT_BASIC_INFORMATION info;
     if (_Py_GetFileInformationByName(path, FileStatBasicByNameInfo, &info,
                                      sizeof(info)))
@@ -5469,6 +5612,7 @@ _testFileExistsByName(LPCWSTR path, BOOL followLinks)
 static BOOL
 _testFileExists(path_t *path, BOOL followLinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     BOOL result = FALSE;
     if (path->value_error) {
         return FALSE;
@@ -5495,6 +5639,7 @@ _testFileExists(path_t *path, BOOL followLinks)
 static BOOL
 _testFileType(path_t *path, int testedType)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     BOOL result = FALSE;
     if (path->value_error) {
         return FALSE;
@@ -5529,6 +5674,7 @@ static int
 os__path_exists_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=8da13acf666e16ba input=142beabfc66783eb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _testFileExists(path, TRUE);
 }
 
@@ -5546,6 +5692,7 @@ static int
 os__path_lexists_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=e7240ed5fc45bff3 input=208205112a3cc1ed]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _testFileExists(path, FALSE);
 }
 
@@ -5564,6 +5711,7 @@ static int
 os__path_isdir_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=d5786196f9e2fa7a input=0d3fd790564d244b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _testFileType(path, PY_IFDIR);
 }
 
@@ -5581,6 +5729,7 @@ static int
 os__path_isfile_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=5c3073bc212b9863 input=4ac1fd350b30a39e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _testFileType(path, PY_IFREG);
 }
 
@@ -5598,6 +5747,7 @@ static int
 os__path_islink_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=30da7bda8296adcc input=7510ce05b547debb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _testFileType(path, PY_IFLNK);
 }
 
@@ -5615,6 +5765,7 @@ static int
 os__path_isjunction_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=e1d17a9dd18a9945 input=7dcb8bc4e972fcaf]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _testFileType(path, PY_IFMNT);
 }
 
@@ -5643,6 +5794,7 @@ static PyObject *
 os__path_splitroot_ex_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=4b0072b6cdf4b611 input=4ac47b394d68bd21]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t drvsize, rootsize;
     PyObject *drv = NULL, *root = NULL, *tail = NULL, *result = NULL;
 
@@ -5662,24 +5814,24 @@ os__path_splitroot_ex_impl(PyObject *module, path_t *path)
         goto exit;
     }
     if (PyBytes_Check(path->object)) {
-        Py_SETREF(drv, PyUnicode_EncodeFSDefault(drv));
+        PyRegion_SETLOCALREF(drv, PyUnicode_EncodeFSDefault(drv));
         if (drv == NULL) {
             goto exit;
         }
-        Py_SETREF(root, PyUnicode_EncodeFSDefault(root));
+        PyRegion_SETLOCALREF(root, PyUnicode_EncodeFSDefault(root));
         if (root == NULL) {
             goto exit;
         }
-        Py_SETREF(tail, PyUnicode_EncodeFSDefault(tail));
+        PyRegion_SETLOCALREF(tail, PyUnicode_EncodeFSDefault(tail));
         if (tail == NULL) {
             goto exit;
         }
     }
     result = PyTuple_Pack(3, drv, root, tail);
 exit:
-    Py_XDECREF(drv);
-    Py_XDECREF(root);
-    Py_XDECREF(tail);
+    PyRegion_CLEARLOCAL(drv);
+    PyRegion_CLEARLOCAL(root);
+    PyRegion_CLEARLOCAL(tail);
     return result;
 }
 
@@ -5696,6 +5848,7 @@ static PyObject *
 os__path_normpath_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=d353e7ed9410c044 input=3d4ac23b06332dcb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     Py_ssize_t norm_len;
     wchar_t *norm_path = _Py_normpath_and_size((wchar_t *)path->wide,
@@ -5707,7 +5860,7 @@ os__path_normpath_impl(PyObject *module, path_t *path)
         result = PyUnicode_FromWideChar(norm_path, norm_len);
     }
     if (PyBytes_Check(path->object)) {
-        Py_SETREF(result, PyUnicode_EncodeFSDefault(result));
+        PyRegion_SETLOCALREF(result, PyUnicode_EncodeFSDefault(result));
     }
     return result;
 }
@@ -5846,6 +5999,7 @@ static PyObject *
 os_nice_impl(PyObject *module, int increment)
 /*[clinic end generated code: output=9dad8a9da8109943 input=864be2d402a21da2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int value;
 
     /* There are two flavours of 'nice': one that returns the new
@@ -5886,6 +6040,7 @@ static PyObject *
 os_getpriority_impl(PyObject *module, int which, int who)
 /*[clinic end generated code: output=c41b7b63c7420228 input=9be615d40e2544ef]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int retval;
 
     errno = 0;
@@ -5912,6 +6067,7 @@ static PyObject *
 os_setpriority_impl(PyObject *module, int which, int who, int priority)
 /*[clinic end generated code: output=3d910d95a7771eb2 input=710ccbf65b9dc513]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int retval;
 
     retval = setpriority(which, who, priority);
@@ -5925,6 +6081,7 @@ os_setpriority_impl(PyObject *module, int which, int who, int priority)
 static PyObject *
 internal_rename(path_t *src, path_t *dst, int src_dir_fd, int dst_dir_fd, int is_replace)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *function_name = is_replace ? "replace" : "rename";
     int dir_fd_specified;
 
@@ -6015,6 +6172,7 @@ os_rename_impl(PyObject *module, path_t *src, path_t *dst, int src_dir_fd,
                int dst_dir_fd)
 /*[clinic end generated code: output=59e803072cf41230 input=11aae8c091162766]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return internal_rename(src, dst, src_dir_fd, dst_dir_fd, 0);
 }
 
@@ -6037,6 +6195,7 @@ os_replace_impl(PyObject *module, path_t *src, path_t *dst, int src_dir_fd,
                 int dst_dir_fd)
 /*[clinic end generated code: output=1968c02e7857422b input=78d6c8087e90994c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return internal_rename(src, dst, src_dir_fd, dst_dir_fd, 1);
 }
 
@@ -6060,6 +6219,7 @@ static PyObject *
 os_rmdir_impl(PyObject *module, path_t *path, int dir_fd)
 /*[clinic end generated code: output=080eb54f506e8301 input=38c8b375ca34a7e2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 #ifdef HAVE_UNLINKAT
     int unlinkat_unavailable = 0;
@@ -6117,6 +6277,7 @@ static long
 os_system_impl(PyObject *module, const wchar_t *command)
 /*[clinic end generated code: output=dd528cbd5943a679 input=303f5ce97df606b0]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long result;
 
     if (PySys_Audit("os.system", "(u)", command) < 0) {
@@ -6143,6 +6304,7 @@ static long
 os_system_impl(PyObject *module, PyObject *command)
 /*[clinic end generated code: output=290fc437dd4f33a0 input=47c6f24b6dc92881]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long result;
     const char *bytes = PyBytes_AsString(command);
 
@@ -6173,6 +6335,7 @@ static PyObject *
 os_umask_impl(PyObject *module, int mask)
 /*[clinic end generated code: output=a2e33ce3bc1a6e33 input=ab6bfd9b24d8a7e8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int i = (int)umask(mask);
     if (i < 0)
         return posix_error();
@@ -6187,6 +6350,7 @@ symlinks can be removed with this function, the same as with
 Unix symlinks */
 BOOL WINAPI Py_DeleteFileW(LPCWSTR lpFileName)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WIN32_FILE_ATTRIBUTE_DATA info;
     WIN32_FIND_DATAW find_data;
     HANDLE find_data_handle;
@@ -6240,6 +6404,7 @@ static PyObject *
 os_unlink_impl(PyObject *module, path_t *path, int dir_fd)
 /*[clinic end generated code: output=621797807b9963b1 input=d7bcde2b1b2a2552]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 #ifdef HAVE_UNLINKAT
     int unlinkat_unavailable = 0;
@@ -6300,6 +6465,7 @@ static PyObject *
 os_remove_impl(PyObject *module, path_t *path, int dir_fd)
 /*[clinic end generated code: output=a8535b28f0068883 input=e05c5ab55cd30983]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return os_unlink_impl(module, path, dir_fd);
 }
 
@@ -6343,6 +6509,7 @@ static PyObject *
 os_uname_impl(PyObject *module)
 /*[clinic end generated code: output=e6a49cf1a1508a19 input=e68bd246db3043ed]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     struct utsname u;
     int res;
     PyObject *value;
@@ -6362,7 +6529,13 @@ os_uname_impl(PyObject *module)
     { \
     PyObject *o = PyUnicode_DecodeFSDefault(field); \
     if (!o) { \
-        Py_DECREF(value); \
+        PyRegion_CLEARLOCAL(value); \
+        return NULL; \
+    } \
+    /* SET_ITEM steals `o`; transfer the owned stack reference. */ \
+    if (PyRegion_TakeRef(value, o)) { \
+        PyRegion_CLEARLOCAL(o); \
+        PyRegion_CLEARLOCAL(value); \
         return NULL; \
     } \
     PyStructSequence_SET_ITEM(value, i, o); \
@@ -6448,6 +6621,7 @@ typedef struct {
 static int
 utime_dir_fd(utime_t *ut, int dir_fd, const char *path, int follow_symlinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #if defined(__APPLE__) &&  defined(HAVE_UTIMENSAT)
     if (HAVE_UTIMENSAT_RUNTIME) {
         int flags = follow_symlinks ? 0 : AT_SYMLINK_NOFOLLOW;
@@ -6483,6 +6657,7 @@ utime_dir_fd(utime_t *ut, int dir_fd, const char *path, int follow_symlinks)
 static int
 utime_fd(utime_t *ut, int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_FUTIMENS
 
     if (HAVE_FUTIMENS_RUNTIME) {
@@ -6525,6 +6700,7 @@ utime_fd(utime_t *ut, int fd)
 static int
 utime_nofollow_symlinks(utime_t *ut, const char *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_UTIMENSAT
     if (HAVE_UTIMENSAT_RUNTIME) {
         UTIME_TO_TIMESPEC;
@@ -6557,6 +6733,7 @@ utime_nofollow_symlinks(utime_t *ut, const char *path)
 static int
 utime_default(utime_t *ut, const char *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #if defined(__APPLE__) && defined(HAVE_UTIMENSAT)
     if (HAVE_UTIMENSAT_RUNTIME) {
         UTIME_TO_TIMESPEC;
@@ -6585,6 +6762,7 @@ utime_default(utime_t *ut, const char *path)
 static int
 split_py_long_to_s_and_ns(PyObject *module, PyObject *py_long, time_t *s, long *ns)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result = 0;
     PyObject *divmod;
     divmod = PyNumber_Divmod(py_long, get_posix_state(module)->billion);
@@ -6605,7 +6783,7 @@ split_py_long_to_s_and_ns(PyObject *module, PyObject *py_long, time_t *s, long *
 
     result = 1;
 exit:
-    Py_XDECREF(divmod);
+    PyRegion_CLEARLOCAL(divmod);
     return result;
 }
 
@@ -6653,6 +6831,7 @@ os_utime_impl(PyObject *module, path_t *path, PyObject *times, PyObject *ns,
               int dir_fd, int follow_symlinks)
 /*[clinic end generated code: output=cfcac69d027b82cf input=2fbd62a2f228f8f4]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     HANDLE hFile;
     FILETIME atime, mtime;
@@ -6819,6 +6998,7 @@ static PyObject *
 os__exit_impl(PyObject *module, int status)
 /*[clinic end generated code: output=116e52d9c2260d54 input=5e6d57556b0c4a62]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _exit(status);
     return NULL; /* Make gcc -Wall happy */
 }
@@ -6833,6 +7013,7 @@ os__exit_impl(PyObject *module, int status)
 static void
 free_string_array(EXECV_CHAR **array, Py_ssize_t count)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
     for (i = 0; i < count; i++)
         PyMem_Free(array[i]);
@@ -6842,6 +7023,7 @@ free_string_array(EXECV_CHAR **array, Py_ssize_t count)
 static int
 fsconvert_strdup(PyObject *o, EXECV_CHAR **out)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t size;
     PyObject *ub;
     int result = 0;
@@ -6862,7 +7044,7 @@ fsconvert_strdup(PyObject *o, EXECV_CHAR **out)
     } else
         PyErr_NoMemory();
 #endif
-    Py_DECREF(ub);
+    PyRegion_CLEARLOCAL(ub);
     return result;
 }
 #endif
@@ -6871,6 +7053,7 @@ fsconvert_strdup(PyObject *o, EXECV_CHAR **out)
 static EXECV_CHAR**
 parse_envlist(PyObject* env, Py_ssize_t *envc_ptr)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i, pos, envc;
     PyObject *keys=NULL, *vals=NULL;
     PyObject *key2, *val2, *keyval;
@@ -6911,7 +7094,7 @@ parse_envlist(PyObject* env, Py_ssize_t *envc_ptr)
         if (!PyUnicode_FSDecoder(key, &key2))
             goto error;
         if (!PyUnicode_FSDecoder(val, &val2)) {
-            Py_DECREF(key2);
+            PyRegion_CLEARLOCAL(key2);
             goto error;
         }
         /* Search from index 1 because on Windows starting '=' is allowed for
@@ -6920,8 +7103,8 @@ parse_envlist(PyObject* env, Py_ssize_t *envc_ptr)
             PyUnicode_FindChar(key2, '=', 1, PyUnicode_GET_LENGTH(key2), 1) != -1)
         {
             PyErr_SetString(PyExc_ValueError, "illegal environment variable name");
-            Py_DECREF(key2);
-            Py_DECREF(val2);
+            PyRegion_CLEARLOCAL(key2);
+            PyRegion_CLEARLOCAL(val2);
             goto error;
         }
         keyval = PyUnicode_FromFormat("%U=%U", key2, val2);
@@ -6929,42 +7112,42 @@ parse_envlist(PyObject* env, Py_ssize_t *envc_ptr)
         if (!PyUnicode_FSConverter(key, &key2))
             goto error;
         if (!PyUnicode_FSConverter(val, &val2)) {
-            Py_DECREF(key2);
+            PyRegion_CLEARLOCAL(key2);
             goto error;
         }
         if (PyBytes_GET_SIZE(key2) == 0 ||
             strchr(PyBytes_AS_STRING(key2) + 1, '=') != NULL)
         {
             PyErr_SetString(PyExc_ValueError, "illegal environment variable name");
-            Py_DECREF(key2);
-            Py_DECREF(val2);
+            PyRegion_CLEARLOCAL(key2);
+            PyRegion_CLEARLOCAL(val2);
             goto error;
         }
         keyval = PyBytes_FromFormat("%s=%s", PyBytes_AS_STRING(key2),
                                              PyBytes_AS_STRING(val2));
 #endif
-        Py_DECREF(key2);
-        Py_DECREF(val2);
+        PyRegion_CLEARLOCAL(key2);
+        PyRegion_CLEARLOCAL(val2);
         if (!keyval)
             goto error;
 
         if (!fsconvert_strdup(keyval, &envlist[envc++])) {
-            Py_DECREF(keyval);
+            PyRegion_CLEARLOCAL(keyval);
             goto error;
         }
 
-        Py_DECREF(keyval);
+        PyRegion_CLEARLOCAL(keyval);
     }
-    Py_DECREF(vals);
-    Py_DECREF(keys);
+    PyRegion_CLEARLOCAL(vals);
+    PyRegion_CLEARLOCAL(keys);
 
     envlist[envc] = 0;
     *envc_ptr = envc;
     return envlist;
 
 error:
-    Py_XDECREF(keys);
-    Py_XDECREF(vals);
+    PyRegion_CLEARLOCAL(keys);
+    PyRegion_CLEARLOCAL(vals);
     free_string_array(envlist, envc);
     return NULL;
 }
@@ -6972,6 +7155,7 @@ error:
 static EXECV_CHAR**
 parse_arglist(PyObject* argv, Py_ssize_t *argc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int i;
     EXECV_CHAR **argvlist = PyMem_NEW(EXECV_CHAR *, *argc+1);
     if (argvlist == NULL) {
@@ -6983,10 +7167,10 @@ parse_arglist(PyObject* argv, Py_ssize_t *argc)
         if (item == NULL)
             goto fail;
         if (!fsconvert_strdup(item, &argvlist[i])) {
-            Py_DECREF(item);
+            PyRegion_CLEARLOCAL(item);
             goto fail;
         }
-        Py_DECREF(item);
+        PyRegion_CLEARLOCAL(item);
     }
     argvlist[*argc] = NULL;
     return argvlist;
@@ -7016,6 +7200,7 @@ static PyObject *
 os_execv_impl(PyObject *module, path_t *path, PyObject *argv)
 /*[clinic end generated code: output=3b52fec34cd0dafd input=9bac31efae07dac7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     EXECV_CHAR **argvlist;
     Py_ssize_t argc;
 
@@ -7089,6 +7274,7 @@ static PyObject *
 os_execve_impl(PyObject *module, path_t *path, PyObject *argv, PyObject *env)
 /*[clinic end generated code: output=ff9fa8e4da8bde58 input=626804fa092606d9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     EXECV_CHAR **argvlist = NULL;
     EXECV_CHAR **envlist;
     Py_ssize_t argc, envc;
@@ -7187,6 +7373,7 @@ parse_posix_spawn_flags(PyObject *module, const char *func_name, PyObject *setpg
                         PyObject *setsigdef, PyObject *scheduler,
                         posix_spawnattr_t *attrp)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long all_flags = 0;
 
     errno = posix_spawnattr_init(attrp);
@@ -7326,6 +7513,7 @@ parse_file_actions(PyObject *file_actions,
                    posix_spawn_file_actions_t *file_actionsp,
                    PyObject *temp_buffer)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *seq;
     PyObject *file_action = NULL;
     PyObject *tag_obj;
@@ -7339,13 +7527,13 @@ parse_file_actions(PyObject *file_actions,
     errno = posix_spawn_file_actions_init(file_actionsp);
     if (errno) {
         posix_error();
-        Py_DECREF(seq);
+        PyRegion_CLEARLOCAL(seq);
         return -1;
     }
 
     for (Py_ssize_t i = 0; i < PySequence_Fast_GET_SIZE(seq); ++i) {
         file_action = PySequence_Fast_GET_ITEM(seq, i);
-        Py_INCREF(file_action);
+        PyRegion_NewRef(file_action);
         if (!PyTuple_Check(file_action) || !PyTuple_GET_SIZE(file_action)) {
             PyErr_SetString(PyExc_TypeError,
                 "Each file_actions element must be a non-empty tuple");
@@ -7370,17 +7558,17 @@ parse_file_actions(PyObject *file_actions,
                     goto fail;
                 }
                 if (PyList_Append(temp_buffer, path)) {
-                    Py_DECREF(path);
+                    PyRegion_CLEARLOCAL(path);
                     goto fail;
                 }
                 errno = posix_spawn_file_actions_addopen(file_actionsp,
                         fd, PyBytes_AS_STRING(path), oflag, (mode_t)mode);
                 if (errno) {
                     posix_error();
-                    Py_DECREF(path);
+                    PyRegion_CLEARLOCAL(path);
                     goto fail;
                 }
-                Py_DECREF(path);
+                PyRegion_CLEARLOCAL(path);
                 break;
             }
             case POSIX_SPAWN_CLOSE: {
@@ -7438,15 +7626,15 @@ parse_file_actions(PyObject *file_actions,
                 goto fail;
             }
         }
-        Py_DECREF(file_action);
+        PyRegion_CLEARLOCAL(file_action);
     }
 
-    Py_DECREF(seq);
+    PyRegion_CLEARLOCAL(seq);
     return 0;
 
 fail:
-    Py_DECREF(seq);
-    Py_DECREF(file_action);
+    PyRegion_CLEARLOCAL(seq);
+    PyRegion_CLEARLOCAL(file_action);
     (void)posix_spawn_file_actions_destroy(file_actionsp);
     return -1;
 }
@@ -7458,6 +7646,7 @@ py_posix_spawn(int use_posix_spawnp, PyObject *module, path_t *path, PyObject *a
                PyObject *setpgroup, int resetids, int setsid, PyObject *setsigmask,
                PyObject *setsigdef, PyObject *scheduler)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *func_name = use_posix_spawnp ? "posix_spawnp" : "posix_spawn";
     EXECV_CHAR **argvlist = NULL;
     EXECV_CHAR **envlist = NULL;
@@ -7586,7 +7775,7 @@ exit:
     if (argvlist) {
         free_string_array(argvlist, argc);
     }
-    Py_XDECREF(temp_buffer);
+    PyRegion_CLEARLOCAL(temp_buffer);
     return result;
 }
 
@@ -7628,6 +7817,7 @@ os_posix_spawn_impl(PyObject *module, path_t *path, PyObject *argv,
                     PyObject *scheduler)
 /*[clinic end generated code: output=14a1098c566bc675 input=808aed1090d84e33]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return py_posix_spawn(0, module, path, argv, env, file_actions,
                           setpgroup, resetids, setsid, setsigmask, setsigdef,
                           scheduler);
@@ -7674,6 +7864,7 @@ os_posix_spawnp_impl(PyObject *module, path_t *path, PyObject *argv,
                      PyObject *scheduler)
 /*[clinic end generated code: output=7b9aaefe3031238d input=9e89e616116752a1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return py_posix_spawn(1, module, path, argv, env, file_actions,
                           setpgroup, resetids, setsid, setsigmask, setsigdef,
                           scheduler);
@@ -7685,6 +7876,7 @@ static intptr_t
 _rtp_spawn(int mode, const char *rtpFileName, const char *argv[],
                const char  *envp[])
 {
+    // Pyrona: This functions was checked and no further migration is needed
      RTP_ID rtpid;
      int status;
      pid_t res;
@@ -7733,6 +7925,7 @@ static PyObject *
 os_spawnv_impl(PyObject *module, int mode, path_t *path, PyObject *argv)
 /*[clinic end generated code: output=71cd037a9d96b816 input=43224242303291be]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     EXECV_CHAR **argvlist;
     int i;
     Py_ssize_t argc;
@@ -7839,6 +8032,7 @@ os_spawnve_impl(PyObject *module, int mode, path_t *path, PyObject *argv,
                 PyObject *env)
 /*[clinic end generated code: output=30fe85be56fe37ad input=3e40803ee7c4c586]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     EXECV_CHAR **argvlist;
     EXECV_CHAR **envlist;
     PyObject *res = NULL;
@@ -7950,6 +8144,7 @@ os_spawnve_impl(PyObject *module, int mode, path_t *path, PyObject *argv,
 static int
 check_null_or_callable(PyObject *obj, const char* obj_name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (obj && !PyCallable_Check(obj)) {
         PyErr_Format(PyExc_TypeError, "'%s' must be callable, not %s",
                      obj_name, _PyType_Name(Py_TYPE(obj)));
@@ -7981,6 +8176,7 @@ os_register_at_fork_impl(PyObject *module, PyObject *before,
                          PyObject *after_in_child, PyObject *after_in_parent)
 /*[clinic end generated code: output=5398ac75e8e97625 input=cd1187aa85d2312e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyInterpreterState *interp;
 
     if (!before && !after_in_child && !after_in_parent) {
@@ -8017,6 +8213,8 @@ os_register_at_fork_impl(PyObject *module, PyObject *before,
 static int
 warn_about_fork_with_threads(const char* name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // It's not safe to issue the warning while the world is stopped, because
     // other threads might be holding locks that we need, which would deadlock.
     assert(!_PyRuntime.stoptheworld.world_stopped);
@@ -8071,18 +8269,18 @@ warn_about_fork_with_threads(const char* name)
                 PyObject_GetAttr(threading, &_Py_ID(_active));
         if (!threading_active) {
             PyErr_Clear();
-            Py_DECREF(threading);
+            PyRegion_CLEARLOCAL(threading);
             return 0;
         }
         PyObject *threading_limbo =
                 PyObject_GetAttr(threading, &_Py_ID(_limbo));
         if (!threading_limbo) {
             PyErr_Clear();
-            Py_DECREF(threading);
-            Py_DECREF(threading_active);
+            PyRegion_CLEARLOCAL(threading);
+            PyRegion_CLEARLOCAL(threading_active);
             return 0;
         }
-        Py_DECREF(threading);
+        PyRegion_CLEARLOCAL(threading);
         // Duplicating what threading.active_count() does but without holding
         // threading._active_limbo_lock so our count could be inaccurate if
         // these dicts are mid-update from another thread.  Not a big deal.
@@ -8092,8 +8290,8 @@ warn_about_fork_with_threads(const char* name)
         num_python_threads = (PyMapping_Length(threading_active)
                               + PyMapping_Length(threading_limbo));
         PyErr_Clear();
-        Py_DECREF(threading_active);
-        Py_DECREF(threading_limbo);
+        PyRegion_CLEARLOCAL(threading_active);
+        PyRegion_CLEARLOCAL(threading_limbo);
     }
     if (num_python_threads > 1) {
         return PyErr_WarnFormat(
@@ -8126,6 +8324,7 @@ static PyObject *
 os_fork1_impl(PyObject *module)
 /*[clinic end generated code: output=0de8e67ce2a310bc input=12db02167893926e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t pid;
 
     PyInterpreterState *interp = _PyInterpreterState_GET();
@@ -8174,6 +8373,7 @@ static PyObject *
 os_fork_impl(PyObject *module)
 /*[clinic end generated code: output=3626c81f98985d49 input=13c956413110eeaa]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t pid;
     PyInterpreterState *interp = _PyInterpreterState_GET();
     if (_PyInterpreterState_GetFinalizing(interp) != NULL) {
@@ -8225,6 +8425,8 @@ static PyObject *
 os_sched_get_priority_max_impl(PyObject *module, int policy)
 /*[clinic end generated code: output=9e465c6e43130521 input=2097b7998eca6874]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* make sure that errno is cleared before the call */
     errno = 0;
     int max = sched_get_priority_max(policy);
@@ -8246,6 +8448,8 @@ static PyObject *
 os_sched_get_priority_min_impl(PyObject *module, int policy)
 /*[clinic end generated code: output=7595c1138cc47a6d input=21bc8fa0d70983bf]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* make sure that errno is cleared before the call */
     errno = 0;
     int min = sched_get_priority_min(policy);
@@ -8701,6 +8905,7 @@ static int
 os_posix_openpt_impl(PyObject *module, int oflag)
 /*[clinic end generated code: output=ee0bc2624305fc79 input=0de33d0e29693caa]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd;
 
 #if defined(O_CLOEXEC)
@@ -8740,6 +8945,7 @@ static PyObject *
 os_grantpt_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=dfd580015cf548ab input=0668e3b96760e849]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int ret;
     int saved_errno;
     PyOS_sighandler_t sig_saved;
@@ -8778,6 +8984,7 @@ static PyObject *
 os_unlockpt_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=e08d354dec12d30c input=de7ab1f59f69a2b4]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (unlockpt(fd) == -1)
         return posix_error();
 
@@ -8789,6 +8996,8 @@ os_unlockpt_impl(PyObject *module, int fd)
 static PyObject *
 py_ptsname(int fd)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // POSIX manpage: Upon failure, ptsname() shall return a null pointer
     // and may set errno. Always initialize errno to avoid undefined behavior.
     errno = 0;
@@ -8816,6 +9025,7 @@ static PyObject *
 os_ptsname_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=ef300fadc5675872 input=1369ccc0546f3130]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_PTSNAME_R
     int ret;
     char name[MAXPATHLEN+1];
@@ -8878,6 +9088,7 @@ static PyObject *
 os_openpty_impl(PyObject *module)
 /*[clinic end generated code: output=98841ce5ec9cef3c input=f3d99fd99e762907]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int master_fd = -1, slave_fd = -1;
 #ifndef HAVE_OPENPTY
     char * slave_name;
@@ -8990,6 +9201,7 @@ static PyObject *
 os_login_tty_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=495a79911b4cc1bc input=5f298565099903a2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_LOGIN_TTY
     if (login_tty(fd) == -1) {
         return posix_error();
@@ -9035,6 +9247,7 @@ static PyObject *
 os_forkpty_impl(PyObject *module)
 /*[clinic end generated code: output=60d0a5c7512e4087 input=24765e0f33275b3b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int master_fd = -1;
     pid_t pid;
 
@@ -9089,6 +9302,7 @@ static PyObject *
 os_getegid_impl(PyObject *module)
 /*[clinic end generated code: output=67d9be7ac68898a2 input=1596f79ad1107d5d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyLong_FromGid(getegid());
 }
 #endif /* HAVE_GETEGID */
@@ -9105,6 +9319,7 @@ static PyObject *
 os_geteuid_impl(PyObject *module)
 /*[clinic end generated code: output=ea1b60f0d6abb66e input=4644c662d3bd9f19]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyLong_FromUid(geteuid());
 }
 #endif /* HAVE_GETEUID */
@@ -9121,6 +9336,7 @@ static PyObject *
 os_getgid_impl(PyObject *module)
 /*[clinic end generated code: output=4f28ebc9d3e5dfcf input=58796344cd87c0f6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyLong_FromGid(getgid());
 }
 #endif /* HAVE_GETGID */
@@ -9137,6 +9353,7 @@ static PyObject *
 os_getpid_impl(PyObject *module)
 /*[clinic end generated code: output=9ea6fdac01ed2b3c input=5a9a00f0ab68aa00]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #if !defined(MS_WINDOWS) || defined(MS_WINDOWS_DESKTOP) || defined(MS_WINDOWS_SYSTEM)
     return PyLong_FromPid(getpid());
 #else
@@ -9188,6 +9405,7 @@ os_getgrouplist_impl(PyObject *module, const char *user, gid_t basegid)
 /*[clinic end generated code: output=0ebd7fb70115575b input=cc61d5c20b08958d]*/
 #endif
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int i, ngroups;
     PyObject *list;
 #ifdef __APPLE__
@@ -9260,10 +9478,14 @@ os_getgrouplist_impl(PyObject *module, const char *user, gid_t basegid)
         PyObject *o = _PyLong_FromGid(groups[i]);
 #endif
         if (o == NULL) {
-            Py_DECREF(list);
+            PyRegion_CLEARLOCAL(list);
             PyMem_Free(groups);
             return NULL;
         }
+        // `o` is a freshly created int and `list` a freshly created list, so
+        // both are local; the stealing store needs no region barrier.
+        assert(!PyRegion_NeedsReadBarrier(o));
+        assert(PyRegion_IsLocal(o));
         PyList_SET_ITEM(list, i, o);
     }
 
@@ -9285,6 +9507,8 @@ static PyObject *
 os_getgroups_impl(PyObject *module)
 /*[clinic end generated code: output=42b0c17758561b56 input=d3f109412e6a155c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // Call getgroups with length 0 to get the actual number of groups
     int n = getgroups(0, NULL);
     if (n < 0) {
@@ -9317,6 +9541,8 @@ os_getgroups_impl(PyObject *module)
         if (group == NULL) {
             goto error;
         }
+        assert(!PyRegion_NeedsReadBarrier(group));
+        assert(PyRegion_IsLocal(group));
         PyList_SET_ITEM(result, i, group);
     }
     PyMem_Free(grouplist);
@@ -9325,7 +9551,7 @@ os_getgroups_impl(PyObject *module)
 
 error:
     PyMem_Free(grouplist);
-    Py_XDECREF(result);
+    PyRegion_CLEARLOCAL(result);
     return NULL;
 }
 #endif /* HAVE_GETGROUPS */
@@ -9369,6 +9595,7 @@ os_initgroups_impl(PyObject *module, PyObject *oname, gid_t gid)
 /*[clinic end generated code: output=59341244521a9e3f input=17d8fbe2dea42ca4]*/
 #endif
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *username = PyBytes_AS_STRING(oname);
 
     if (initgroups(username, gid) == -1)
@@ -9392,6 +9619,7 @@ static PyObject *
 os_getpgid_impl(PyObject *module, pid_t pid)
 /*[clinic end generated code: output=1db95a97be205d18 input=39d710ae3baaf1c7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t pgid = getpgid(pid);
     if (pgid < 0)
         return posix_error();
@@ -9411,6 +9639,7 @@ static PyObject *
 os_getpgrp_impl(PyObject *module)
 /*[clinic end generated code: output=c4fc381e51103cf3 input=6846fb2bb9a3705e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef GETPGRP_HAVE_ARG
     return PyLong_FromPid(getpgrp(0));
 #else /* GETPGRP_HAVE_ARG */
@@ -9431,6 +9660,7 @@ static PyObject *
 os_setpgrp_impl(PyObject *module)
 /*[clinic end generated code: output=2554735b0a60f0a0 input=1f0619fcb5731e7e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef SETPGRP_HAVE_ARG
     if (setpgrp(0, 0) < 0)
 #else /* SETPGRP_HAVE_ARG */
@@ -9470,6 +9700,7 @@ typedef NTSTATUS (NTAPI *PNT_QUERY_INFORMATION_PROCESS) (
 static ULONG
 win32_getppid_fast(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     NTSTATUS status;
     HMODULE ntdll;
     PNT_QUERY_INFORMATION_PROCESS pNtQueryInformationProcess;
@@ -9523,6 +9754,7 @@ win32_getppid_fast(void)
 static PyObject*
 win32_getppid(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DWORD error;
     PyObject* result = NULL;
     HANDLE process = GetCurrentProcess();
@@ -9590,6 +9822,7 @@ static PyObject *
 os_getlogin_impl(PyObject *module)
 /*[clinic end generated code: output=a32e66a7e5715dac input=2a21ab1e917163df]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result = NULL;
 #ifdef MS_WINDOWS
     wchar_t user_name[UNLEN + 1];
@@ -9651,6 +9884,7 @@ static PyObject *
 os_getuid_impl(PyObject *module)
 /*[clinic end generated code: output=415c0b401ebed11a input=b53c8b35f110a516]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyLong_FromUid(getuid());
 }
 #endif /* HAVE_GETUID */
@@ -9675,6 +9909,7 @@ static PyObject *
 os_kill_impl(PyObject *module, pid_t pid, Py_ssize_t signal)
 /*[clinic end generated code: output=8e346a6701c88568 input=61a36b86ca275ab9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.kill", "in", pid, signal) < 0) {
         return NULL;
     }
@@ -9739,6 +9974,7 @@ static PyObject *
 os_killpg_impl(PyObject *module, pid_t pgid, int signal)
 /*[clinic end generated code: output=6dbcd2f1fdf5fdba input=38b5449eb8faec19]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.killpg", "ii", pgid, signal) < 0) {
         return NULL;
     }
@@ -9770,6 +10006,7 @@ static PyObject *
 os_plock_impl(PyObject *module, int op)
 /*[clinic end generated code: output=81424167033b168e input=e6e5e348e1525f60]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (plock(op) == -1)
         return posix_error();
     Py_RETURN_NONE;
@@ -9791,6 +10028,7 @@ static PyObject *
 os_setuid_impl(PyObject *module, uid_t uid)
 /*[clinic end generated code: output=a0a41fd0d1ec555f input=c921a3285aa22256]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setuid(uid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -9812,6 +10050,7 @@ static PyObject *
 os_seteuid_impl(PyObject *module, uid_t euid)
 /*[clinic end generated code: output=102e3ad98361519a input=ba93d927e4781aa9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (seteuid(euid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -9833,6 +10072,7 @@ static PyObject *
 os_setegid_impl(PyObject *module, gid_t egid)
 /*[clinic end generated code: output=4e4b825a6a10258d input=4080526d0ccd6ce3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setegid(egid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -9855,6 +10095,7 @@ static PyObject *
 os_setreuid_impl(PyObject *module, uid_t ruid, uid_t euid)
 /*[clinic end generated code: output=62d991210006530a input=0ca8978de663880c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setreuid(ruid, euid) < 0) {
         return posix_error();
     } else {
@@ -9879,6 +10120,7 @@ static PyObject *
 os_setregid_impl(PyObject *module, gid_t rgid, gid_t egid)
 /*[clinic end generated code: output=aa803835cf5342f3 input=c59499f72846db78]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setregid(rgid, egid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -9899,6 +10141,7 @@ static PyObject *
 os_setgid_impl(PyObject *module, gid_t gid)
 /*[clinic end generated code: output=bdccd7403f6ad8c3 input=27d30c4059045dc6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setgid(gid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -9920,6 +10163,7 @@ static PyObject *
 os_setgroups(PyObject *module, PyObject *groups)
 /*[clinic end generated code: output=3fcb32aad58c5ecd input=fa742ca3daf85a7e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PySequence_Check(groups)) {
         PyErr_SetString(PyExc_TypeError, "setgroups argument must be a sequence");
         return NULL;
@@ -9948,17 +10192,17 @@ os_setgroups(PyObject *module, PyObject *groups)
         if (!PyIndex_Check(elem)) {
             PyErr_SetString(PyExc_TypeError,
                             "groups must be integers");
-            Py_DECREF(elem);
+            PyRegion_CLEARLOCAL(elem);
             PyMem_Free(grouplist);
             return NULL;
         } else {
             if (!_Py_Gid_Converter(elem, &grouplist[i])) {
-                Py_DECREF(elem);
+                PyRegion_CLEARLOCAL(elem);
                 PyMem_Free(grouplist);
                 return NULL;
             }
         }
-        Py_DECREF(elem);
+        PyRegion_CLEARLOCAL(elem);
     }
 
     if (setgroups(len, grouplist) < 0) {
@@ -9975,6 +10219,7 @@ os_setgroups(PyObject *module, PyObject *groups)
 static PyObject *
 wait_helper(PyObject *module, pid_t pid, int status, struct rusage *ru)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     PyObject *struct_rusage;
 
@@ -9993,7 +10238,7 @@ wait_helper(PyObject *module, pid_t pid, int status, struct rusage *ru)
 
     /* XXX(nnorwitz): Copied (w/mods) from resource.c, there should be only one. */
     result = PyStructSequence_New((PyTypeObject*) struct_rusage);
-    Py_DECREF(struct_rusage);
+    PyRegion_CLEARLOCAL(struct_rusage);
     if (!result)
         return NULL;
 
@@ -10007,7 +10252,13 @@ wait_helper(PyObject *module, pid_t pid, int status, struct rusage *ru)
     do {                                                     \
         PyObject *item = (CALL);                             \
         if (item == NULL) {                                  \
-            Py_DECREF(result);                               \
+            PyRegion_CLEARLOCAL(result);                     \
+            return NULL;                                     \
+        }                                                    \
+        /* SET_ITEM steals `item`; transfer the owned stack ref. */ \
+        if (PyRegion_TakeRef(result, item)) {                \
+            PyRegion_CLEARLOCAL(item);                       \
+            PyRegion_CLEARLOCAL(result);                     \
             return NULL;                                     \
         }                                                    \
         PyStructSequence_SET_ITEM(result, pos++, item);      \
@@ -10051,6 +10302,7 @@ static PyObject *
 os_wait3_impl(PyObject *module, int options)
 /*[clinic end generated code: output=92c3224e6f28217a input=8ac4c56956b61710]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t pid;
     struct rusage ru;
     int async_err = 0;
@@ -10088,6 +10340,7 @@ static PyObject *
 os_wait4_impl(PyObject *module, pid_t pid, int options)
 /*[clinic end generated code: output=66195aa507b35f70 input=d11deed0750600ba]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t res;
     struct rusage ru;
     int async_err = 0;
@@ -10130,6 +10383,7 @@ static PyObject *
 os_waitid_impl(PyObject *module, idtype_t idtype, id_t id, int options)
 /*[clinic end generated code: output=5d2e1c0bde61f4d8 input=d8e7f76e052b7920]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result;
     int res;
     int async_err = 0;
@@ -10158,7 +10412,13 @@ os_waitid_impl(PyObject *module, idtype_t idtype, id_t id, int options)
     do {                                                     \
         PyObject *item = (CALL);                             \
         if (item == NULL) {                                  \
-            Py_DECREF(result);                               \
+            PyRegion_CLEARLOCAL(result);                     \
+            return NULL;                                     \
+        }                                                    \
+        /* SET_ITEM steals `item`; transfer the owned stack ref. */ \
+        if (PyRegion_TakeRef(result, item)) {                \
+            PyRegion_CLEARLOCAL(item);                       \
+            PyRegion_CLEARLOCAL(result);                     \
             return NULL;                                     \
         }                                                    \
         PyStructSequence_SET_ITEM(result, pos++, item);      \
@@ -10196,6 +10456,7 @@ static PyObject *
 os_waitpid_impl(PyObject *module, pid_t pid, int options)
 /*[clinic end generated code: output=5c37c06887a20270 input=0bf1666b8758fda3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t res;
     int async_err = 0;
     WAIT_TYPE status;
@@ -10267,6 +10528,7 @@ static PyObject *
 os_wait_impl(PyObject *module)
 /*[clinic end generated code: output=6bc419ac32fb364b input=03b0182d4a4700ce]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t pid;
     int async_err = 0;
     WAIT_TYPE status;
@@ -10303,6 +10565,7 @@ static PyObject *
 os_pidfd_open_impl(PyObject *module, pid_t pid, unsigned int flags)
 /*[clinic end generated code: output=5c7252698947dc41 input=c3fd99ce947ccfef]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd = syscall(__NR_pidfd_open, pid, flags);
     if (fd < 0) {
         return posix_error();
@@ -10327,6 +10590,7 @@ static PyObject *
 os_setns_impl(PyObject *module, int fd, int nstype)
 /*[clinic end generated code: output=5dbd055bfb66ecd0 input=42787871226bf3ee]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
 
     Py_BEGIN_ALLOW_THREADS
@@ -10355,6 +10619,7 @@ static PyObject *
 os_unshare_impl(PyObject *module, int flags)
 /*[clinic end generated code: output=1b3177906dd237ee input=9e065db3232b8b1b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
 
     Py_BEGIN_ALLOW_THREADS
@@ -10391,6 +10656,7 @@ static PyObject *
 os_readlink_impl(PyObject *module, path_t *path, int dir_fd)
 /*[clinic end generated code: output=d21b732a2e814030 input=113c87e0db1ecaf2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #if defined(HAVE_READLINK)
     char buffer[MAXPATHLEN+1];
     ssize_t length;
@@ -10488,7 +10754,7 @@ os_readlink_impl(PyObject *module, path_t *path, int dir_fd)
         }
         result = PyUnicode_FromWideChar(name, nameLen);
         if (result && PyBytes_Check(path->object)) {
-            Py_SETREF(result, PyUnicode_EncodeFSDefault(result));
+            PyRegion_SETLOCALREF(result, PyUnicode_EncodeFSDefault(result));
         }
     }
     return result;
@@ -10502,6 +10768,7 @@ os_readlink_impl(PyObject *module, path_t *path, int dir_fd)
 static int
 _dirnameW(WCHAR *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WCHAR *ptr;
     size_t length = wcsnlen_s(path, MAX_PATH);
     if (length == MAX_PATH) {
@@ -10528,6 +10795,7 @@ _dirnameW(WCHAR *path)
 static int
 _is_absW(const WCHAR *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return path[0] == L'\\' || path[0] == L'/' ||
         (path[0] && path[1] == L':');
 }
@@ -10536,6 +10804,7 @@ _is_absW(const WCHAR *path)
 static int
 _joinW(WCHAR *dest_path, const WCHAR *root, const WCHAR *rest)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (_is_absW(rest)) {
         return wcscpy_s(dest_path, MAX_PATH, rest);
     }
@@ -10555,6 +10824,7 @@ _joinW(WCHAR *dest_path, const WCHAR *root, const WCHAR *rest)
 static int
 _check_dirW(LPCWSTR src, LPCWSTR dest)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WIN32_FILE_ATTRIBUTE_DATA src_info;
     WCHAR dest_parent[MAX_PATH];
     WCHAR src_resolved[MAX_PATH] = L"";
@@ -10730,6 +11000,7 @@ build_times_result(PyObject *module, double user, double system,
     double children_user, double children_system,
     double elapsed)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *TimesResultType = get_posix_state(module)->TimesResultType;
     PyObject *value = PyStructSequence_New((PyTypeObject *)TimesResultType);
     if (value == NULL)
@@ -10739,7 +11010,12 @@ build_times_result(PyObject *module, double user, double system,
     { \
     PyObject *o = PyFloat_FromDouble(field); \
     if (!o) { \
-        Py_DECREF(value); \
+        PyRegion_CLEARLOCAL(value); \
+        return NULL; \
+    } \
+    if (PyRegion_TakeRef(value, o)) { \
+        PyRegion_CLEARLOCAL(o); \
+        PyRegion_CLEARLOCAL(value); \
         return NULL; \
     } \
     PyStructSequence_SET_ITEM(value, i, o); \
@@ -10771,6 +11047,7 @@ static PyObject *
 os_times_impl(PyObject *module)
 /*[clinic end generated code: output=35f640503557d32a input=8dbfe33a2dcc3df3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     FILETIME create, exit, kernel, user;
     HANDLE hProc;
@@ -10819,6 +11096,7 @@ os_times_impl(PyObject *module)
 static PyObject *
 build_itimerspec(const struct itimerspec* curr_value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double _value = CONVERT_SEC_AND_NSEC_TO_DOUBLE(curr_value->it_value.tv_sec,
                                                           curr_value->it_value.tv_nsec);
     PyObject *value = PyFloat_FromDouble(_value);
@@ -10829,10 +11107,13 @@ build_itimerspec(const struct itimerspec* curr_value)
                                                    curr_value->it_interval.tv_nsec);
     PyObject *interval = PyFloat_FromDouble(_interval);
     if (interval == NULL) {
+        assert(!PyRegion_NeedsReadBarrier(value));
         Py_DECREF(value);
         return NULL;
     }
     PyObject *tuple = PyTuple_Pack(2, value, interval);
+    assert(!PyRegion_NeedsReadBarrier(interval));
+    assert(!PyRegion_NeedsReadBarrier(value));
     Py_DECREF(interval);
     Py_DECREF(value);
     return tuple;
@@ -10841,6 +11122,7 @@ build_itimerspec(const struct itimerspec* curr_value)
 static PyObject *
 build_itimerspec_ns(const struct itimerspec* curr_value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTime_t value, interval;
     if (_PyTime_FromTimespec(&value, &curr_value->it_value) < 0) {
         return NULL;
@@ -10880,6 +11162,7 @@ os_timerfd_create_impl(PyObject *module, int clockid, int flags)
 /*[clinic end generated code: output=1caae80fb168004a input=64b7020c5ac0b8f4]*/
 
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd;
     Py_BEGIN_ALLOW_THREADS
     flags |= TFD_CLOEXEC;  // PEP 446: always create non-inheritable FD
@@ -10913,6 +11196,7 @@ os_timerfd_settime_impl(PyObject *module, int fd, int flags,
                         double initial_double, double interval_double)
 /*[clinic end generated code: output=df4c1bce6859224e input=81d2c0d7e936e8a7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTime_t initial, interval;
     if (_PyTime_FromSecondsDouble(initial_double, _PyTime_ROUND_FLOOR,
                                   &initial) < 0) {
@@ -10966,6 +11250,7 @@ os_timerfd_settime_ns_impl(PyObject *module, int fd, int flags,
                            long long initial, long long interval)
 /*[clinic end generated code: output=6273ec7d7b4cc0b3 input=261e105d6e42f5bc]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     struct itimerspec new_value;
     struct itimerspec old_value;
     int result;
@@ -11001,6 +11286,7 @@ static PyObject *
 os_timerfd_gettime_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=ec5a94a66cfe6ab4 input=05f7d568a4820dc6]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     struct itimerspec curr_value;
     int result;
     Py_BEGIN_ALLOW_THREADS
@@ -11028,6 +11314,7 @@ static PyObject *
 os_timerfd_gettime_ns_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=580633a4465f39fe input=d0de95b9782179c5]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     struct itimerspec curr_value;
     int result;
     Py_BEGIN_ALLOW_THREADS
@@ -11058,6 +11345,7 @@ static PyObject *
 os_getsid_impl(PyObject *module, pid_t pid)
 /*[clinic end generated code: output=112deae56b306460 input=eeb2b923a30ce04e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int sid;
     sid = getsid(pid);
     if (sid < 0)
@@ -11078,6 +11366,7 @@ static PyObject *
 os_setsid_impl(PyObject *module)
 /*[clinic end generated code: output=e2ddedd517086d77 input=5fff45858e2f0776]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setsid() < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -11121,6 +11410,7 @@ static PyObject *
 os_tcgetpgrp_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=f865e88be86c272b input=7f6c18eac10ada86]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     pid_t pgid = tcgetpgrp(fd);
     if (pgid < 0)
         return posix_error();
@@ -11179,6 +11469,7 @@ static int
 os_open_impl(PyObject *module, path_t *path, int flags, int mode, int dir_fd)
 /*[clinic end generated code: output=abc7227888c8bc73 input=ad8623b29acd2934]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd;
     int async_err = 0;
 #ifdef HAVE_OPENAT
@@ -11260,6 +11551,7 @@ static PyObject *
 os_close_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=2fe4e93602822c14 input=2bc42451ca5c3223]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
     /* We do not want to retry upon EINTR: see http://lwn.net/Articles/576478/
      * and http://linux.derkeiler.com/Mailing-Lists/Kernel/2005-09/3000.html
@@ -11289,6 +11581,7 @@ static PyObject *
 os_closerange_impl(PyObject *module, int fd_low, int fd_high)
 /*[clinic end generated code: output=0ce5c20fcda681c2 input=5855a3d053ebd4ec]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_BEGIN_ALLOW_THREADS
     _Py_closerange(fd_low, fd_high - 1);
     Py_END_ALLOW_THREADS
@@ -11309,6 +11602,7 @@ static int
 os_dup_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=486f4860636b2a9f input=6f10f7ea97f7852a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _Py_dup(fd);
 }
 
@@ -11328,6 +11622,7 @@ static int
 os_dup2_impl(PyObject *module, int fd, int fd2, int inheritable)
 /*[clinic end generated code: output=bc059d34a73404d1 input=c3cddda8922b038d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res = 0;
 #if defined(HAVE_DUP3) && \
     !(defined(HAVE_FCNTL_H) && defined(F_DUP2FD_CLOEXEC))
@@ -11432,6 +11727,7 @@ static PyObject *
 os_lockf_impl(PyObject *module, int fd, int command, Py_off_t length)
 /*[clinic end generated code: output=af7051f3e7c29651 input=65da41d2106e9b79]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int res;
 
     if (PySys_Audit("os.lockf", "iiL", fd, command, length) < 0) {
@@ -11474,6 +11770,7 @@ static Py_off_t
 os_lseek_impl(PyObject *module, int fd, Py_off_t position, int how)
 /*[clinic end generated code: output=971e1efb6b30bd2f input=4a3de549f07e1c40]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_off_t result;
 
 #ifdef SEEK_SET
@@ -11514,6 +11811,7 @@ static PyObject *
 os_read_impl(PyObject *module, int fd, Py_ssize_t length)
 /*[clinic end generated code: output=dafbe9a5cddb987b input=1df2eaa27c0bf1d3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (length < 0) {
         errno = EINVAL;
         return posix_error();
@@ -11559,6 +11857,7 @@ static Py_ssize_t
 os_readinto_impl(PyObject *module, int fd, Py_buffer *buffer)
 /*[clinic end generated code: output=8091a3513c683a80 input=a770382bd3d32f9a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(buffer->len >= 0);
     Py_ssize_t result = _Py_read(fd, buffer->buf, buffer->len);
     /* Ensure negative is never returned without an error. Simplifies calling
@@ -11575,6 +11874,7 @@ os_readinto_impl(PyObject *module, int fd, Py_buffer *buffer)
 static int
 iov_setup(struct iovec **iov, Py_buffer **buf, PyObject *seq, Py_ssize_t cnt, int type)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i, j;
 
     *iov = PyMem_New(struct iovec, cnt);
@@ -11595,10 +11895,10 @@ iov_setup(struct iovec **iov, Py_buffer **buf, PyObject *seq, Py_ssize_t cnt, in
         if (item == NULL)
             goto fail;
         if (PyObject_GetBuffer(item, &(*buf)[i], type) == -1) {
-            Py_DECREF(item);
+            PyRegion_CLEARLOCAL(item);
             goto fail;
         }
-        Py_DECREF(item);
+        PyRegion_CLEARLOCAL(item);
         (*iov)[i].iov_base = (*buf)[i].buf;
         (*iov)[i].iov_len = (*buf)[i].len;
     }
@@ -11616,6 +11916,7 @@ fail:
 static void
 iov_cleanup(struct iovec *iov, Py_buffer *buf, int cnt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int i;
     PyMem_Free(iov);
     for (i = 0; i < cnt; i++) {
@@ -11649,6 +11950,7 @@ static Py_ssize_t
 os_readv_impl(PyObject *module, int fd, PyObject *buffers)
 /*[clinic end generated code: output=792da062d3fcebdb input=e679eb5dbfa0357d]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t cnt, n;
     int async_err = 0;
     struct iovec *iov;
@@ -11708,6 +12010,7 @@ static PyObject *
 os_pread_impl(PyObject *module, int fd, Py_ssize_t length, Py_off_t offset)
 /*[clinic end generated code: output=3f875c1eef82e32f input=5943beb009d3da04]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t n;
     int async_err = 0;
 
@@ -11773,6 +12076,7 @@ os_preadv_impl(PyObject *module, int fd, PyObject *buffers, Py_off_t offset,
                int flags)
 /*[clinic end generated code: output=26fc9c6e58e7ada5 input=34fb3b9ca06f7ba7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t cnt, n;
     int async_err = 0;
     struct iovec *iov;
@@ -11859,6 +12163,7 @@ static Py_ssize_t
 os_write_impl(PyObject *module, int fd, Py_buffer *data)
 /*[clinic end generated code: output=e4ef5bc904b58ef9 input=3207e28963234f3c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _Py_write(fd, data->buf, data->len);
 }
 
@@ -11921,6 +12226,7 @@ os_sendfile_impl(PyObject *module, int out_fd, int in_fd, PyObject *offobj,
 /*[clinic end generated code: output=ae81216e40f167d8 input=424df0949059ea5b]*/
 #endif
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t ret;
     int async_err = 0;
 
@@ -12122,6 +12428,7 @@ static PyObject *
 os__fcopyfile_impl(PyObject *module, int in_fd, int out_fd, int flags)
 /*[clinic end generated code: output=c9d1a35a992e401b input=1e34638a86948795]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int ret;
 
     Py_BEGIN_ALLOW_THREADS
@@ -12149,6 +12456,7 @@ static PyObject *
 os_fstat_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=efc038cb5f654492 input=27e0e0ebbe5600c9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     STRUCT_STAT st;
     int res;
     int async_err = 0;
@@ -12185,6 +12493,7 @@ static int
 os_isatty_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=6a48c8b4e644ca00 input=08ce94aa1eaf7b5e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int return_value;
     Py_BEGIN_ALLOW_THREADS
     _Py_BEGIN_SUPPRESS_IPH
@@ -12209,6 +12518,7 @@ static PyObject *
 os_pipe_impl(PyObject *module)
 /*[clinic end generated code: output=ff9b76255793b440 input=02535e8c8fa6c4d4]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fds[2];
 #ifdef MS_WINDOWS
     HANDLE read, write;
@@ -12296,6 +12606,7 @@ static PyObject *
 os_pipe2_impl(PyObject *module, int flags)
 /*[clinic end generated code: output=25751fb43a45540f input=f261b6e7e63c6817]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fds[2];
     int res;
 
@@ -12324,6 +12635,7 @@ static Py_ssize_t
 os_writev_impl(PyObject *module, int fd, PyObject *buffers)
 /*[clinic end generated code: output=56565cfac3aac15b input=5b8d17fe4189d2fe]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t cnt;
     Py_ssize_t result;
     int async_err = 0;
@@ -12378,6 +12690,7 @@ static Py_ssize_t
 os_pwrite_impl(PyObject *module, int fd, Py_buffer *buffer, Py_off_t offset)
 /*[clinic end generated code: output=c74da630758ee925 input=614acbc7e5a0339a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t size;
     int async_err = 0;
 
@@ -12431,6 +12744,7 @@ os_pwritev_impl(PyObject *module, int fd, PyObject *buffers, Py_off_t offset,
                 int flags)
 /*[clinic end generated code: output=e3dd3e9d11a6a5c7 input=664a67626d485665]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t cnt;
     Py_ssize_t result;
     int async_err = 0;
@@ -12528,6 +12842,7 @@ os_copy_file_range_impl(PyObject *module, int src, int dst, Py_ssize_t count,
                         PyObject *offset_src, PyObject *offset_dst)
 /*[clinic end generated code: output=1a91713a1d99fc7a input=08dacb760869b87c]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     off_t offset_src_val, offset_dst_val;
     off_t *p_offset_src = NULL;
     off_t *p_offset_dst = NULL;
@@ -12596,6 +12911,7 @@ os_splice_impl(PyObject *module, int src, int dst, Py_ssize_t count,
                unsigned int flags)
 /*[clinic end generated code: output=d0386f25a8519dc5 input=034852a7b2e7af35]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     off_t offset_src_val, offset_dst_val;
     off_t *p_offset_src = NULL;
     off_t *p_offset_dst = NULL;
@@ -12652,6 +12968,7 @@ static PyObject *
 os_mkfifo_impl(PyObject *module, path_t *path, int mode, int dir_fd)
 /*[clinic end generated code: output=ce41cfad0e68c940 input=73032e98a36e0e19]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     int async_err = 0;
 #ifdef HAVE_MKFIFOAT
@@ -12722,6 +13039,7 @@ os_mknod_impl(PyObject *module, path_t *path, int mode, dev_t device,
               int dir_fd)
 /*[clinic end generated code: output=92e55d3ca8917461 input=7121c4723d22545b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     int async_err = 0;
 #ifdef HAVE_MKNODAT
@@ -12774,6 +13092,7 @@ major_minor_conv(unsigned int value)
 static int
 major_minor_check(dev_t value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef NODEV
     if (value == NODEV) {
         return 1;
@@ -12795,6 +13114,7 @@ static PyObject *
 os_major_impl(PyObject *module, dev_t device)
 /*[clinic end generated code: output=4071ffee17647891 input=b1a0a14ec9448229]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return major_minor_conv(major(device));
 }
 
@@ -12812,6 +13132,7 @@ static PyObject *
 os_minor_impl(PyObject *module, dev_t device)
 /*[clinic end generated code: output=306cb78e3bc5004f input=2f686e463682a9da]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return major_minor_conv(minor(device));
 }
 
@@ -12830,6 +13151,7 @@ static dev_t
 os_makedev_impl(PyObject *module, dev_t major, dev_t minor)
 /*[clinic end generated code: output=cad6125c51f5af80 input=2146126ec02e55c1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!major_minor_check(major) || !major_minor_check(minor)) {
         PyErr_SetString(PyExc_OverflowError,
                         "Python int too large to convert to C unsigned int");
@@ -12855,6 +13177,7 @@ static PyObject *
 os_ftruncate_impl(PyObject *module, int fd, Py_off_t length)
 /*[clinic end generated code: output=fba15523721be7e4 input=63b43641e52818f2]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     int async_err = 0;
 
@@ -12897,6 +13220,7 @@ static PyObject *
 os_truncate_impl(PyObject *module, path_t *path, Py_off_t length)
 /*[clinic end generated code: output=43009c8df5c0a12b input=77229cf0b50a9b77]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 #ifdef MS_WINDOWS
     int fd;
@@ -12966,6 +13290,7 @@ os_posix_fallocate_impl(PyObject *module, int fd, Py_off_t offset,
                         Py_off_t length)
 /*[clinic end generated code: output=73f107139564aa9d input=d7a2ef0ab2ca52fb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     int async_err = 0;
 
@@ -13013,6 +13338,7 @@ os_posix_fadvise_impl(PyObject *module, int fd, Py_off_t offset,
                       Py_off_t length, int advice)
 /*[clinic end generated code: output=412ef4aa70c98642 input=0fbe554edc2f04b5]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     int async_err = 0;
 
@@ -13038,6 +13364,8 @@ os_posix_fadvise_impl(PyObject *module, int fd, Py_off_t offset,
 static PyObject*
 win32_putenv(PyObject *name, PyObject *value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* Search from index 1 because on Windows starting '=' is allowed for
        defining hidden environment variables. */
     if (PyUnicode_GET_LENGTH(name) == 0 ||
@@ -13059,7 +13387,7 @@ win32_putenv(PyObject *name, PyObject *value)
 
     Py_ssize_t size;
     wchar_t *env = PyUnicode_AsWideCharString(unicode, &size);
-    Py_DECREF(unicode);
+    PyRegion_CLEARLOCAL(unicode);
 
     if (env == NULL) {
         return NULL;
@@ -13113,6 +13441,7 @@ static PyObject *
 os_putenv_impl(PyObject *module, PyObject *name, PyObject *value)
 /*[clinic end generated code: output=d29a567d6b2327d2 input=ba586581c2e6105f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.putenv", "OO", name, value) < 0) {
         return NULL;
     }
@@ -13133,6 +13462,7 @@ static PyObject *
 os_putenv_impl(PyObject *module, PyObject *name, PyObject *value)
 /*[clinic end generated code: output=d29a567d6b2327d2 input=84fcd30f873c8c45]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *name_string = PyBytes_AS_STRING(name);
     const char *value_string = PyBytes_AS_STRING(value);
 
@@ -13166,6 +13496,7 @@ static PyObject *
 os_unsetenv_impl(PyObject *module, PyObject *name)
 /*[clinic end generated code: output=54c4137ab1834f02 input=4d6a1747cc526d2f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.unsetenv", "(O)", name) < 0) {
         return NULL;
     }
@@ -13184,6 +13515,7 @@ static PyObject *
 os_unsetenv_impl(PyObject *module, PyObject *name)
 /*[clinic end generated code: output=54c4137ab1834f02 input=78ff12e505ade80a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PySys_Audit("os.unsetenv", "(O)", name) < 0) {
         return NULL;
     }
@@ -13210,6 +13542,7 @@ static PyObject *
 os__clearenv_impl(PyObject *module)
 /*[clinic end generated code: output=2d6705d62c014b51 input=47d2fa7f323c43ca]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     errno = 0;
     int err = clearenv();
     if (err) {
@@ -13233,6 +13566,7 @@ static PyObject *
 os_strerror_impl(PyObject *module, int code)
 /*[clinic end generated code: output=baebf09fa02a78f2 input=75a8673d97915a91]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char *message = strerror(code);
     if (message == NULL) {
         PyErr_SetString(PyExc_ValueError,
@@ -13258,6 +13592,7 @@ static int
 os_WCOREDUMP_impl(PyObject *module, int status)
 /*[clinic end generated code: output=1a584b147b16bd18 input=8b05e7ab38528d04]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WCOREDUMP(wait_status);
@@ -13281,6 +13616,7 @@ static int
 os_WIFCONTINUED_impl(PyObject *module, int status)
 /*[clinic end generated code: output=1e35295d844364bd input=e777e7d38eb25bd9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WIFCONTINUED(wait_status);
@@ -13301,6 +13637,7 @@ static int
 os_WIFSTOPPED_impl(PyObject *module, int status)
 /*[clinic end generated code: output=fdb57122a5c9b4cb input=043cb7f1289ef904]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WIFSTOPPED(wait_status);
@@ -13321,6 +13658,7 @@ static int
 os_WIFSIGNALED_impl(PyObject *module, int status)
 /*[clinic end generated code: output=d1dde4dcc819a5f5 input=d55ba7cc9ce5dc43]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WIFSIGNALED(wait_status);
@@ -13342,6 +13680,7 @@ static int
 os_WIFEXITED_impl(PyObject *module, int status)
 /*[clinic end generated code: output=01c09d6ebfeea397 input=8c24a82148709b30]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WIFEXITED(wait_status);
@@ -13362,6 +13701,7 @@ static int
 os_WEXITSTATUS_impl(PyObject *module, int status)
 /*[clinic end generated code: output=6e3efbba11f6488d input=e1fb4944e377585b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WEXITSTATUS(wait_status);
@@ -13383,6 +13723,7 @@ static int
 os_WTERMSIG_impl(PyObject *module, int status)
 /*[clinic end generated code: output=172f7dfc8dcfc3ad input=89072f6cbf3f8050]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WTERMSIG(wait_status);
@@ -13403,6 +13744,7 @@ static int
 os_WSTOPSIG_impl(PyObject *module, int status)
 /*[clinic end generated code: output=0ab7586396f5d82b input=46ebf1d1b293c5c1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     WAIT_TYPE wait_status;
     WAIT_STATUS_INT(wait_status) = status;
     return WSTOPSIG(wait_status);
@@ -13427,6 +13769,7 @@ os_WSTOPSIG_impl(PyObject *module, int status)
 
 static PyObject*
 _pystatvfs_fromstructstatfs(PyObject *module, struct statfs st) {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *StatVFSResultType = get_posix_state(module)->StatVFSResultType;
     PyObject *v = PyStructSequence_New((PyTypeObject *)StatVFSResultType);
     if (v == NULL) {
@@ -13447,9 +13790,11 @@ _pystatvfs_fromstructstatfs(PyObject *module, struct statfs st) {
     do {                                                 \
         PyObject *obj = (EXPR);                          \
         if (obj == NULL) {                               \
+            assert(PyRegion_IsLocal((SEQ)));               \
             Py_DECREF((SEQ));                            \
             return NULL;                                 \
         }                                                \
+        assert(PyRegion_IsLocal((SEQ)));                   \
         PyStructSequence_SET_ITEM((SEQ), (INDEX), obj);  \
     } while (0)
 
@@ -13477,6 +13822,7 @@ _pystatvfs_fromstructstatfs(PyObject *module, struct statfs st) {
 
 static PyObject*
 _pystatvfs_fromstructstatvfs(PyObject *module, struct statvfs st) {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *StatVFSResultType = get_posix_state(module)->StatVFSResultType;
     PyObject *v = PyStructSequence_New((PyTypeObject *)StatVFSResultType);
     if (v == NULL)
@@ -13488,9 +13834,11 @@ _pystatvfs_fromstructstatvfs(PyObject *module, struct statvfs st) {
     do {                                                     \
         PyObject *item = (CALL);                             \
         if (item == NULL) {                                  \
+            assert(PyRegion_IsLocal(v));                     \
             Py_DECREF(v);                                    \
             return NULL;                                     \
         }                                                    \
+        assert(PyRegion_IsLocal(v));                         \
         PyStructSequence_SET_ITEM(v, pos++, item);           \
     } while(0)
 
@@ -13547,6 +13895,7 @@ static PyObject *
 os_fstatvfs_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=53547cf0cc55e6c5 input=d8122243ac50975e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     int async_err = 0;
 #ifdef __APPLE__
@@ -13600,6 +13949,7 @@ static PyObject *
 os_statvfs_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=87106dd1beb8556e input=3f5c35791c669bd9]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
 #ifdef __APPLE__
@@ -13658,6 +14008,7 @@ static PyObject *
 os__getdiskusage_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=3bd3991f5e5c5dfb input=6af8d1b7781cc042]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     BOOL retval;
     ULARGE_INTEGER _, total, free;
     DWORD err = 0;
@@ -13716,6 +14067,7 @@ struct constdef {
 static int
 conv_confname(PyObject *module, PyObject *arg, int *valuep, const char *tablename)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (PyUnicode_Check(arg)) {
         PyObject *table = PyObject_GetAttrString(module, tablename);
         if (table == NULL) {
@@ -13723,14 +14075,14 @@ conv_confname(PyObject *module, PyObject *arg, int *valuep, const char *tablenam
         }
 
         arg = PyObject_GetItem(table, arg);
-        Py_DECREF(table);
+        PyRegion_CLEARLOCAL(table);
         if (arg == NULL) {
             PyErr_SetString(
                 PyExc_ValueError, "unrecognized configuration name");
             return 0;
         }
     } else {
-        Py_INCREF(arg);  // Match the Py_DECREF below.
+        PyRegion_NewRef(arg); // Match the Py_DECREF below.
     }
 
     int success = 0;
@@ -13744,7 +14096,7 @@ conv_confname(PyObject *module, PyObject *arg, int *valuep, const char *tablenam
             success = 1;
         }
     }
-    Py_DECREF(arg);
+    PyRegion_CLEARLOCAL(arg);
     return success;
 }
 
@@ -13856,6 +14208,7 @@ static long
 os_fpathconf_impl(PyObject *module, int fd, int name)
 /*[clinic end generated code: output=d5b7042425fc3e21 input=023d44589c9ed6aa]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long limit;
 
     errno = 0;
@@ -13885,6 +14238,7 @@ static long
 os_pathconf_impl(PyObject *module, path_t *path, int name)
 /*[clinic end generated code: output=5bedee35b293a089 input=6f6072f57b10c787]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     long limit;
 
     errno = 0;
@@ -14074,6 +14428,7 @@ static PyObject *
 os_confstr_impl(PyObject *module, int name)
 /*[clinic end generated code: output=bfb0b1b1e49b9383 input=4c6ffca2837ec959]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *result = NULL;
     char buffer[255];
     size_t len;
@@ -14637,6 +14992,7 @@ static int
 setup_confname_table(struct constdef *table, size_t tablesize,
                      const char *tablename, PyObject *module)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *d = PyDict_New();
     if (d == NULL)
         return -1;
@@ -14644,10 +15000,13 @@ setup_confname_table(struct constdef *table, size_t tablesize,
     for (size_t i=0; i < tablesize; ++i) {
         PyObject *o = PyLong_FromLong(table[i].value);
         if (o == NULL || PyDict_SetItemString(d, table[i].name, o) == -1) {
+            assert(!PyRegion_NeedsReadBarrier(o));
+            assert(!PyRegion_NeedsReadBarrier(d));
             Py_XDECREF(o);
             Py_DECREF(d);
             return -1;
         }
+        assert(!PyRegion_NeedsReadBarrier(o));
         Py_DECREF(o);
     }
     return PyModule_Add(module, tablename, d);
@@ -14657,6 +15016,7 @@ setup_confname_table(struct constdef *table, size_t tablesize,
 static int
 setup_confname_tables(PyObject *module)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #if defined(HAVE_FPATHCONF) || defined(HAVE_PATHCONF)
     if (setup_confname_table(posix_constants_pathconf,
                              sizeof(posix_constants_pathconf)
@@ -14695,6 +15055,7 @@ static PyObject *
 os_abort_impl(PyObject *module)
 /*[clinic end generated code: output=dcf52586dad2467c input=cf2c7d98bc504047]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     abort();
     /*NOTREACHED*/
 #ifndef __clang__
@@ -14714,6 +15075,7 @@ static HINSTANCE (CALLBACK *Py_ShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR,
 static int
 check_ShellExecute(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HINSTANCE hShell32;
 
     /* only recheck */
@@ -14779,6 +15141,7 @@ os_startfile_impl(PyObject *module, path_t *filepath,
                   path_t *cwd, int show_cmd)
 /*[clinic end generated code: output=1c6f2f3340e31ffa input=8248997b80669622]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HINSTANCE rc;
 
     if(!check_ShellExecute()) {
@@ -14826,6 +15189,7 @@ static PyObject *
 os_getloadavg_impl(PyObject *module)
 /*[clinic end generated code: output=9ad3a11bfb4f4bd2 input=3d6d826b76d8a34e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     double loadavg[3];
     if (getloadavg(loadavg, 3)!=3) {
         PyErr_SetString(PyExc_OSError, "Load averages are unobtainable");
@@ -14850,6 +15214,7 @@ static PyObject *
 os_device_encoding_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=e0d294bbab7e8c2b input=9e1d4a42b66df312]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _Py_device_encoding(fd);
 }
 
@@ -14870,6 +15235,7 @@ static PyObject *
 os_setresuid_impl(PyObject *module, uid_t ruid, uid_t euid, uid_t suid)
 /*[clinic end generated code: output=834a641e15373e97 input=9e33cb79a82792f3]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setresuid(ruid, euid, suid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -14893,6 +15259,7 @@ static PyObject *
 os_setresgid_impl(PyObject *module, gid_t rgid, gid_t egid, gid_t sgid)
 /*[clinic end generated code: output=6aa402f3d2e514a9 input=33e9e0785ef426b1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (setresgid(rgid, egid, sgid) < 0)
         return posix_error();
     Py_RETURN_NONE;
@@ -14911,6 +15278,7 @@ static PyObject *
 os_getresuid_impl(PyObject *module)
 /*[clinic end generated code: output=8e0becff5dece5bf input=41ccfa8e1f6517ad]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     uid_t ruid, euid, suid;
     if (getresuid(&ruid, &euid, &suid) < 0)
         return posix_error();
@@ -14933,6 +15301,7 @@ static PyObject *
 os_getresgid_impl(PyObject *module)
 /*[clinic end generated code: output=2719c4bfcf27fb9f input=ad9adadc86fbdb17]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     gid_t rgid, egid, sgid;
     if (getresgid(&rgid, &egid, &sgid) < 0)
         return posix_error();
@@ -14966,6 +15335,7 @@ os_getxattr_impl(PyObject *module, path_t *path, path_t *attribute,
                  int follow_symlinks)
 /*[clinic end generated code: output=5f2f44200a43cff2 input=025789491708f7eb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (fd_and_follow_symlinks_invalid("getxattr", path->fd, follow_symlinks))
         return NULL;
 
@@ -15035,6 +15405,7 @@ os_setxattr_impl(PyObject *module, path_t *path, path_t *attribute,
                  Py_buffer *value, int flags, int follow_symlinks)
 /*[clinic end generated code: output=98b83f63fdde26bb input=4098e6f68699f3d7]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ssize_t result;
 
     if (fd_and_follow_symlinks_invalid("setxattr", path->fd, follow_symlinks))
@@ -15088,6 +15459,7 @@ os_removexattr_impl(PyObject *module, path_t *path, path_t *attribute,
                     int follow_symlinks)
 /*[clinic end generated code: output=521a51817980cda6 input=3d9a7d36fe2f7c4e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ssize_t result;
 
     if (fd_and_follow_symlinks_invalid("removexattr", path->fd, follow_symlinks))
@@ -15135,6 +15507,7 @@ static PyObject *
 os_listxattr_impl(PyObject *module, path_t *path, int follow_symlinks)
 /*[clinic end generated code: output=bebdb4e2ad0ce435 input=48aa9ac8be47dea1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
     PyObject *result = NULL;
     const char *name;
@@ -15197,13 +15570,15 @@ os_listxattr_impl(PyObject *module, path_t *path, int follow_symlinks)
                 PyObject *attribute = PyUnicode_DecodeFSDefaultAndSize(start,
                                                                  trace - start);
                 if (!attribute) {
-                    Py_SETREF(result, NULL);
+                    assert(!PyRegion_NeedsReadBarrier(result));
+                    Py_CLEAR(result);
                     goto exit;
                 }
                 error = PyList_Append(result, attribute);
-                Py_DECREF(attribute);
+                PyRegion_CLEARLOCAL(attribute);
                 if (error) {
-                    Py_SETREF(result, NULL);
+                    assert(!PyRegion_NeedsReadBarrier(result));
+                    Py_CLEAR(result);
                     goto exit;
                 }
                 start = trace + 1;
@@ -15233,6 +15608,7 @@ static PyObject *
 os_urandom_impl(PyObject *module, Py_ssize_t size)
 /*[clinic end generated code: output=42c5cca9d18068e9 input=58a0def87dbc2c22]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (size < 0) {
         return PyErr_Format(PyExc_ValueError,
                             "negative argument not allowed");
@@ -15264,6 +15640,7 @@ static PyObject *
 os_memfd_create_impl(PyObject *module, PyObject *name, unsigned int flags)
 /*[clinic end generated code: output=6681ede983bdb9a6 input=cd0eb092cfac474b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int fd;
     const char *bytes = PyBytes_AS_STRING(name);
     Py_BEGIN_ALLOW_THREADS
@@ -15291,6 +15668,8 @@ os_eventfd_impl(PyObject *module, unsigned int initval, int flags)
 /*[clinic end generated code: output=ce9c9bbd1446f2de input=66203e3c50c4028b]*/
 
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* initval is limited to uint32_t, internal counter is uint64_t */
     int fd;
     Py_BEGIN_ALLOW_THREADS
@@ -15314,6 +15693,7 @@ static PyObject *
 os_eventfd_read_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=8f2c7b59a3521fd1 input=110f8b57fa596afe]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     eventfd_t value;
     int result;
     Py_BEGIN_ALLOW_THREADS
@@ -15338,6 +15718,7 @@ static PyObject *
 os_eventfd_write_impl(PyObject *module, int fd, unsigned long long value)
 /*[clinic end generated code: output=bebd9040bbf987f5 input=156de8555be5a949]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     Py_BEGIN_ALLOW_THREADS
     result = eventfd_write(fd, value);
@@ -15393,6 +15774,7 @@ static PyObject *
 os_get_terminal_size_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=fbab93acef980508 input=ead5679b82ddb920]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int columns, lines;
     PyObject *termsize;
 
@@ -15441,9 +15823,11 @@ os_get_terminal_size_impl(PyObject *module, int fd)
     do {                                                     \
         PyObject *item = (CALL);                             \
         if (item == NULL) {                                  \
+            assert(PyRegion_IsLocal(termsize));              \
             Py_DECREF(termsize);                             \
             return NULL;                                     \
         }                                                    \
+        assert(PyRegion_IsLocal(termsize));                  \
         PyStructSequence_SET_ITEM(termsize, pos++, item);    \
     } while(0)
 
@@ -15467,6 +15851,7 @@ static PyObject *
 os_cpu_count_impl(PyObject *module)
 /*[clinic end generated code: output=5fc29463c3936a9c input=ba2f6f8980a0e2eb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const PyConfig *config = _Py_GetConfig();
     if (config->cpu_count > 0) {
         return PyLong_FromLong(config->cpu_count);
@@ -15522,6 +15907,7 @@ static int
 os_get_inheritable_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=0445e20e149aa5b8 input=89ac008dc9ab6b95]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int return_value;
     _Py_BEGIN_SUPPRESS_IPH
     return_value = _Py_get_inheritable(fd);
@@ -15543,6 +15929,7 @@ static PyObject *
 os_set_inheritable_impl(PyObject *module, int fd, int inheritable)
 /*[clinic end generated code: output=f1b1918a2f3c38c2 input=9ceaead87a1e2402]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
     _Py_BEGIN_SUPPRESS_IPH
@@ -15571,6 +15958,7 @@ static int
 os_get_handle_inheritable_impl(PyObject *module, intptr_t handle)
 /*[clinic end generated code: output=36be5afca6ea84d8 input=cfe99f9c05c70ad1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DWORD flags;
 
     if (!GetHandleInformation((HANDLE)handle, &flags)) {
@@ -15596,6 +15984,7 @@ os_set_handle_inheritable_impl(PyObject *module, intptr_t handle,
                                int inheritable)
 /*[clinic end generated code: output=021d74fe6c96baa3 input=7a7641390d8364fc]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DWORD flags = inheritable ? HANDLE_FLAG_INHERIT : 0;
     if (!SetHandleInformation((HANDLE)handle, HANDLE_FLAG_INHERIT, flags)) {
         PyErr_SetFromWindowsErr(0);
@@ -15619,6 +16008,7 @@ static int
 os_get_blocking_impl(PyObject *module, int fd)
 /*[clinic end generated code: output=336a12ad76a61482 input=f4afb59d51560179]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int blocking;
 
     _Py_BEGIN_SUPPRESS_IPH
@@ -15643,6 +16033,7 @@ static PyObject *
 os_set_blocking_impl(PyObject *module, int fd, int blocking)
 /*[clinic end generated code: output=384eb43aa0762a9d input=7e9dfc9b14804dd4]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
 
     _Py_BEGIN_SUPPRESS_IPH
@@ -15684,14 +16075,16 @@ typedef struct {
 static void
 DirEntry_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DirEntry *entry = DirEntry_CAST(op);
     PyTypeObject *tp = Py_TYPE(entry);
-    Py_XDECREF(entry->name);
-    Py_XDECREF(entry->path);
-    Py_XDECREF(entry->stat);
-    Py_XDECREF(entry->lstat);
+    PyRegion_CLEAR(entry, entry->name);
+    PyRegion_CLEAR(entry, entry->path);
+    PyRegion_CLEAR(entry, entry->stat);
+    PyRegion_CLEAR(entry, entry->lstat);
     freefunc free_func = PyType_GetSlot(tp, Py_tp_free);
     free_func(entry);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
@@ -15712,6 +16105,7 @@ static int
 os_DirEntry_is_symlink_impl(DirEntry *self, PyTypeObject *defining_class)
 /*[clinic end generated code: output=293096d589b6d47c input=e9acc5ee4d511113]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     return (self->win32_lstat.st_mode & S_IFMT) == S_IFLNK;
 #elif defined(HAVE_DIRENT_D_TYPE)
@@ -15736,6 +16130,7 @@ static int
 os_DirEntry_is_junction_impl(DirEntry *self)
 /*[clinic end generated code: output=97f64d5d99eeccb5 input=4fc8e701eea118a1]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     return self->win32_lstat.st_reparse_tag == IO_REPARSE_TAG_MOUNT_POINT;
 #else
@@ -15746,6 +16141,7 @@ os_DirEntry_is_junction_impl(DirEntry *self)
 static PyObject *
 DirEntry_fetch_stat(PyObject *module, DirEntry *self, int follow_symlinks)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int result;
     STRUCT_STAT st;
     PyObject *ub;
@@ -15754,7 +16150,7 @@ DirEntry_fetch_stat(PyObject *module, DirEntry *self, int follow_symlinks)
     if (!PyUnicode_FSDecoder(self->path, &ub))
         return NULL;
     wchar_t *path = PyUnicode_AsWideCharString(ub, NULL);
-    Py_DECREF(ub);
+    PyRegion_CLEARLOCAL(ub);
 #else /* POSIX */
     if (!PyUnicode_FSConverter(self->path, &ub))
         return NULL;
@@ -15770,7 +16166,7 @@ DirEntry_fetch_stat(PyObject *module, DirEntry *self, int follow_symlinks)
 
 #endif /* HAVE_FSTATAT */
       {
-        Py_DECREF(ub);
+        PyRegion_CLEARLOCAL(ub);
         PyErr_SetString(PyExc_NotImplementedError, "can't fetch stat");
         return NULL;
       }
@@ -15792,7 +16188,7 @@ DirEntry_fetch_stat(PyObject *module, DirEntry *self, int follow_symlinks)
 #if defined(MS_WINDOWS)
     PyMem_Free(path);
 #else
-    Py_DECREF(ub);
+    PyRegion_CLEARLOCAL(ub);
 #endif
 
     if (result != 0) {
@@ -15807,15 +16203,20 @@ DirEntry_fetch_stat(PyObject *module, DirEntry *self, int follow_symlinks)
 static PyObject *
 DirEntry_get_lstat(PyTypeObject *defining_class, DirEntry *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!self->lstat) {
         PyObject *module = PyType_GetModule(defining_class);
 #ifdef MS_WINDOWS
-        self->lstat = _pystat_fromstructstat(module, &self->win32_lstat);
+        PyObject *lstat = _pystat_fromstructstat(module, &self->win32_lstat);
 #else /* POSIX */
-        self->lstat = DirEntry_fetch_stat(module, self, 0);
+        PyObject *lstat = DirEntry_fetch_stat(module, self, 0);
 #endif
+        if (PyRegion_XSETREF(self, self->lstat, lstat)) {
+            PyRegion_CLEARLOCAL(lstat);
+            return NULL;
+        }
     }
-    return Py_XNewRef(self->lstat);
+    return PyRegion_XNewRef(self->lstat);
 }
 
 /*[clinic input]
@@ -15833,6 +16234,7 @@ os_DirEntry_stat_impl(DirEntry *self, PyTypeObject *defining_class,
                       int follow_symlinks)
 /*[clinic end generated code: output=23f803e19c3e780e input=e816273c4e67ee98]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!follow_symlinks) {
         return DirEntry_get_lstat(defining_class, self);
     }
@@ -15842,16 +16244,21 @@ os_DirEntry_stat_impl(DirEntry *self, PyTypeObject *defining_class,
         if (result == -1) {
             return NULL;
         }
+        PyObject *stat;
         if (result) {
             PyObject *module = PyType_GetModule(defining_class);
-            self->stat = DirEntry_fetch_stat(module, self, 1);
+            stat = DirEntry_fetch_stat(module, self, 1);
         }
         else {
-            self->stat = DirEntry_get_lstat(defining_class, self);
+            stat = DirEntry_get_lstat(defining_class, self);
+        }
+        if (PyRegion_SETREF(self, self->stat, stat)) {
+            PyRegion_CLEARLOCAL(stat);
+            return NULL;
         }
     }
 
-    return Py_XNewRef(self->stat);
+    return PyRegion_XNewRef(self->stat);
 }
 
 /* Set exception and return -1 on error, 0 for False, 1 for True */
@@ -15859,6 +16266,7 @@ static int
 DirEntry_test_mode(PyTypeObject *defining_class, DirEntry *self,
                    int follow_symlinks, unsigned short mode_bits)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *stat = NULL;
     PyObject *st_mode = NULL;
     long mode;
@@ -15900,8 +16308,8 @@ DirEntry_test_mode(PyTypeObject *defining_class, DirEntry *self,
         mode = PyLong_AsLong(st_mode);
         if (mode == -1 && PyErr_Occurred())
             goto error;
-        Py_CLEAR(st_mode);
-        Py_CLEAR(stat);
+        PyRegion_CLEARLOCAL(st_mode);
+        PyRegion_CLEARLOCAL(stat);
         result = (mode & S_IFMT) == mode_bits;
 #if defined(MS_WINDOWS) || defined(HAVE_DIRENT_D_TYPE)
     }
@@ -15929,8 +16337,8 @@ DirEntry_test_mode(PyTypeObject *defining_class, DirEntry *self,
     return result;
 
 error:
-    Py_XDECREF(st_mode);
-    Py_XDECREF(stat);
+    PyRegion_CLEARLOCAL(st_mode);
+    PyRegion_CLEARLOCAL(stat);
     return -1;
 }
 
@@ -15949,6 +16357,7 @@ os_DirEntry_is_dir_impl(DirEntry *self, PyTypeObject *defining_class,
                         int follow_symlinks)
 /*[clinic end generated code: output=0cd453b9c0987fdf input=1a4ffd6dec9920cb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return DirEntry_test_mode(defining_class, self, follow_symlinks, S_IFDIR);
 }
 
@@ -15967,6 +16376,7 @@ os_DirEntry_is_file_impl(DirEntry *self, PyTypeObject *defining_class,
                          int follow_symlinks)
 /*[clinic end generated code: output=f7c277ab5ba80908 input=0a64c5a12e802e3b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return DirEntry_test_mode(defining_class, self, follow_symlinks, S_IFREG);
 }
 
@@ -15980,6 +16390,7 @@ static PyObject *
 os_DirEntry_inode_impl(DirEntry *self)
 /*[clinic end generated code: output=156bb3a72162440e input=3ee7b872ae8649f0]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef MS_WINDOWS
     if (!self->got_file_index) {
         PyObject *unicode;
@@ -15989,6 +16400,7 @@ os_DirEntry_inode_impl(DirEntry *self)
         if (!PyUnicode_FSDecoder(self->path, &unicode))
             return NULL;
         wchar_t *path = PyUnicode_AsWideCharString(unicode, NULL);
+        assert(!PyRegion_NeedsReadBarrier(unicode));
         Py_DECREF(unicode);
         result = LSTAT(path, &stat);
 
@@ -16015,6 +16427,7 @@ os_DirEntry_inode_impl(DirEntry *self)
 static PyObject *
 DirEntry_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DirEntry *self = DirEntry_CAST(op);
     return PyUnicode_FromFormat("<DirEntry %R>", self->name);
 }
@@ -16029,7 +16442,8 @@ static PyObject *
 os_DirEntry___fspath___impl(DirEntry *self)
 /*[clinic end generated code: output=6dd7f7ef752e6f4f input=3c49d0cf38df4fac]*/
 {
-    return Py_NewRef(self->path);
+    // Pyrona: This functions was checked and no further migration is needed
+    return PyRegion_NewRef(self->path);
 }
 
 static PyMemberDef DirEntry_members[] = {
@@ -16071,7 +16485,8 @@ static PyType_Spec DirEntryType_spec = {
         | Py_TPFLAGS_DISALLOW_INSTANTIATION
         | Py_TPFLAGS_IMMUTABLETYPE
     ),
-    .slots = DirEntryType_slots
+    .slots = DirEntryType_slots,
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
@@ -16080,6 +16495,7 @@ static PyType_Spec DirEntryType_spec = {
 static wchar_t *
 join_path_filenameW(const wchar_t *path_wide, const wchar_t *filename)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t path_len;
     Py_ssize_t size;
     wchar_t *result;
@@ -16113,6 +16529,7 @@ join_path_filenameW(const wchar_t *path_wide, const wchar_t *filename)
 static PyObject *
 DirEntry_from_find_data(PyObject *module, path_t *path, WIN32_FIND_DATAW *dataW)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DirEntry *entry;
     BY_HANDLE_FILE_INFORMATION file_info;
     ULONG reparse_tag;
@@ -16133,7 +16550,9 @@ DirEntry_from_find_data(PyObject *module, path_t *path, WIN32_FIND_DATAW *dataW)
         goto error;
     int return_bytes = path->wide && PyBytes_Check(path->object);
     if (return_bytes) {
-        Py_SETREF(entry->name, PyUnicode_EncodeFSDefault(entry->name));
+        if (PyRegion_XSETREF(entry, entry->name, PyUnicode_EncodeFSDefault(entry->name))) {
+            goto error;
+        }
         if (!entry->name)
             goto error;
     }
@@ -16147,7 +16566,9 @@ DirEntry_from_find_data(PyObject *module, path_t *path, WIN32_FIND_DATAW *dataW)
     if (!entry->path)
         goto error;
     if (return_bytes) {
-        Py_SETREF(entry->path, PyUnicode_EncodeFSDefault(entry->path));
+        if (PyRegion_XSETREF(entry, entry->path, PyUnicode_EncodeFSDefault(entry->path))) {
+            goto error;
+        }
         if (!entry->path)
             goto error;
     }
@@ -16162,7 +16583,7 @@ DirEntry_from_find_data(PyObject *module, path_t *path, WIN32_FIND_DATAW *dataW)
     return (PyObject *)entry;
 
 error:
-    Py_DECREF(entry);
+    PyRegion_CLEARLOCAL(entry);
     return NULL;
 }
 
@@ -16171,6 +16592,7 @@ error:
 static char *
 join_path_filename(const char *path_narrow, const char* filename, Py_ssize_t filename_len)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t path_len;
     Py_ssize_t size;
     char *result;
@@ -16208,6 +16630,7 @@ DirEntry_from_posix_info(PyObject *module, path_t *path, const char *name,
 #endif
                          )
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DirEntry *entry;
     char *joined_path;
 
@@ -16246,7 +16669,9 @@ DirEntry_from_posix_info(PyObject *module, path_t *path, const char *name,
         goto error;
 
     if (path->fd != -1) {
-        entry->path = Py_NewRef(entry->name);
+        if (PyRegion_SETNEWREF(entry, entry->path, entry->name)) {
+            goto error;
+        }
     }
     else if (!entry->path)
         goto error;
@@ -16259,6 +16684,7 @@ DirEntry_from_posix_info(PyObject *module, path_t *path, const char *name,
     return (PyObject *)entry;
 
 error:
+    assert(!PyRegion_NeedsReadBarrier(entry));
     Py_XDECREF(entry);
     return NULL;
 }
@@ -16288,12 +16714,14 @@ typedef struct {
 static int
 ScandirIterator_is_closed(ScandirIterator *iterator)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return iterator->handle == INVALID_HANDLE_VALUE;
 }
 
 static void
 ScandirIterator_closedir(ScandirIterator *iterator)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     HANDLE handle = iterator->handle;
 
     if (handle == INVALID_HANDLE_VALUE)
@@ -16308,6 +16736,7 @@ ScandirIterator_closedir(ScandirIterator *iterator)
 static PyObject *
 ScandirIterator_iternext(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ScandirIterator *iterator = ScandirIterator_CAST(op);
     WIN32_FIND_DATAW *file_data = &iterator->file_data;
     BOOL success;
@@ -16355,12 +16784,14 @@ ScandirIterator_iternext(PyObject *op)
 static int
 ScandirIterator_is_closed(ScandirIterator *iterator)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return !iterator->dirp;
 }
 
 static void
 ScandirIterator_closedir(ScandirIterator *iterator)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DIR *dirp = iterator->dirp;
 
     if (!dirp)
@@ -16380,6 +16811,7 @@ ScandirIterator_closedir(ScandirIterator *iterator)
 static PyObject *
 ScandirIterator_iternext(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ScandirIterator *iterator = ScandirIterator_CAST(op);
     struct dirent *direntp;
     Py_ssize_t name_len;
@@ -16434,6 +16866,7 @@ ScandirIterator_iternext(PyObject *op)
 static PyObject *
 ScandirIterator_close(PyObject *op, PyObject *Py_UNUSED(dummy))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ScandirIterator *self = ScandirIterator_CAST(op);
     ScandirIterator_closedir(self);
     Py_RETURN_NONE;
@@ -16442,12 +16875,14 @@ ScandirIterator_close(PyObject *op, PyObject *Py_UNUSED(dummy))
 static PyObject *
 ScandirIterator_enter(PyObject *self, PyObject *Py_UNUSED(dummy))
 {
-    return Py_NewRef(self);
+    // Pyrona: This functions was checked and no further migration is needed
+    return PyRegion_NewRef(self);
 }
 
 static PyObject *
 ScandirIterator_exit(PyObject *op, PyObject *Py_UNUSED(args))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ScandirIterator *self = ScandirIterator_CAST(op);
     ScandirIterator_closedir(self);
     Py_RETURN_NONE;
@@ -16456,6 +16891,7 @@ ScandirIterator_exit(PyObject *op, PyObject *Py_UNUSED(args))
 static void
 ScandirIterator_finalize(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ScandirIterator *iterator = ScandirIterator_CAST(op);
     /* Save the current exception, if any. */
     PyObject *exc = PyErr_GetRaisedException();
@@ -16483,12 +16919,14 @@ ScandirIterator_finalize(PyObject *op)
 static void
 ScandirIterator_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTypeObject *tp = Py_TYPE(op);
     if (PyObject_CallFinalizerFromDealloc(op) < 0)
         return;
 
     freefunc free_func = PyType_GetSlot(tp, Py_tp_free);
     free_func(op);
+    assert(!PyRegion_NeedsReadBarrier(tp));
     Py_DECREF(tp);
 }
 
@@ -16505,6 +16943,7 @@ static PyType_Slot ScandirIteratorType_slots[] = {
     {Py_tp_iter, PyObject_SelfIter},
     {Py_tp_iternext, ScandirIterator_iternext},
     {Py_tp_methods, ScandirIterator_methods},
+    {Py_tp_reachable, _PyObject_ReachableVisitType},
     {0, 0},
 };
 
@@ -16519,7 +16958,8 @@ static PyType_Spec ScandirIteratorType_spec = {
         | Py_TPFLAGS_DISALLOW_INSTANTIATION
         | Py_TPFLAGS_IMMUTABLETYPE
     ),
-    .slots = ScandirIteratorType_slots
+    .slots = ScandirIteratorType_slots,
+    .flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 /*[clinic input]
@@ -16540,6 +16980,7 @@ static PyObject *
 os_scandir_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=6eb2668b675ca89e input=6bdd312708fc3bb0]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     ScandirIterator *iterator;
 #ifdef MS_WINDOWS
     wchar_t *path_strW;
@@ -16635,6 +17076,7 @@ os_scandir_impl(PyObject *module, path_t *path)
     return (PyObject *)iterator;
 
 error:
+    assert(!PyRegion_NeedsReadBarrier(iterator));
     Py_DECREF(iterator);
     return NULL;
 }
@@ -16649,13 +17091,15 @@ error:
 PyObject *
 PyOS_FSPath(PyObject *path)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* For error message reasons, this function is manually inlined in
        path_converter(). */
     PyObject *func = NULL;
     PyObject *path_repr = NULL;
 
     if (PyUnicode_Check(path) || PyBytes_Check(path)) {
-        return Py_NewRef(path);
+        return PyRegion_NewRef(path);
     }
 
     func = _PyObject_LookupSpecial(path, &_Py_ID(__fspath__));
@@ -16667,7 +17111,7 @@ PyOS_FSPath(PyObject *path)
     }
 
     path_repr = _PyObject_CallNoArgs(func);
-    Py_DECREF(func);
+    PyRegion_CLEARLOCAL(func);
     if (NULL == path_repr) {
         return NULL;
     }
@@ -16677,7 +17121,7 @@ PyOS_FSPath(PyObject *path)
                      "expected %.200s.__fspath__() to return str or bytes, "
                      "not %.200s", _PyType_Name(Py_TYPE(path)),
                      _PyType_Name(Py_TYPE(path_repr)));
-        Py_DECREF(path_repr);
+        PyRegion_CLEARLOCAL(path_repr);
         return NULL;
     }
 
@@ -16701,6 +17145,7 @@ static PyObject *
 os_fspath_impl(PyObject *module, PyObject *path)
 /*[clinic end generated code: output=c3c3b78ecff2914f input=f608743e60a3211e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyOS_FSPath(path);
 }
 
@@ -16718,6 +17163,7 @@ static PyObject *
 os_getrandom_impl(PyObject *module, Py_ssize_t size, int flags)
 /*[clinic end generated code: output=b3a618196a61409c input=59bafac39c594947]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (size < 0) {
         errno = EINVAL;
         return posix_error();
@@ -16781,6 +17227,7 @@ static PyObject *
 os__add_dll_directory_impl(PyObject *module, path_t *path)
 /*[clinic end generated code: output=80b025daebb5d683 input=1de3e6c13a5808c8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DLL_DIRECTORY_COOKIE cookie = 0;
     DWORD err = 0;
 
@@ -16818,6 +17265,7 @@ static PyObject *
 os__remove_dll_directory_impl(PyObject *module, PyObject *cookie)
 /*[clinic end generated code: output=594350433ae535bc input=c1d16a7e7d9dc5dc]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     DLL_DIRECTORY_COOKIE cookieValue;
     DWORD err = 0;
 
@@ -16882,6 +17330,7 @@ static PyObject *
 os_waitstatus_to_exitcode_impl(PyObject *module, PyObject *status_obj)
 /*[clinic end generated code: output=db50b1b0ba3c7153 input=7fe2d7fdaea3db42]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifndef MS_WINDOWS
     int status = PyLong_AsInt(status_obj);
     if (status == -1 && PyErr_Occurred()) {
@@ -16954,6 +17403,7 @@ static PyObject *
 os__supports_virtual_terminal_impl(PyObject *module)
 /*[clinic end generated code: output=bd0556a6d9d99fe6 input=0752c98e5d321542]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef HAVE_WINDOWS_CONSOLE_IO
     DWORD mode = 0;
     HANDLE handle = GetStdHandle(STD_ERROR_HANDLE);
@@ -16977,6 +17427,7 @@ static PyObject *
 os__inputhook_impl(PyObject *module)
 /*[clinic end generated code: output=525aca4ef3c6149f input=fc531701930d064f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
      int result = 0;
      if (PyOS_InputHook) {
          Py_BEGIN_ALLOW_THREADS;
@@ -16996,6 +17447,7 @@ static PyObject *
 os__is_inputhook_installed_impl(PyObject *module)
 /*[clinic end generated code: output=3b3eab4f672c689a input=ff177c9938dd76d8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyBool_FromLong(PyOS_InputHook != NULL);
 }
 
@@ -17009,6 +17461,7 @@ static PyObject *
 os__create_environ_impl(PyObject *module)
 /*[clinic end generated code: output=19d9039ab14f8ad4 input=a4c05686b34635e8]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return convertenviron();
 }
 
@@ -17024,6 +17477,7 @@ static PyObject *
 os__emscripten_debugger_impl(PyObject *module)
 /*[clinic end generated code: output=ad47dc3bf0661343 input=d814b1877fb6083a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     emscripten_debugger();
     Py_RETURN_NONE;
 }
@@ -17043,6 +17497,7 @@ static PyObject *
 os__emscripten_log_impl(PyObject *module, const char *arg)
 /*[clinic end generated code: output=9749e5e293c42784 input=350aa1f70bc1e905]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     emscripten_log_impl_js(arg);
     Py_RETURN_NONE;
 }
@@ -18149,6 +18604,7 @@ static const struct have_function {
 static int
 posixmodule_exec(PyObject *m)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _posixstate *state = get_posix_state(m);
 
 #if defined(HAVE_PWRITEV)
@@ -18289,6 +18745,7 @@ posixmodule_exec(PyObject *m)
             return -1;
         if (PyList_Append(list, unicode))
             return -1;
+        assert(!PyRegion_NeedsReadBarrier(unicode));
         Py_DECREF(unicode);
     }
 
@@ -18309,6 +18766,7 @@ static PyModuleDef_Slot posixmodile_slots[] = {
     {Py_mod_exec, posixmodule_exec},
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
     {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+    {Py_mod_pyrona, Py_MOD_PYRONA_AWARE},
     {0, NULL}
 };
 
