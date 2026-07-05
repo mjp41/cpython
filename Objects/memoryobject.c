@@ -71,6 +71,7 @@ class memoryview "PyMemoryViewObject *" "&PyMemoryView_Type"
 static inline _PyManagedBufferObject *
 mbuf_alloc(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf;
 
     mbuf = (_PyManagedBufferObject *)
@@ -88,6 +89,7 @@ mbuf_alloc(void)
 static PyObject *
 _PyManagedBuffer_FromObject(PyObject *base, int flags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf;
 
     mbuf = mbuf_alloc();
@@ -96,14 +98,14 @@ _PyManagedBuffer_FromObject(PyObject *base, int flags)
 
     if (PyObject_GetBuffer(base, &mbuf->master, flags) < 0) {
         mbuf->master.obj = NULL;
-        Py_DECREF(mbuf);
+        PyRegion_CLEARLOCAL(mbuf);
         return NULL;
     }
 
     if(_Py_IsImmutable(base)){
         if(_PyImmutability_Freeze(_PyObject_CAST(mbuf)) < 0){
             PyBuffer_Release(&mbuf->master);
-            Py_DECREF(mbuf);
+            PyRegion_CLEARLOCAL(mbuf);
             return NULL;
         }
     }
@@ -114,6 +116,7 @@ _PyManagedBuffer_FromObject(PyObject *base, int flags)
 static void
 mbuf_release(_PyManagedBufferObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (self->flags&_Py_MANAGED_BUFFER_RELEASED)
         return;
 
@@ -129,17 +132,28 @@ mbuf_release(_PyManagedBufferObject *self)
 static void
 mbuf_dealloc(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *self = (_PyManagedBufferObject *)_self;
     assert(self->exports == 0);
     mbuf_release(self);
     if (self->flags&_Py_MANAGED_BUFFER_FREE_FORMAT)
         PyMem_Free(self->master.format);
+    // Regions: Freezing removes a managed buffer from the GC list, and the
+    // deallocation of a frozen object re-inserts it into the local GC list. If
+    // the buffer was already released earlier (the RELEASED flag is set),
+    // mbuf_release() above returns early and never untracks it, so the
+    // re-inserted object would reach PyObject_GC_Del() still tracked. Untrack it
+    // here to keep the GC list consistent.
+    if (_PyObject_GC_IS_TRACKED(self)) {
+        _PyObject_GC_UNTRACK(self);
+    }
     PyObject_GC_Del(self);
 }
 
 static int
 mbuf_traverse(PyObject *_self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *self = (_PyManagedBufferObject *)_self;
     Py_VISIT(self->master.obj);
     return 0;
@@ -148,6 +162,7 @@ mbuf_traverse(PyObject *_self, visitproc visit, void *arg)
 static int
 mbuf_clear(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *self = (_PyManagedBufferObject *)_self;
     assert(self->exports >= 0);
     mbuf_release(self);
@@ -179,6 +194,7 @@ PyTypeObject _PyManagedBuffer_Type = {
     mbuf_traverse,                           /* tp_traverse */
     mbuf_clear,                              /* tp_clear */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 
@@ -282,6 +298,7 @@ PyTypeObject _PyManagedBuffer_Type = {
 static inline int
 last_dim_is_contiguous(const Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(dest->ndim > 0 && src->ndim > 0);
     return (!HAVE_SUBOFFSETS_IN_LAST_DIM(dest) &&
             !HAVE_SUBOFFSETS_IN_LAST_DIM(src) &&
@@ -298,6 +315,7 @@ last_dim_is_contiguous(const Py_buffer *dest, const Py_buffer *src)
 static inline int
 equiv_format(const Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *dfmt, *sfmt;
 
     assert(dest->format && src->format);
@@ -318,6 +336,7 @@ equiv_format(const Py_buffer *dest, const Py_buffer *src)
 static inline int
 equiv_shape(const Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int i;
 
     if (dest->ndim != src->ndim)
@@ -338,6 +357,7 @@ equiv_shape(const Py_buffer *dest, const Py_buffer *src)
 static int
 equiv_structure(const Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!equiv_format(dest, src) ||
         !equiv_shape(dest, src)) {
         PyErr_SetString(PyExc_ValueError,
@@ -358,6 +378,7 @@ copy_base(const Py_ssize_t *shape, Py_ssize_t itemsize,
           char *sptr, const Py_ssize_t *sstrides, const Py_ssize_t *ssuboffsets,
           char *mem)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (mem == NULL) { /* contiguous */
         Py_ssize_t size = shape[0] * itemsize;
         if (dptr + size < sptr || sptr + size < dptr)
@@ -388,6 +409,7 @@ copy_rec(const Py_ssize_t *shape, Py_ssize_t ndim, Py_ssize_t itemsize,
          char *sptr, const Py_ssize_t *sstrides, const Py_ssize_t *ssuboffsets,
          char *mem)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
 
     assert(ndim >= 1);
@@ -415,6 +437,7 @@ copy_rec(const Py_ssize_t *shape, Py_ssize_t ndim, Py_ssize_t itemsize,
 static int
 copy_single(PyMemoryViewObject *self, const Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_RELEASED_INT_AGAIN(self);
     char *mem = NULL;
 
@@ -448,6 +471,7 @@ copy_single(PyMemoryViewObject *self, const Py_buffer *dest, const Py_buffer *sr
 static int
 copy_buffer(const Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char *mem = NULL;
 
     assert(dest->ndim > 0);
@@ -478,6 +502,7 @@ copy_buffer(const Py_buffer *dest, const Py_buffer *src)
 static inline void
 init_strides_from_shape(Py_buffer *view)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
 
     assert(view->ndim > 0);
@@ -491,6 +516,7 @@ init_strides_from_shape(Py_buffer *view)
 static inline void
 init_fortran_strides_from_shape(Py_buffer *view)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
 
     assert(view->ndim > 0);
@@ -506,6 +532,7 @@ init_fortran_strides_from_shape(Py_buffer *view)
 static int
 buffer_to_contiguous(char *mem, const Py_buffer *src, char order)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer dest;
     Py_ssize_t *strides;
     int ret;
@@ -553,6 +580,7 @@ buffer_to_contiguous(char *mem, const Py_buffer *src, char order)
 static inline void
 init_shared_values(Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     dest->obj = src->obj;
     dest->buf = src->buf;
     dest->len = src->len;
@@ -566,6 +594,7 @@ init_shared_values(Py_buffer *dest, const Py_buffer *src)
 static void
 init_shape_strides(Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
 
     if (src->ndim == 0) {
@@ -593,6 +622,7 @@ init_shape_strides(Py_buffer *dest, const Py_buffer *src)
 static inline void
 init_suboffsets(Py_buffer *dest, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
 
     if (src->suboffsets == NULL) {
@@ -607,6 +637,7 @@ init_suboffsets(Py_buffer *dest, const Py_buffer *src)
 static inline void
 init_len(Py_buffer *view)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i, len;
 
     len = 1;
@@ -621,6 +652,7 @@ init_len(Py_buffer *view)
 static void
 init_flags(PyMemoryViewObject *mv)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const Py_buffer *view = &mv->view;
     int flags = 0;
 
@@ -654,6 +686,7 @@ init_flags(PyMemoryViewObject *mv)
 static inline PyMemoryViewObject *
 memory_alloc(int ndim)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *mv;
 
     mv = (PyMemoryViewObject *)
@@ -686,6 +719,7 @@ memory_alloc(int ndim)
 static PyObject *
 mbuf_add_view(_PyManagedBufferObject *mbuf, const Py_buffer *src)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *mv;
     Py_buffer *dest;
 
@@ -709,7 +743,8 @@ mbuf_add_view(_PyManagedBufferObject *mbuf, const Py_buffer *src)
     init_suboffsets(dest, src);
     init_flags(mv);
 
-    mv->mbuf = (_PyManagedBufferObject*)Py_NewRef(mbuf);
+    assert(PyRegion_IsLocal(mv));
+    mv->mbuf = (_PyManagedBufferObject*)PyRegion_NewRef(mbuf);
     mbuf->exports++;
 
     return (PyObject *)mv;
@@ -724,6 +759,7 @@ static PyObject *
 mbuf_add_incomplete_view(_PyManagedBufferObject *mbuf, const Py_buffer *src,
                          int ndim)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *mv;
     Py_buffer *dest;
 
@@ -739,7 +775,7 @@ mbuf_add_incomplete_view(_PyManagedBufferObject *mbuf, const Py_buffer *src,
     dest = &mv->view;
     init_shared_values(dest, src);
 
-    mv->mbuf = (_PyManagedBufferObject*)Py_NewRef(mbuf);
+    mv->mbuf = (_PyManagedBufferObject*)PyRegion_NewRef(mbuf);
     mbuf->exports++;
 
     return (PyObject *)mv;
@@ -751,6 +787,7 @@ mbuf_add_incomplete_view(_PyManagedBufferObject *mbuf, const Py_buffer *src,
 PyObject *
 PyMemoryView_FromMemory(char *mem, Py_ssize_t size, int flags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf;
     PyObject *mv;
     int readonly;
@@ -767,7 +804,7 @@ PyMemoryView_FromMemory(char *mem, Py_ssize_t size, int flags)
                             PyBUF_FULL_RO);
 
     mv = mbuf_add_view(mbuf, NULL);
-    Py_DECREF(mbuf);
+    PyRegion_CLEARLOCAL(mbuf);
 
     return mv;
 }
@@ -780,6 +817,7 @@ PyMemoryView_FromMemory(char *mem, Py_ssize_t size, int flags)
 PyObject *
 PyMemoryView_FromBuffer(const Py_buffer *info)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf;
     PyObject *mv;
 
@@ -799,7 +837,7 @@ PyMemoryView_FromBuffer(const Py_buffer *info)
     mbuf->master.obj = NULL;
 
     mv = mbuf_add_view(mbuf, NULL);
-    Py_DECREF(mbuf);
+    PyRegion_CLEARLOCAL(mbuf);
 
     return mv;
 }
@@ -811,6 +849,7 @@ PyMemoryView_FromBuffer(const Py_buffer *info)
 static PyObject *
 PyMemoryView_FromObjectAndFlags(PyObject *v, int flags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf;
 
     if (PyMemoryView_Check(v)) {
@@ -825,7 +864,7 @@ PyMemoryView_FromObjectAndFlags(PyObject *v, int flags)
         if (mbuf == NULL)
             return NULL;
         ret = mbuf_add_view(mbuf, NULL);
-        Py_DECREF(mbuf);
+        PyRegion_CLEARLOCAL(mbuf);
         return ret;
     }
 
@@ -842,19 +881,23 @@ PyMemoryView_FromObjectAndFlags(PyObject *v, int flags)
 PyObject *
 _PyMemoryView_FromBufferProc(PyObject *v, int flags, getbufferproc bufferproc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf = mbuf_alloc();
     if (mbuf == NULL)
         return NULL;
 
+    // TODO(regions): xFrednet: This calls the bufferproc function which could
+    // come from anywhere and do anything. We really need to figure out how
+    // we trat such cases.
     int res = bufferproc(v, &mbuf->master, flags);
     if (res < 0) {
         mbuf->master.obj = NULL;
-        Py_DECREF(mbuf);
+        PyRegion_CLEARLOCAL(mbuf);
         return NULL;
     }
 
     PyObject *ret = mbuf_add_view(mbuf, NULL);
-    Py_DECREF(mbuf);
+    PyRegion_CLEARLOCAL(mbuf);
     return ret;
 }
 
@@ -864,6 +907,7 @@ _PyMemoryView_FromBufferProc(PyObject *v, int flags, getbufferproc bufferproc)
 PyObject *
 PyMemoryView_FromObject(PyObject *v)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyMemoryView_FromObjectAndFlags(v, PyBUF_FULL_RO);
 }
 
@@ -871,6 +915,7 @@ PyMemoryView_FromObject(PyObject *v)
 static int
 mbuf_copy_format(_PyManagedBufferObject *mbuf, const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (fmt != NULL) {
         char *cp = PyMem_Malloc(strlen(fmt)+1);
         if (cp == NULL) {
@@ -899,6 +944,7 @@ mbuf_copy_format(_PyManagedBufferObject *mbuf, const char *fmt)
 static PyObject *
 memory_from_contiguous_copy(const Py_buffer *src, char order)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     _PyManagedBufferObject *mbuf;
     PyMemoryViewObject *mv;
     PyObject *bytes;
@@ -913,17 +959,17 @@ memory_from_contiguous_copy(const Py_buffer *src, char order)
         return NULL;
 
     mbuf = (_PyManagedBufferObject *)_PyManagedBuffer_FromObject(bytes, PyBUF_FULL_RO);
-    Py_DECREF(bytes);
+    PyRegion_CLEARLOCAL(bytes);
     if (mbuf == NULL)
         return NULL;
 
     if (mbuf_copy_format(mbuf, src->format) < 0) {
-        Py_DECREF(mbuf);
+        PyRegion_CLEARLOCAL(mbuf);
         return NULL;
     }
 
     mv = (PyMemoryViewObject *)mbuf_add_incomplete_view(mbuf, NULL, src->ndim);
-    Py_DECREF(mbuf);
+    PyRegion_CLEARLOCAL(mbuf);
     if (mv == NULL)
         return NULL;
 
@@ -949,7 +995,7 @@ memory_from_contiguous_copy(const Py_buffer *src, char order)
     init_flags(mv);
 
     if (copy_buffer(dest, src) < 0) {
-        Py_DECREF(mv);
+        PyRegion_CLEARLOCAL(mv);
         return NULL;
     }
 
@@ -976,6 +1022,7 @@ memory_from_contiguous_copy(const Py_buffer *src, char order)
 PyObject *
 PyMemoryView_GetContiguous(PyObject *obj, int buffertype, char order)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *mv;
     PyObject *ret;
     Py_buffer *view;
@@ -991,7 +1038,7 @@ PyMemoryView_GetContiguous(PyObject *obj, int buffertype, char order)
     if (buffertype == PyBUF_WRITE && view->readonly) {
         PyErr_SetString(PyExc_BufferError,
             "underlying buffer is not writable");
-        Py_DECREF(mv);
+        PyRegion_CLEARLOCAL(mv);
         return NULL;
     }
 
@@ -1002,12 +1049,12 @@ PyMemoryView_GetContiguous(PyObject *obj, int buffertype, char order)
         PyErr_SetString(PyExc_BufferError,
             "writable contiguous buffer requested "
             "for a non-contiguous object.");
-        Py_DECREF(mv);
+        PyRegion_CLEARLOCAL(mv);
         return NULL;
     }
 
     ret = memory_from_contiguous_copy(view, order);
-    Py_DECREF(mv);
+    PyRegion_CLEARLOCAL(mv);
     return ret;
 }
 
@@ -1025,6 +1072,7 @@ static PyObject *
 memoryview_impl(PyTypeObject *type, PyObject *object)
 /*[clinic end generated code: output=7de78e184ed66db8 input=f04429eb0bdf8c6e]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyMemoryView_FromObject(object);
 }
 
@@ -1043,6 +1091,7 @@ static PyObject *
 memoryview__from_flags_impl(PyTypeObject *type, PyObject *object, int flags)
 /*[clinic end generated code: output=bf71f9906c266ee2 input=f5f82fd0e744356b]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return PyMemoryView_FromObjectAndFlags(object, flags);
 }
 
@@ -1059,6 +1108,7 @@ typedef struct {
 int
 PyBuffer_ToContiguous(void *buf, const Py_buffer *src, Py_ssize_t len, char order)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer_full *fb = NULL;
     int ret;
 
@@ -1100,6 +1150,7 @@ PyBuffer_ToContiguous(void *buf, const Py_buffer *src, Py_ssize_t len, char orde
 static inline Py_ssize_t
 get_exports(PyMemoryViewObject *buf)
 {
+    // Pyrona: This functions was checked and no further migration is needed
 #ifdef Py_GIL_DISABLED
     return _Py_atomic_load_ssize_relaxed(&buf->exports);
 #else
@@ -1119,6 +1170,7 @@ get_exports(PyMemoryViewObject *buf)
 static void
 _memory_release(PyMemoryViewObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(get_exports(self) == 0);
     if (self->flags & _Py_MEMORYVIEW_RELEASED)
         return;
@@ -1140,6 +1192,7 @@ static PyObject *
 memoryview_release_impl(PyMemoryViewObject *self)
 /*[clinic end generated code: output=d0b7e3ba95b7fcb9 input=bc71d1d51f4a52f0]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t exports = get_exports(self);
     if (exports == 0) {
         _memory_release(self);
@@ -1161,11 +1214,12 @@ memoryview_release_impl(PyMemoryViewObject *self)
 static void
 memory_dealloc(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     assert(get_exports(self) == 0);
     _PyObject_GC_UNTRACK(self);
     _memory_release(self);
-    Py_CLEAR(self->mbuf);
+    PyRegion_CLEAR(self, self->mbuf);
     if (self->weakreflist != NULL)
         PyObject_ClearWeakRefs((PyObject *) self);
     PyObject_GC_Del(self);
@@ -1174,6 +1228,7 @@ memory_dealloc(PyObject *_self)
 static int
 memory_traverse(PyObject *_self, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     Py_VISIT(self->mbuf);
     return 0;
@@ -1182,10 +1237,11 @@ memory_traverse(PyObject *_self, visitproc visit, void *arg)
 static int
 memory_clear(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     if (get_exports(self) == 0) {
         _memory_release(self);
-        Py_CLEAR(self->mbuf);
+        PyRegion_CLEAR(self, self->mbuf);
     }
     return 0;
 }
@@ -1193,13 +1249,15 @@ memory_clear(PyObject *_self)
 static PyObject *
 memory_enter(PyObject *self, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_RELEASED(self);
-    return Py_NewRef(self);
+    return PyRegion_NewRef(self);
 }
 
 static PyObject *
 memory_exit(PyObject *self, PyObject *args)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return memoryview_release_impl((PyMemoryViewObject *)self);
 }
 
@@ -1213,6 +1271,7 @@ memory_exit(PyObject *self, PyObject *args)
 static inline Py_ssize_t
 get_native_fmtchar(char *result, const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t size = -1;
 
     if (fmt[0] == '@') fmt++;
@@ -1242,6 +1301,7 @@ get_native_fmtchar(char *result, const char *fmt)
 static inline const char *
 get_native_fmtstr(const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int at = 0;
 
     if (fmt[0] == '@') {
@@ -1286,6 +1346,7 @@ get_native_fmtstr(const char *fmt)
 static int
 cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer *view = &mv->view;
     PyObject *asciifmt;
     char srcchar, destchar;
@@ -1341,7 +1402,7 @@ cast_to_1D(PyMemoryViewObject *mv, PyObject *format)
     ret = 0;
 
 out:
-    Py_DECREF(asciifmt);
+    PyRegion_CLEARLOCAL(asciifmt);
     return ret;
 }
 
@@ -1350,6 +1411,7 @@ static Py_ssize_t
 copy_shape(Py_ssize_t *shape, const PyObject *seq, Py_ssize_t ndim,
            Py_ssize_t itemsize)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t x, i;
     Py_ssize_t len = itemsize;
 
@@ -1388,6 +1450,7 @@ copy_shape(Py_ssize_t *shape, const PyObject *seq, Py_ssize_t ndim,
 static int
 cast_to_ND(PyMemoryViewObject *mv, const PyObject *shape, int ndim)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer *view = &mv->view;
     Py_ssize_t len;
 
@@ -1424,6 +1487,7 @@ cast_to_ND(PyMemoryViewObject *mv, const PyObject *shape, int ndim)
 static int
 zero_in_shape(PyMemoryViewObject *mv)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer *view = &mv->view;
     Py_ssize_t i;
 
@@ -1505,7 +1569,7 @@ memoryview_cast_impl(PyMemoryViewObject *self, PyObject *format,
     return (PyObject *)mv;
 
 error:
-    Py_DECREF(mv);
+    PyRegion_CLEARLOCAL(mv);
     return NULL;
 }
 
@@ -1519,6 +1583,7 @@ static PyObject *
 memoryview_toreadonly_impl(PyMemoryViewObject *self)
 /*[clinic end generated code: output=2c7e056f04c99e62 input=dc06d20f19ba236f]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     CHECK_RELEASED(self);
     CHECK_RESTRICTED(self);
     /* Even if self is already readonly, we still need to create a new
@@ -1539,6 +1604,7 @@ memoryview_toreadonly_impl(PyMemoryViewObject *self)
 static int
 memory_getbuf(PyObject *_self, Py_buffer *view, int flags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     Py_buffer *base = &self->view;
     int baseflags = self->flags;
@@ -1609,8 +1675,10 @@ memory_getbuf(PyObject *_self, Py_buffer *view, int flags)
         view->shape = NULL;
     }
 
-
-    view->obj = Py_NewRef(self);
+    // Regions: The `view` is a buffer and not an acutal object. This can
+    // therefore not use the normal `AddRef(view, self)` instead we count
+    // this as a local reference
+    view->obj = PyRegion_NewRef(self);
 #ifdef Py_GIL_DISABLED
     _Py_atomic_add_ssize(&self->exports, 1);
 #else
@@ -1623,6 +1691,7 @@ memory_getbuf(PyObject *_self, Py_buffer *view, int flags)
 static void
 memory_releasebuf(PyObject *_self, Py_buffer *view)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
 #ifdef Py_GIL_DISABLED
     _Py_atomic_add_ssize(&self->exports, -1);
@@ -1653,6 +1722,7 @@ static PyBufferProcs memory_as_buffer = {
 static int
 type_error_int(const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyErr_Format(PyExc_TypeError,
         "memoryview: invalid type for format '%s'", fmt);
     return -1;
@@ -1661,6 +1731,7 @@ type_error_int(const char *fmt)
 static int
 value_error_int(const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyErr_Format(PyExc_ValueError,
         "memoryview: invalid value for format '%s'", fmt);
     return -1;
@@ -1669,6 +1740,7 @@ value_error_int(const char *fmt)
 static int
 fix_error_int(const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyErr_Occurred());
     if (PyErr_ExceptionMatches(PyExc_TypeError)) {
         PyErr_Clear();
@@ -1687,6 +1759,7 @@ fix_error_int(const char *fmt)
 static long
 pylong_as_ld(PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp;
     long ld;
 
@@ -1695,13 +1768,14 @@ pylong_as_ld(PyObject *item)
         return -1;
 
     ld = PyLong_AsLong(tmp);
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return ld;
 }
 
 static unsigned long
 pylong_as_lu(PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp;
     unsigned long lu;
 
@@ -1710,13 +1784,14 @@ pylong_as_lu(PyObject *item)
         return (unsigned long)-1;
 
     lu = PyLong_AsUnsignedLong(tmp);
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return lu;
 }
 
 static long long
 pylong_as_lld(PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp;
     long long lld;
 
@@ -1725,13 +1800,14 @@ pylong_as_lld(PyObject *item)
         return -1;
 
     lld = PyLong_AsLongLong(tmp);
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return lld;
 }
 
 static unsigned long long
 pylong_as_llu(PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp;
     unsigned long long llu;
 
@@ -1740,13 +1816,14 @@ pylong_as_llu(PyObject *item)
         return (unsigned long long)-1;
 
     llu = PyLong_AsUnsignedLongLong(tmp);
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return llu;
 }
 
 static Py_ssize_t
 pylong_as_zd(PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp;
     Py_ssize_t zd;
 
@@ -1755,13 +1832,14 @@ pylong_as_zd(PyObject *item)
         return -1;
 
     zd = PyLong_AsSsize_t(tmp);
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return zd;
 }
 
 static size_t
 pylong_as_zu(PyObject *item)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *tmp;
     size_t zu;
 
@@ -1770,7 +1848,7 @@ pylong_as_zu(PyObject *item)
         return (size_t)-1;
 
     zu = PyLong_AsSize_t(tmp);
-    Py_DECREF(tmp);
+    PyRegion_CLEARLOCAL(tmp);
     return zu;
 }
 
@@ -1790,6 +1868,7 @@ pylong_as_zu(PyObject *item)
 static inline PyObject *
 unpack_single(PyMemoryViewObject *self, const char *ptr, const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned long long llu;
     unsigned long lu;
     size_t zu;
@@ -1889,6 +1968,7 @@ err_format:
 static int
 pack_single(PyMemoryViewObject *self, char *ptr, PyObject *item, const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     unsigned long long llu;
     unsigned long lu;
     size_t zu;
@@ -2048,7 +2128,10 @@ err_format:
 /* For reasonable performance it is necessary to cache all objects required
    for unpacking. An unpacker can handle the format passed to unpack_from().
    Invariant: All pointer fields of the struct should either be NULL or valid
-   pointers. */
+   pointers.
+   
+   Regions: Since this is a C struct and not a Python object we count the
+   contained references as local references*/
 struct unpacker {
     PyObject *unpack_from; /* Struct.unpack_from(format) */
     PyObject *mview;       /* cached memoryview */
@@ -2059,6 +2142,7 @@ struct unpacker {
 static struct unpacker *
 unpacker_new(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     struct unpacker *x = PyMem_Malloc(sizeof *x);
 
     if (x == NULL) {
@@ -2077,9 +2161,10 @@ unpacker_new(void)
 static void
 unpacker_free(struct unpacker *x)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (x) {
-        Py_XDECREF(x->unpack_from);
-        Py_XDECREF(x->mview);
+        PyRegion_CLEARLOCAL(x->unpack_from);
+        PyRegion_CLEARLOCAL(x->mview);
         PyMem_Free(x->item);
         PyMem_Free(x);
     }
@@ -2089,6 +2174,7 @@ unpacker_free(struct unpacker *x)
 static struct unpacker *
 struct_get_unpacker(const char *fmt, Py_ssize_t itemsize)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *Struct = NULL;    /* XXX cache it in globals? */
     PyObject *structobj = NULL;
     PyObject *format = NULL;
@@ -2127,9 +2213,9 @@ struct_get_unpacker(const char *fmt, Py_ssize_t itemsize)
 
 
 out:
-    Py_XDECREF(Struct);
-    Py_XDECREF(format);
-    Py_XDECREF(structobj);
+    PyRegion_CLEARLOCAL(Struct);
+    PyRegion_CLEARLOCAL(format);
+    PyRegion_CLEARLOCAL(structobj);
     return x;
 
 error:
@@ -2142,6 +2228,7 @@ error:
 static PyObject *
 struct_unpack_single(const char *ptr, struct unpacker *x)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *v;
 
     memcpy(x->item, ptr, x->itemsize);
@@ -2150,8 +2237,8 @@ struct_unpack_single(const char *ptr, struct unpacker *x)
         return NULL;
 
     if (PyTuple_GET_SIZE(v) == 1) {
-        PyObject *res = Py_NewRef(PyTuple_GET_ITEM(v, 0));
-        Py_DECREF(v);
+        PyObject *res = PyRegion_NewRef(PyTuple_GET_ITEM(v, 0));
+        PyRegion_CLEARLOCAL(v);
         return res;
     }
 
@@ -2167,6 +2254,7 @@ struct_unpack_single(const char *ptr, struct unpacker *x)
 static inline const char *
 adjust_fmt(const Py_buffer *view)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const char *fmt;
 
     fmt = (view->format[0] == '@') ? view->format+1 : view->format;
@@ -2184,6 +2272,7 @@ tolist_base(PyMemoryViewObject *self, const char *ptr, const Py_ssize_t *shape,
             const Py_ssize_t *strides, const Py_ssize_t *suboffsets,
             const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *lst, *item;
     Py_ssize_t i;
 
@@ -2195,9 +2284,12 @@ tolist_base(PyMemoryViewObject *self, const char *ptr, const Py_ssize_t *shape,
         const char *xptr = ADJUST_PTR(ptr, suboffsets, 0);
         item = unpack_single(self, xptr, fmt);
         if (item == NULL) {
-            Py_DECREF(lst);
+            PyRegion_CLEARLOCAL(lst);
             return NULL;
         }
+        // Regions: No barrier needed since this steals a local ref
+        // an stores it in the local list
+        assert(PyRegion_IsLocal(lst));
         PyList_SET_ITEM(lst, i, item);
     }
 
@@ -2211,6 +2303,7 @@ tolist_rec(PyMemoryViewObject *self, const char *ptr, Py_ssize_t ndim, const Py_
            const Py_ssize_t *strides, const Py_ssize_t *suboffsets,
            const char *fmt)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *lst, *item;
     Py_ssize_t i;
 
@@ -2231,9 +2324,12 @@ tolist_rec(PyMemoryViewObject *self, const char *ptr, Py_ssize_t ndim, const Py_
                           strides+1, suboffsets ? suboffsets+1 : NULL,
                           fmt);
         if (item == NULL) {
-            Py_DECREF(lst);
+            PyRegion_CLEARLOCAL(lst);
             return NULL;
         }
+        // Regions: No barrier needed since this steals a local ref
+        // an stores it in the local list
+        assert(PyRegion_IsLocal(lst));
         PyList_SET_ITEM(lst, i, item);
     }
 
@@ -2252,6 +2348,7 @@ static PyObject *
 memoryview_tolist_impl(PyMemoryViewObject *self)
 /*[clinic end generated code: output=a6cda89214fd5a1b input=21e7d0c1860b211a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const Py_buffer *view = &self->view;
     const char *fmt;
 
@@ -2294,6 +2391,7 @@ static PyObject *
 memoryview_tobytes_impl(PyMemoryViewObject *self, const char *order)
 /*[clinic end generated code: output=1288b62560a32a23 input=23c9faf372cfdbcc]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer *src = VIEW_ADDR(self);
     char ord = 'C';
 
@@ -2355,6 +2453,7 @@ memoryview_hex_impl(PyMemoryViewObject *self, PyObject *sep,
                     int bytes_per_sep)
 /*[clinic end generated code: output=430ca760f94f3ca7 input=539f6a3a5fb56946]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer *src = VIEW_ADDR(self);
 
     CHECK_RELEASED(self);
@@ -2386,6 +2485,7 @@ memoryview_hex_impl(PyMemoryViewObject *self, PyObject *sep,
 static PyObject *
 memory_repr(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     if (self->flags & _Py_MEMORYVIEW_RELEASED)
         return PyUnicode_FromFormat("<released memory at %p>", self);
@@ -2401,6 +2501,8 @@ memory_repr(PyObject *_self)
 static char *
 lookup_dimension(const Py_buffer *view, char *ptr, int dim, Py_ssize_t index)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     Py_ssize_t nitems; /* items in the given dimension */
 
     assert(view->shape);
@@ -2427,6 +2529,7 @@ lookup_dimension(const Py_buffer *view, char *ptr, int dim, Py_ssize_t index)
 static char *
 ptr_from_index(const Py_buffer *view, Py_ssize_t index)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char *ptr = (char *)view->buf;
     return lookup_dimension(view, ptr, 0, index);
 }
@@ -2435,6 +2538,7 @@ ptr_from_index(const Py_buffer *view, Py_ssize_t index)
 static char *
 ptr_from_tuple(const Py_buffer *view, PyObject *tup)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     char *ptr = (char *)view->buf;
     Py_ssize_t dim, nindices = PyTuple_GET_SIZE(tup);
 
@@ -2464,6 +2568,7 @@ ptr_from_tuple(const Py_buffer *view, PyObject *tup)
 static PyObject *
 memory_item(PyObject *_self, Py_ssize_t index)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     Py_buffer *view = &(self->view);
     const char *fmt;
@@ -2494,6 +2599,7 @@ memory_item(PyObject *_self, Py_ssize_t index)
 static PyObject *
 memory_item_multi(PyMemoryViewObject *self, PyObject *tup)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_buffer *view = &(self->view);
     const char *fmt;
     Py_ssize_t nindices = PyTuple_GET_SIZE(tup);
@@ -2519,6 +2625,7 @@ memory_item_multi(PyMemoryViewObject *self, PyObject *tup)
 static inline int
 init_slice(Py_buffer *base, PyObject *key, int dim)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t start, stop, step, slicelength;
 
     if (PySlice_Unpack(key, &start, &stop, &step) < 0) {
@@ -2548,6 +2655,7 @@ init_slice(Py_buffer *base, PyObject *key, int dim)
 static int
 is_multislice(PyObject *key)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t size, i;
 
     if (!PyTuple_Check(key))
@@ -2567,6 +2675,7 @@ is_multislice(PyObject *key)
 static Py_ssize_t
 is_multiindex(PyObject *key)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t size, i;
 
     if (!PyTuple_Check(key))
@@ -2590,6 +2699,7 @@ is_multiindex(PyObject *key)
 static PyObject *
 memory_subscript(PyObject *_self, PyObject *key)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     Py_buffer *view;
     view = &(self->view);
@@ -2604,7 +2714,7 @@ memory_subscript(PyObject *_self, PyObject *key)
             return unpack_single(self, view->buf, fmt);
         }
         else if (key == Py_Ellipsis) {
-            return Py_NewRef(self);
+            return PyRegion_NewRef(self);
         }
         else {
             PyErr_SetString(PyExc_TypeError,
@@ -2629,7 +2739,7 @@ memory_subscript(PyObject *_self, PyObject *key)
             return NULL;
 
         if (init_slice(&sliced->view, key, 0) < 0) {
-            Py_DECREF(sliced);
+            PyRegion_CLEARLOCAL(sliced);
             return NULL;
         }
         init_len(&sliced->view);
@@ -2653,6 +2763,7 @@ memory_subscript(PyObject *_self, PyObject *key)
 static int
 memory_ass_sub(PyObject *_self, PyObject *key, PyObject *value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     Py_buffer *view = &(self->view);
     Py_buffer src;
@@ -2756,6 +2867,7 @@ memory_ass_sub(PyObject *_self, PyObject *key, PyObject *value)
 static Py_ssize_t
 memory_length(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED_INT(self);
     if (self->view.ndim == 0) {
@@ -2798,6 +2910,7 @@ static PyObject *
 memoryview_count_impl(PyMemoryViewObject *self, PyObject *value)
 /*[clinic end generated code: output=a15cb19311985063 input=e3036ce1ed7d1823]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *iter = PyObject_GetIter(_PyObject_CAST(self));
     if (iter == NULL) {
         return NULL;
@@ -2807,25 +2920,27 @@ memoryview_count_impl(PyMemoryViewObject *self, PyObject *value)
     PyObject *item = NULL;
     while (PyIter_NextItem(iter, &item)) {
         if (item == NULL) {
-            Py_DECREF(iter);
+            PyRegion_CLEARLOCAL(iter);
             return NULL;
         }
         if (item == value) {
+            PyRegion_RemoveLocalRef(item);
             Py_DECREF(item);
             count++;  // no overflow since count <= len(mv) <= PY_SSIZE_T_MAX
             continue;
         }
         int contained = PyObject_RichCompareBool(item, value, Py_EQ);
+        PyRegion_RemoveLocalRef(item);
         Py_DECREF(item);
         if (contained > 0) { // more likely than 'contained < 0'
             count++;  // no overflow since count <= len(mv) <= PY_SSIZE_T_MAX
         }
         else if (contained < 0) {
-            Py_DECREF(iter);
+            PyRegion_CLEARLOCAL(iter);
             return NULL;
         }
     }
-    Py_DECREF(iter);
+    PyRegion_CLEARLOCAL(iter);
     return PyLong_FromSsize_t(count);
 }
 
@@ -2852,6 +2967,7 @@ memoryview_index_impl(PyMemoryViewObject *self, PyObject *value,
                       Py_ssize_t start, Py_ssize_t stop)
 /*[clinic end generated code: output=e0185e3819e549df input=0697a0165bf90b5a]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     const Py_buffer *view = &self->view;
     CHECK_RELEASED(self);
 
@@ -2892,10 +3008,11 @@ memoryview_index_impl(PyMemoryViewObject *self, PyObject *value,
                 return NULL;
             }
             if (item == value) {
-                Py_DECREF(item);
+                PyRegion_CLEARLOCAL(item);
                 return PyLong_FromSsize_t(index);
             }
             int contained = PyObject_RichCompareBool(item, value, Py_EQ);
+            PyRegion_RemoveLocalRef(item);
             Py_DECREF(item);
             if (contained > 0) {  // more likely than 'contained < 0'
                 return PyLong_FromSsize_t(index);
@@ -2927,6 +3044,7 @@ memoryview_index_impl(PyMemoryViewObject *self, PyObject *value,
 static int
 fix_struct_error_int(void)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(PyErr_Occurred());
     /* XXX Cannot get at StructError directly? */
     if (PyErr_ExceptionMatches(PyExc_ImportError) ||
@@ -2943,6 +3061,7 @@ static int
 struct_unpack_cmp(const char *p, const char *q,
                   struct unpacker *unpack_p, struct unpacker *unpack_q)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *v, *w;
     int ret;
 
@@ -2954,14 +3073,14 @@ struct_unpack_cmp(const char *p, const char *q,
 
     w = struct_unpack_single(q, unpack_q);
     if (w == NULL) {
-        Py_DECREF(v);
+        PyRegion_CLEARLOCAL(v);
         return MV_COMPARE_EX;
     }
 
     /* MV_COMPARE_EX == -1: exceptions are preserved */
     ret = PyObject_RichCompareBool(v, w, Py_EQ);
-    Py_DECREF(v);
-    Py_DECREF(w);
+    PyRegion_CLEARLOCAL(v);
+    PyRegion_CLEARLOCAL(w);
 
     return ret;
 }
@@ -2985,6 +3104,7 @@ static inline int
 unpack_cmp(const char *p, const char *q, char fmt,
            struct unpacker *unpack_p, struct unpacker *unpack_q)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int equal;
 
     switch (fmt) {
@@ -3054,6 +3174,7 @@ cmp_base(const char *p, const char *q, const Py_ssize_t *shape,
          const Py_ssize_t *qstrides, const Py_ssize_t *qsuboffsets,
          char fmt, struct unpacker *unpack_p, struct unpacker *unpack_q)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
     int equal;
 
@@ -3077,6 +3198,7 @@ cmp_rec(const char *p, const char *q,
         const Py_ssize_t *qstrides, const Py_ssize_t *qsuboffsets,
         char fmt, struct unpacker *unpack_p, struct unpacker *unpack_q)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
     int equal;
 
@@ -3109,6 +3231,7 @@ cmp_rec(const char *p, const char *q,
 static PyObject *
 memory_richcompare(PyObject *v, PyObject *w, int op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *res;
     Py_buffer wbuf, *vv;
     Py_buffer *ww = NULL;
@@ -3206,7 +3329,7 @@ result:
     unpacker_free(unpack_v);
     unpacker_free(unpack_w);
 
-    return Py_XNewRef(res);
+    return PyRegion_XNewRef(res);
 }
 
 /**************************************************************************/
@@ -3216,6 +3339,7 @@ result:
 static Py_hash_t
 memory_hash(PyObject *_self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     if (self->hash == -1) {
         Py_buffer *view = &self->view;
@@ -3271,6 +3395,7 @@ memory_hash(PyObject *_self)
 static PyObject *
 _IntTupleFromSsizet(int len, Py_ssize_t *vals)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     int i;
     PyObject *o;
     PyObject *intTuple;
@@ -3284,7 +3409,7 @@ _IntTupleFromSsizet(int len, Py_ssize_t *vals)
     for (i=0; i<len; i++) {
         o = PyLong_FromSsize_t(vals[i]);
         if (!o) {
-            Py_DECREF(intTuple);
+            PyRegion_CLEARLOCAL(intTuple);
             return NULL;
         }
         PyTuple_SET_ITEM(intTuple, i, o);
@@ -3295,6 +3420,7 @@ _IntTupleFromSsizet(int len, Py_ssize_t *vals)
 static PyObject *
 memory_obj_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     Py_buffer *view = &self->view;
 
@@ -3302,12 +3428,13 @@ memory_obj_get(PyObject *_self, void *Py_UNUSED(ignored))
     if (view->obj == NULL) {
         Py_RETURN_NONE;
     }
-    return Py_NewRef(view->obj);
+    return PyRegion_NewRef(view->obj);
 }
 
 static PyObject *
 memory_nbytes_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyLong_FromSsize_t(self->view.len);
@@ -3316,6 +3443,7 @@ memory_nbytes_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_format_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyUnicode_FromString(self->view.format);
@@ -3324,6 +3452,7 @@ memory_format_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_itemsize_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyLong_FromSsize_t(self->view.itemsize);
@@ -3332,6 +3461,7 @@ memory_itemsize_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_shape_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return _IntTupleFromSsizet(self->view.ndim, self->view.shape);
@@ -3340,6 +3470,7 @@ memory_shape_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_strides_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return _IntTupleFromSsizet(self->view.ndim, self->view.strides);
@@ -3348,6 +3479,7 @@ memory_strides_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_suboffsets_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return _IntTupleFromSsizet(self->view.ndim, self->view.suboffsets);
@@ -3356,6 +3488,7 @@ memory_suboffsets_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_readonly_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyBool_FromLong(self->view.readonly);
@@ -3364,6 +3497,7 @@ memory_readonly_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_ndim_get(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyLong_FromLong(self->view.ndim);
@@ -3372,6 +3506,7 @@ memory_ndim_get(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_c_contiguous(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyBool_FromLong(MV_C_CONTIGUOUS(self->flags));
@@ -3380,6 +3515,7 @@ memory_c_contiguous(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_f_contiguous(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyBool_FromLong(MV_F_CONTIGUOUS(self->flags));
@@ -3388,6 +3524,7 @@ memory_f_contiguous(PyObject *_self, void *Py_UNUSED(ignored))
 static PyObject *
 memory_contiguous(PyObject *_self, void *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemoryViewObject *self = (PyMemoryViewObject *)_self;
     CHECK_RELEASED(self);
     return PyBool_FromLong(MV_ANY_CONTIGUOUS(self->flags));
@@ -3479,7 +3616,7 @@ memoryiter_dealloc(PyObject *self)
 {
     memoryiterobject *it = (memoryiterobject *)self;
     _PyObject_GC_UNTRACK(it);
-    Py_XDECREF(it->it_seq);
+    PyRegion_CLEAR(it, it->it_seq);
     PyObject_GC_Del(it);
 }
 
@@ -3494,6 +3631,7 @@ memoryiter_traverse(PyObject *self, visitproc visit, void *arg)
 static PyObject *
 memoryiter_next(PyObject *self)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     memoryiterobject *it = (memoryiterobject *)self;
     PyMemoryViewObject *seq;
     seq = it->it_seq;
@@ -3514,14 +3652,14 @@ memoryiter_next(PyObject *self)
         return unpack_single(seq, ptr, it->it_fmt);
     }
 
-    it->it_seq = NULL;
-    Py_DECREF(seq);
+    PyRegion_CLEAR(it, it->it_seq);
     return NULL;
 }
 
 static PyObject *
 memory_iter(PyObject *seq)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (!PyMemoryView_Check(seq)) {
         PyErr_BadInternalCall();
         return NULL;
@@ -3552,7 +3690,8 @@ memory_iter(PyObject *seq)
     it->it_fmt = fmt;
     it->it_length = memory_length((PyObject *)obj);
     it->it_index = 0;
-    it->it_seq = (PyMemoryViewObject*)Py_NewRef(obj);
+    assert(PyRegion_IsLocal(it));
+    it->it_seq = (PyMemoryViewObject*)PyRegion_NewRef(obj);
     _PyObject_GC_TRACK(it);
     return (PyObject *)it;
 }
@@ -3569,6 +3708,7 @@ PyTypeObject _PyMemoryIter_Type = {
     .tp_iter = PyObject_SelfIter,
     .tp_iternext = memoryiter_next,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
 
 PyTypeObject PyMemoryView_Type = {
@@ -3612,4 +3752,5 @@ PyTypeObject PyMemoryView_Type = {
     0,                                        /* tp_alloc */
     memoryview,                               /* tp_new */
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_flags2 = Py_TPFLAGS2_REGION_AWARE,
 };
