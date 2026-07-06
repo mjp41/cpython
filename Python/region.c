@@ -2655,6 +2655,10 @@ void PyRegion_RecycleObject(PyObject *obj) {
 //          ==> The solution should be to forbid the managed dict to be in a separate region from
 //              its owning object. The question is how do we enforce this? We could add a backref
 //              from the managed dict to the owner, but that would increase the dict object size...
+// TODO(regions): xFrednet: Child cleaning and parents: Assume that we have some C code that is
+//      not migrated. It creates a reference from a region(a) to a another region (c) that is already
+//      the child of region (b). This would be illegal. The question is: Does the cleaning process need
+//      to account for this?
 // FIXME(regions): xFrednet: Several write barriers in listobject don't undo the entire operation
 // FIXME(regions): xFrednet: We could add an assert that verifies that a LRC increase which
 //                           opens the region is always a reference to a bride. This should be
@@ -2667,6 +2671,7 @@ void PyRegion_RecycleObject(PyObject *obj) {
 //                           a struct to track if the references are all in the same region. This
 //                           flag can be used to avoid WB. It's not safe to local -> local due to
 //                           slurps, but this could be interesting to try and investigate
+// FIXME(regions): xFrednet: Work on "// Regions: API_BREAK:" comments
 
 // TODO(regions): xFrednet: Write Barrier in: Dictionary (Partially done)
 // TODO(regions): xFrednet: Dirty on C code (Currently this always triggers)

@@ -27,6 +27,7 @@ const char * const PyStructSequence_UnnamedField = "unnamed field";
 static Py_ssize_t
 get_type_attr_as_size(PyTypeObject *tp, PyObject *name)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyObject *v = PyDict_GetItemWithError(_PyType_GetDict(tp), name);
     if (v == NULL && !PyErr_Occurred()) {
         PyErr_Format(PyExc_TypeError,
@@ -51,6 +52,8 @@ get_type_attr_as_size(PyTypeObject *tp, PyObject *name)
 static Py_ssize_t
 get_real_size(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // Compute the real size from the visible size (i.e., Py_SIZE()) and the
     // number of non-sequence fields accounted for in tp_basicsize.
     Py_ssize_t hidden = Py_TYPE(op)->tp_basicsize - offsetof(PyStructSequence, ob_item);
@@ -60,6 +63,7 @@ get_real_size(PyObject *op)
 PyObject *
 PyStructSequence_New(PyTypeObject *type)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *obj;
     Py_ssize_t size = REAL_SIZE_TP(type), i;
     if (size < 0) {
@@ -86,6 +90,7 @@ PyStructSequence_New(PyTypeObject *type)
 void
 PyStructSequence_SetItem(PyObject *op, Py_ssize_t index, PyObject *value)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyTupleObject *tuple = _PyTuple_CAST(op);
     assert(0 <= index);
 #ifndef NDEBUG
@@ -93,12 +98,43 @@ PyStructSequence_SetItem(PyObject *op, Py_ssize_t index, PyObject *value)
     assert(n_fields >= 0);
     assert(index < n_fields);
 #endif
+    // Regions: The function signature doesn't allow failure, we therefore try
+    // our best to use unfailable operations or mark the relevant regions as dirty
+    if (!PyRegion_SameRegion(op, value)) {
+        if (PyRegion_IsLocal(op)) {
+            // This function steals the value reference. Since we're being called
+            // with a local reference we don't have to do anything.
+        } else {
+            PyRegion_DirtyObjectRegion(op);
+            PyRegion_DirtyObjectRegion(value);
+        }
+    }
     tuple->ob_item[index] = value;
+}
+
+int
+PyStructSequence_SetItem2(PyObject *op, Py_ssize_t index, PyObject *value)
+{
+    // Pyrona: This functions was checked and no further migration is needed
+    PyTupleObject *tuple = _PyTuple_CAST(op);
+    assert(0 <= index);
+#ifndef NDEBUG
+    Py_ssize_t n_fields = REAL_SIZE(op);
+    assert(n_fields >= 0);
+    assert(index < n_fields);
+#endif
+    if (PyRegion_TakeRef(op, value)) {
+        PyRegion_CLEARLOCAL(value);
+        return -1;
+    }
+    tuple->ob_item[index] = value;
+    return 0;
 }
 
 PyObject*
 PyStructSequence_GetItem(PyObject *op, Py_ssize_t index)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     assert(0 <= index);
 #ifndef NDEBUG
     Py_ssize_t n_fields = REAL_SIZE(op);
@@ -112,6 +148,7 @@ PyStructSequence_GetItem(PyObject *op, Py_ssize_t index)
 static int
 structseq_traverse(PyObject *op, visitproc visit, void *arg)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *obj = (PyStructSequence *)op;
     if (Py_TYPE(obj)->tp_flags & Py_TPFLAGS_HEAPTYPE) {
         Py_VISIT(Py_TYPE(obj));
@@ -127,21 +164,20 @@ structseq_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 structseq_reachable(PyObject *op, visitproc visit, void *arg)
 {
-    /* Always visit the type, unlike traverse which only visits for heap types */
-    Py_VISIT(_PyObject_CAST(Py_TYPE(op)));
+    // Pyrona: This functions was checked and no further migration is needed
 
-    PyStructSequence *obj = (PyStructSequence *)op;
-    Py_ssize_t i, size;
-    size = REAL_SIZE(obj);
-    for (i = 0; i < size; ++i) {
-        Py_VISIT(obj->ob_item[i]);
+    // Visit the type manually, if it wouldn't be visited by `structseq_traverse`
+    if ((Py_TYPE(op)->tp_flags & Py_TPFLAGS_HEAPTYPE) == 0) {
+        Py_VISIT(Py_TYPE(op));
     }
-    return 0;
+
+    return structseq_traverse(op, visit, arg);
 }
 
 static void
 structseq_dealloc(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *obj = (PyStructSequence *)op;
     Py_ssize_t i, size;
     PyObject_GC_UnTrack(obj);
@@ -152,10 +188,11 @@ structseq_dealloc(PyObject *op)
     // cleared by the garbage collector.
     size = REAL_SIZE(obj);
     for (i = 0; i < size; ++i) {
-        Py_XDECREF(obj->ob_item[i]);
+        PyRegion_CLEAR(obj, obj->ob_item[i]);
     }
     PyObject_GC_Del(obj);
     if (_PyType_HasFeature(tp, Py_TPFLAGS_HEAPTYPE)) {
+        assert(!PyRegion_NeedsReadBarrier(tp));
         Py_DECREF(tp);
     }
 }
@@ -178,6 +215,7 @@ static PyObject *
 structseq_new_impl(PyTypeObject *type, PyObject *arg, PyObject *dict)
 /*[clinic end generated code: output=baa082e788b171da input=90532511101aa3fb]*/
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *res = NULL;
     Py_ssize_t len, min_len, max_len, i, n_unnamed_fields;
 
@@ -204,7 +242,7 @@ structseq_new_impl(PyTypeObject *type, PyObject *arg, PyObject *dict)
         PyErr_Format(PyExc_TypeError,
                      "%.500s() takes a dict as second arg, if any",
                      type->tp_name);
-        Py_DECREF(arg);
+        PyRegion_CLEARLOCAL(arg);
         return NULL;
     }
 
@@ -214,7 +252,7 @@ structseq_new_impl(PyTypeObject *type, PyObject *arg, PyObject *dict)
             PyErr_Format(PyExc_TypeError,
                 "%.500s() takes an at least %zd-sequence (%zd-sequence given)",
                 type->tp_name, min_len, len);
-            Py_DECREF(arg);
+            PyRegion_CLEARLOCAL(arg);
             return NULL;
         }
 
@@ -222,7 +260,7 @@ structseq_new_impl(PyTypeObject *type, PyObject *arg, PyObject *dict)
             PyErr_Format(PyExc_TypeError,
                 "%.500s() takes an at most %zd-sequence (%zd-sequence given)",
                 type->tp_name, max_len, len);
-            Py_DECREF(arg);
+            PyRegion_CLEARLOCAL(arg);
             return NULL;
         }
     }
@@ -231,47 +269,52 @@ structseq_new_impl(PyTypeObject *type, PyObject *arg, PyObject *dict)
             PyErr_Format(PyExc_TypeError,
                          "%.500s() takes a %zd-sequence (%zd-sequence given)",
                          type->tp_name, min_len, len);
-            Py_DECREF(arg);
+            PyRegion_CLEARLOCAL(arg);
             return NULL;
         }
     }
 
     res = (PyStructSequence*) PyStructSequence_New(type);
     if (res == NULL) {
-        Py_DECREF(arg);
+        PyRegion_CLEARLOCAL(arg);
         return NULL;
     }
+    assert(!PyRegion_NeedsReadBarrier(res));
     for (i = 0; i < len; ++i) {
         PyObject *v = PySequence_Fast_GET_ITEM(arg, i);
-        res->ob_item[i] = Py_NewRef(v);
+        res->ob_item[i] = PyRegion_NewRef(v);
     }
-    Py_DECREF(arg);
+    PyRegion_CLEARLOCAL(arg);
     if (dict != NULL && PyDict_GET_SIZE(dict) > 0) {
         Py_ssize_t n_found_keys = 0;
         for (i = len; i < max_len; ++i) {
             PyObject *ob = NULL;
             const char *name = type->tp_members[i - n_unnamed_fields].name;
             if (PyDict_GetItemStringRef(dict, name, &ob) < 0) {
-                Py_DECREF(res);
+                PyRegion_CLEARLOCAL(res);
                 return NULL;
             }
             if (ob == NULL) {
+                // Regions: No barrier needed for None
                 ob = Py_NewRef(Py_None);
             }
             else {
                 ++n_found_keys;
             }
+            // Regions: This steals a local reference and stores it in a local object
+            // no barrier is needed
             res->ob_item[i] = ob;
         }
         if (PyDict_GET_SIZE(dict) > n_found_keys) {
             PyErr_Format(PyExc_TypeError,
                          "%.500s() got duplicate or unexpected field name(s)",
                          type->tp_name);
-            Py_DECREF(res);
+            PyRegion_CLEARLOCAL(res);
             return NULL;
         }
     } else {
         for (i = len; i < max_len; ++i) {
+            // Regions: No barrier needed for None
             res->ob_item[i] = Py_NewRef(Py_None);
         }
     }
@@ -284,6 +327,7 @@ structseq_new_impl(PyTypeObject *type, PyObject *arg, PyObject *dict)
 static PyObject *
 structseq_repr(PyObject *op)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *obj = (PyStructSequence *)op;
     PyTypeObject *typ = Py_TYPE(obj);
 
@@ -353,6 +397,7 @@ error:
 static PyObject *
 structseq_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *self = (PyStructSequence*)op;
     PyObject* tup = NULL;
     PyObject* dict = NULL;
@@ -384,14 +429,14 @@ structseq_reduce(PyObject *op, PyObject *Py_UNUSED(ignored))
 
     result = Py_BuildValue("(O(OO))", Py_TYPE(self), tup, dict);
 
-    Py_DECREF(tup);
-    Py_DECREF(dict);
+    PyRegion_CLEARLOCAL(tup);
+    PyRegion_CLEARLOCAL(dict);
 
     return result;
 
 error:
-    Py_XDECREF(tup);
-    Py_XDECREF(dict);
+    PyRegion_CLEARLOCAL(tup);
+    PyRegion_CLEARLOCAL(dict);
     return NULL;
 }
 
@@ -399,6 +444,7 @@ error:
 static PyObject *
 structseq_replace(PyObject *op, PyObject *args, PyObject *kwargs)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyStructSequence *self = (PyStructSequence*)op;
     PyStructSequence *result = NULL;
     Py_ssize_t n_fields, n_unnamed_fields, i;
@@ -438,8 +484,10 @@ structseq_replace(PyObject *op, PyObject *args, PyObject *kwargs)
                 goto error;
             }
             if (ob == NULL) {
-                ob = Py_NewRef(self->ob_item[i]);
+                ob = PyRegion_NewRef(self->ob_item[i]);
             }
+            // Regions: This steals a local reference and stores it in a local
+            // object, no barrier is needed.
             result->ob_item[i] = ob;
         }
         // Check if there are any unexpected fields.
@@ -447,7 +495,7 @@ structseq_replace(PyObject *op, PyObject *args, PyObject *kwargs)
             PyObject *names = PyDict_Keys(kwargs);
             if (names) {
                 PyErr_Format(PyExc_TypeError, "Got unexpected field name(s): %R", names);
-                Py_DECREF(names);
+                PyRegion_CLEARLOCAL(names);
             }
             goto error;
         }
@@ -456,13 +504,16 @@ structseq_replace(PyObject *op, PyObject *args, PyObject *kwargs)
     {
         // Just create a copy of the original.
         for (i = 0; i < n_fields; ++i) {
-            result->ob_item[i] = Py_NewRef(self->ob_item[i]);
+            // Regions: This steals a local reference and stores it in a local
+            // object, no barrier is needed.
+            result->ob_item[i] = PyRegion_NewRef(self->ob_item[i]);
         }
     }
 
     return (PyObject *)result;
 
 error:
+    assert(!PyRegion_NeedsReadBarrier(result));
     Py_DECREF(result);
     return NULL;
 }
@@ -477,6 +528,7 @@ static PyMethodDef structseq_methods[] = {
 
 static Py_ssize_t
 count_members(PyStructSequence_Desc *desc, Py_ssize_t *n_unnamed_members) {
+    // Pyrona: This functions was checked and no further migration is needed
     Py_ssize_t i;
 
     *n_unnamed_members = 0;
@@ -499,11 +551,11 @@ initialize_structseq_dict(PyStructSequence_Desc *desc, PyObject* dict,
         if (v == NULL) {                                                       \
             return -1;                                                         \
         }                                                                      \
-        if (PyDict_SetItemString(dict, key, v) < 0) {                          \
-            Py_DECREF(v);                                                      \
+        if (PyDict_SetItemString(dict, key, v) < 0) {                      \
+            PyRegion_CLEARLOCAL(v);                                            \
             return -1;                                                         \
         }                                                                      \
-        Py_DECREF(v);                                                          \
+        PyRegion_CLEARLOCAL(v);                                                \
     } while (0)
 
     SET_DICT_FROM_SIZE(visible_length_key, desc->n_in_sequence);
@@ -525,6 +577,8 @@ initialize_structseq_dict(PyStructSequence_Desc *desc, PyObject* dict,
         if (new_member == NULL) {
             goto error;
         }
+        assert(!PyRegion_NeedsReadBarrier(new_member));
+        assert(PyRegion_IsLocal(keys));
         PyTuple_SET_ITEM(keys, k, new_member);
         k++;
     }
@@ -537,11 +591,11 @@ initialize_structseq_dict(PyStructSequence_Desc *desc, PyObject* dict,
         goto error;
     }
 
-    Py_DECREF(keys);
+    PyRegion_CLEARLOCAL(keys);
     return 0;
 
 error:
-    Py_DECREF(keys);
+    PyRegion_CLEARLOCAL(keys);
     return -1;
 }
 
@@ -549,6 +603,7 @@ static PyMemberDef *
 initialize_members(PyStructSequence_Desc *desc,
                    Py_ssize_t n_members, Py_ssize_t n_unnamed_members)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemberDef *members;
 
     members = PyMem_NEW(PyMemberDef, n_members - n_unnamed_members + 1);
@@ -600,19 +655,24 @@ initialize_static_fields(PyTypeObject *type, PyStructSequence_Desc *desc,
     type->tp_traverse = structseq_traverse;
     type->tp_reachable = structseq_reachable;
     type->tp_members = tp_members;
+    type->tp_flags2 = Py_TPFLAGS2_REGION_AWARE;
 }
 
 static int
 initialize_static_type(PyTypeObject *type, PyStructSequence_Desc *desc,
                        Py_ssize_t n_members, Py_ssize_t n_unnamed_members) {
+    // Pyrona: This functions was checked and no further migration is needed
+
     /* initialize_static_fields() should have been called already. */
     if (PyType_Ready(type) < 0) {
         return -1;
     }
+    assert(!PyRegion_NeedsReadBarrier(type));
     Py_INCREF(type);
 
     if (initialize_structseq_dict(
             desc, _PyType_GetDict(type), n_members, n_unnamed_members) < 0) {
+        assert(!PyRegion_NeedsReadBarrier(type));
         Py_DECREF(type);
         return -1;
     }
@@ -626,6 +686,7 @@ _PyStructSequence_InitBuiltinWithFlags(PyInterpreterState *interp,
                                        PyStructSequence_Desc *desc,
                                        unsigned long tp_flags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     if (Py_TYPE(type) == NULL) {
         Py_SET_TYPE(type, &PyType_Type);
     }
@@ -682,6 +743,7 @@ error:
 int
 PyStructSequence_InitType2(PyTypeObject *type, PyStructSequence_Desc *desc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemberDef *members;
     Py_ssize_t n_members, n_unnamed_members;
 
@@ -716,6 +778,7 @@ PyStructSequence_InitType2(PyTypeObject *type, PyStructSequence_Desc *desc)
 void
 PyStructSequence_InitType(PyTypeObject *type, PyStructSequence_Desc *desc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     (void)PyStructSequence_InitType2(type, desc);
 }
 
@@ -727,6 +790,8 @@ PyStructSequence_InitType(PyTypeObject *type, PyStructSequence_Desc *desc)
 void
 _PyStructSequence_FiniBuiltin(PyInterpreterState *interp, PyTypeObject *type)
 {
+    // Pyrona: This functions was checked and no further migration is needed
+
     // Ensure that the type is initialized
     assert(type->tp_name != NULL);
     assert(type->tp_base == &PyTuple_Type);
@@ -754,6 +819,7 @@ _PyStructSequence_FiniBuiltin(PyInterpreterState *interp, PyTypeObject *type)
 PyTypeObject *
 _PyStructSequence_NewType(PyStructSequence_Desc *desc, unsigned long tp_flags)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     PyMemberDef *members;
     PyTypeObject *type;
     PyType_Slot slots[9];
@@ -787,6 +853,9 @@ _PyStructSequence_NewType(PyStructSequence_Desc *desc, unsigned long tp_flags)
     spec.itemsize = sizeof(PyObject *);
     spec.flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | tp_flags;
     spec.slots = slots;
+    // Regions: All type slots are filled by structseq and is fully migrated,
+    // therefore it's safe to mark the type as region aware.
+    spec.flags2 = Py_TPFLAGS2_REGION_AWARE;
 
     type = (PyTypeObject *)PyType_FromSpecWithBases(&spec, (PyObject *)&PyTuple_Type);
     PyMem_Free(members);
@@ -796,6 +865,7 @@ _PyStructSequence_NewType(PyStructSequence_Desc *desc, unsigned long tp_flags)
 
     if (initialize_structseq_dict(
             desc, _PyType_GetDict(type), n_members, n_unnamed_members) < 0) {
+        assert(!PyRegion_NeedsReadBarrier(type));
         Py_DECREF(type);
         return NULL;
     }
@@ -807,5 +877,6 @@ _PyStructSequence_NewType(PyStructSequence_Desc *desc, unsigned long tp_flags)
 PyTypeObject *
 PyStructSequence_NewType(PyStructSequence_Desc *desc)
 {
+    // Pyrona: This functions was checked and no further migration is needed
     return _PyStructSequence_NewType(desc, 0);
 }

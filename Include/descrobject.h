@@ -88,7 +88,7 @@ struct PyMemberDef {
 
 PyAPI_FUNC(PyObject *) PyMember_GetOne(const char *, PyMemberDef *);
 
-// TODO(regions): xFrednet: This function is used to modify Python objects
+// Regions: API_BREAK: xFrednet: This function is used to modify Python objects
 //      but we can't really add a region write barrier, because we don't
 //      have the reference source.
 //      I see two solutions:

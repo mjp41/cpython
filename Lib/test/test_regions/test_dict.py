@@ -421,7 +421,6 @@ class TestRegionDictUnicodeKeys(BaseTestRegionDictKeys):
         self.check_setdefault_new_key("setdefault-key", lrc_for_key=0)
         self.check_setdefault_present_key("Meow", lrc_for_key=0)
 
-    @expectedFailure # More types need to be migrated to succeed again
     def test_unicode_key_clear_regression(self):
         r = Region()
         r.a = {"key": 21}

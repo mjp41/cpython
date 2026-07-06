@@ -25,7 +25,11 @@ PyAPI_FUNC(PyTypeObject*) PyStructSequence_NewType(PyStructSequence_Desc *desc);
 
 PyAPI_FUNC(PyObject *) PyStructSequence_New(PyTypeObject* type);
 
+// Regions: API_BREAK: xFrednet: The old version of this operation is unfailable,
+// we keep it around for compatability reasons, but it may mark regions as dirty.
+// all usages should be migrated to use `PyStructSequence_SetItem2` instead.
 PyAPI_FUNC(void) PyStructSequence_SetItem(PyObject*, Py_ssize_t, PyObject*);
+PyAPI_FUNC(int) PyStructSequence_SetItem2(PyObject*, Py_ssize_t, PyObject*);
 PyAPI_FUNC(PyObject*) PyStructSequence_GetItem(PyObject*, Py_ssize_t);
 
 #ifndef Py_LIMITED_API

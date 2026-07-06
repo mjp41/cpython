@@ -1182,8 +1182,17 @@ create_task_result(
     }
 
     // PyStructSequence_SetItem steals references, so we don't need to DECREF on success
-    PyStructSequence_SetItem(result, 0, call_stack);  // This steals the reference
-    PyStructSequence_SetItem(result, 1, tn);  // This steals the reference
+    // This steals the reference
+    if (PyStructSequence_SetItem2(result, 0, call_stack)) {
+        PyRegion_CLEARLOCAL(result);
+        PyRegion_CLEARLOCAL(tn);
+        return NULL;
+    }
+    // This steals the reference
+    if (PyStructSequence_SetItem2(result, 1, tn)) {
+        PyRegion_CLEARLOCAL(result);
+        return NULL;
+    }
 
     return result;
 

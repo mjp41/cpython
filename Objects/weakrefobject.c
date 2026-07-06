@@ -420,7 +420,8 @@ try_reuse_basic_ref(PyWeakReference *list, PyTypeObject *type,
         return NULL;
     }
 
-    return PyRegion_NewRef(cand);
+    PyRegion_NewRef(cand);
+    return cand;
 }
 
 static int
