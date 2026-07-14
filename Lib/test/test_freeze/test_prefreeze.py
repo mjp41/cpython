@@ -152,5 +152,58 @@ class TestPreFreezeHook(unittest.TestCase):
         self.assertTrue(is_frozen(a))
         self.assertFalse(is_frozen(b))
 
+    def test_nested_freeze_restarts_incomplete_scc(self):
+        class A:
+            pass
+
+        class Restart:
+            def __pre_freeze__(self):
+                freeze(self)
+
+        a = A()
+        a.l = [a, Restart()]
+        l = a.l
+
+        freeze(A)
+        freeze(a)
+
+        self.assertTrue(is_frozen(a))
+        self.assertTrue(is_frozen(l))
+        self.assertTrue(is_frozen(l[1]))
+
+    def test_nested_freeze_restart_clears_non_gc_visited(self):
+        class A:
+            pass
+
+        class Restart:
+            def __pre_freeze__(self):
+                freeze(self)
+
+        a = A()
+        a.leaf = "unique-nongc-string"
+        a.restart = Restart()
+
+        freeze(a)
+
+        self.assertTrue(is_frozen(a))
+        self.assertTrue(is_frozen(a.restart))
+
+    def test_failure_rolls_back_incomplete_scc(self):
+        class A:
+            pass
+
+        bad = {}
+        set_freezable(bad, FREEZABLE_NO)
+        a = A()
+        a.l = [a, bad]
+        l = a.l
+
+        with self.assertRaises(TypeError):
+            freeze(a)
+
+        self.assertFalse(is_frozen(a))
+        self.assertFalse(is_frozen(l))
+        self.assertFalse(is_frozen(bad))
+
 if __name__ == "__main__":
     unittest.main()
