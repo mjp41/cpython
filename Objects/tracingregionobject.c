@@ -6,6 +6,7 @@
 #include "pycore_weakref.h"
 
 #define ERROR_OBJECT_REPORT_COUNT 5
+#define ERROR_MERMAID_REPORT_LIMIT 50
 
 // #define REGION_TRACING
 
@@ -298,22 +299,52 @@ gc_list_dissolve(PyGC_Head *list) {
     gc_list_merge(list, &(gc_state->old[0].head));
 }
 
+
+typedef struct {
+    // These are the objects with incoming references, that
+    // should be highlighted in the graph.
+    _Py_hashtable_t *error_objs;
+    // TODO(mermaid): PyUnicodeWriter *writer;
+} mermaid_builder_t;
+
 typedef struct {
     /// A list of all visited objects
     _Py_hashtable_t *visited;
     /// The number of refs coming into this object graph
     Py_ssize_t external_rc;
-    // This is set if an object was frozen and the trace needs to restart to be valid
-    bool restart;
-    // The GC list used for this trace
+    // The GC list used for this trace, it may be null if the trace
+    // should not move the objects from their current list.
     PyGC_Head* gc_list;
     // The source of the reference, this is used for error reporting
     PyObject *src;
     // List of pending objects that are not GC
     PyObject *pending;
-} trace_state;
+    // Used to build a mermaid diagram for error reporting if
+    // the field is not NULL.
+    mermaid_builder_t *mermaid;
+    // This is set if an object was frozen and the trace needs
+    // to restart to be valid
+    bool restart;
+} trace_state_t;
 
-static void trace_state_destroy(trace_state* state) {
+static int mermaid_visit(PyObject* obj, trace_state_t* state) {
+    // TODO(mermaid):
+    // - Draw a reference from `state->src` to `obj`
+    // - if the object is immutable, give it the `immutable` class
+    // - if an object is inside `_Py_hashtable_t *error_objs` give it the `error` class
+    //
+    // An object node should look roughly like this:
+    // 0x12344321
+    // RC = 10
+    // [Type]
+    //
+    // In mermaid, it may look like this:
+    //   %p[%p<br>rc=%ld%s], obj, obj, Py_REFCTN(obj), ("[%s]", Py_TYPE(obj)->name)
+
+    return 0;
+}
+
+static void trace_state_destroy(trace_state_t* state) {
     if (state->visited) {
         _Py_hashtable_destroy(state->visited);
         state->visited = NULL;
@@ -323,7 +354,7 @@ static void trace_state_destroy(trace_state* state) {
         state->pending = NULL;
     }
 }
-static int trace_state_init(trace_state* state, PyGC_Head *gc_list) {
+static int trace_state_init(trace_state_t* state, PyGC_Head *gc_list) {
     assert(gc_list == NULL || gc_list_is_empty(gc_list));
 
     state->visited = NULL;
@@ -351,7 +382,7 @@ error:
     trace_state_destroy(state);
     return -1;
 }
-static int trace_state_reset(trace_state* state, PyGC_Head *gc_list) {
+static int trace_state_reset(trace_state_t* state, PyGC_Head *gc_list) {
     _Py_hashtable_clear(state->visited);
     SUCCEEDS(PyList_Clear(state->pending));
 
@@ -371,13 +402,13 @@ typedef struct {
     _Py_hashtable_t *obj_table;
     Py_ssize_t objs;
     Py_ssize_t incoming_refs;
-} trace_result;
+} trace_info_t;
 
 const int TRACE_RES_ERR = -1;
 const int TRACE_RES_DONE = 0;
 const int TRACE_RES_RESTART = 1;
 
-static int _move_obj(PyObject* obj, trace_state* state) {
+static int _move_obj(PyObject* obj, trace_state_t* state) {
     // Check the movability of the object:
     movable_status status = get_movable_status(obj);
     switch (status) {
@@ -441,7 +472,13 @@ static int _move_obj(PyObject* obj, trace_state* state) {
     return 0;
 }
 
-static int _trace_visit(PyObject* obj, trace_state* state) {
+static int _trace_visit(PyObject* obj, trace_state_t* state) {
+    if (state->mermaid) {
+        if (mermaid_visit(obj, state)) {
+            return -1;
+        }
+    }
+
     // References to immutable objects are allowed
     if (_PyImmutability_CanViewAsImmutable(obj)) {
         assert(_Py_IsImmutable(obj));
@@ -475,7 +512,7 @@ static int _filter_visited(_Py_hashtable_t *ht, const void *key, const void *val
     return 0;
 }
 
-static int _trace_once(PyObject* obj, trace_state* state) {
+static int _trace_once(PyObject* obj, trace_state_t* state) {
     trace("  - starting trace from %p", obj);
     int res = TRACE_RES_DONE;
 
@@ -504,7 +541,7 @@ error:
     return TRACE_RES_ERR;
 }
 
-static int trace_object(PyObject* obj, trace_result* result, PyGC_Head *gc_list) {
+static int trace_object(PyObject* obj, trace_info_t* result, PyGC_Head *gc_list) {
     // We do two tracing attempts, the first one may freeze classes and objects
     // and require a retrace. The second attempt should pass since all objects
     // should now be frozen. Pre-freeze hooks can mess with this, but consenting
@@ -513,7 +550,7 @@ static int trace_object(PyObject* obj, trace_result* result, PyGC_Head *gc_list)
     trace("Starting trace for %p", obj);
 
     // Init trace state.
-    trace_state state;
+    trace_state_t state;
     if (trace_state_init(&state, gc_list)) {
         return TRACE_RES_ERR;
     }
@@ -543,7 +580,6 @@ static int trace_object(PyObject* obj, trace_result* result, PyGC_Head *gc_list)
     // The region can't be closed, we'll collect some extra meta data for
     // a better error message.
     if (state.external_rc > 1) {
-        //
         result->obj_table = _Py_hashtable_new(
             _Py_hashtable_hash_ptr,
             _Py_hashtable_compare_direct);
@@ -556,12 +592,34 @@ static int trace_object(PyObject* obj, trace_result* result, PyGC_Head *gc_list)
             result->obj_table = NULL;
             goto error;
         }
-        // If the region is "small" enough for a mermaid diagram we do the trace again.
-        //
-        // TODO: We probably want a flag to enable/disable this
-        // if (result->objs >= 500) {
-        //      // pass
-        // }
+
+        // If the number of objects is below the limit we
+        // can create and dump a mermaid diagram of the graph.
+        if (trace_info.objs < ERROR_MERMAID_REPORT_LIMIT) {
+            // TODO(mermaid): Populate there mermaid state
+            // Then run the trace which should write the connections
+
+            // Here are is the mermaid template:
+            // ---
+            // <div style='background: #fff'>
+            //
+            // ```mermaid
+            // %%%%{init: {'theme': 'neutral', 'themeVariables': { 'fontSize': '16px' }}}%%%%
+            //
+            // // TODO Tracing
+            //
+            // "classDef immutable fill:#94f7ff"
+            // "classDef error stroke-width:4px,stroke:red"
+            // ```
+            // </div>
+            // ---
+
+            if (trace_object(op, &trace_info, NULL)) {
+                goto error; // propagate Python exception
+            }
+
+            // TODO(mermaid): Write the diagram to `region-graph.md`
+        }
     }
 
     goto finally;
@@ -634,7 +692,7 @@ TracingRegion_dealloc(TracingRegionObject *self) {
 }
 
 static PyObject* TracingRegion_trace(PyObject *op) {
-    trace_result result;
+    trace_info_t result;
     if (trace_object(op, &result, NULL)) {
         return NULL;  // propagate Python exception
     }
@@ -662,7 +720,7 @@ typedef struct {
     Py_ssize_t accounted;
 } incoming_ref_report;
 
-// `_Py_hashtable_foreach` callback over `trace_result.obj_table`. Appends one
+// `_Py_hashtable_foreach` callback over `trace_info.obj_table`. Appends one
 // "- N incoming reference(s) to 'obj'" line per object to the writer.
 static int
 _report_incoming_ref(_Py_hashtable_t *ht, const void *key, const void *value, void *user_data) {
@@ -695,7 +753,7 @@ _report_incoming_ref(_Py_hashtable_t *ht, const void *key, const void *value, vo
 // the objects that still have incoming references. Returns a new reference to
 // the message string, or NULL with an exception set.
 static PyObject *
-build_close_error_message(trace_result *trace_info, PyObject *region) {
+build_close_error_message(trace_info_t *trace_info, PyObject *region) {
     PyUnicodeWriter *writer = PyUnicodeWriter_Create(0);
     if (writer == NULL) {
         return NULL;
@@ -749,7 +807,7 @@ int _PyTracingRegion_Close(PyObject* op) {
     assert(gc_list_is_empty(&self->gc_list));
 
     int res = 0;
-    trace_result trace_info;
+    trace_info_t trace_info;
     if (trace_object(op, &trace_info, &self->gc_list)) {
         goto error; // propagate Python exception
     }
@@ -772,8 +830,6 @@ int _PyTracingRegion_Close(PyObject* op) {
             PyErr_SetObject(PyExc_RuntimeError, msg);
             Py_DECREF(msg);
         }
-        // If `msg` is NULL, building the message failed and an exception
-        // (e.g. MemoryError) is already set; either way we propagate it.
 
         goto error;
     }
