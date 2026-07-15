@@ -5,6 +5,8 @@
 #include "pycore_descrobject.h"
 #include "pycore_weakref.h"
 
+#define ERROR_OBJECT_REPORT_COUNT 5
+
 // #define REGION_TRACING
 
 #ifdef REGION_TRACING
@@ -349,8 +351,24 @@ error:
     trace_state_destroy(state);
     return -1;
 }
+static int trace_state_reset(trace_state* state, PyGC_Head *gc_list) {
+    _Py_hashtable_clear(state->visited);
+    SUCCEEDS(PyList_Clear(state->pending));
+
+    state->external_rc = 0;
+    state->restart = false;
+    state->gc_list = gc_list;
+    state->src = NULL;
+
+    return 0;
+error:
+    trace_state_destroy(state);
+    return -1;
+}
+
 
 typedef struct {
+    _Py_hashtable_t *obj_table;
     Py_ssize_t objs;
     Py_ssize_t incoming_refs;
 } trace_result;
@@ -399,7 +417,8 @@ static int _move_obj(PyObject* obj, trace_state* state) {
     trace("    - moving %p; LRC += %zd", obj, lrc_change);
     state->external_rc += lrc_change;
 
-    if (_Py_hashtable_set(state->visited, obj, obj) == -1) {
+    // Mark the object as visited, this stores the lrc_change for better error reporting
+    if (_Py_hashtable_set(state->visited, obj, (void*)lrc_change) == -1) {
         return -1;
     }
 
@@ -430,7 +449,9 @@ static int _trace_visit(PyObject* obj, trace_state* state) {
     }
 
     // Check if the object is already part of the region
-    if (_Py_hashtable_get(state->visited, (void*)obj)) {
+    _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(state->visited, (void*)obj);
+    if (entry != NULL) {
+        entry->value -= 1;
         trace("    - Internal reference to %p; LRC -= 1", obj);
         state->external_rc -= 1;
         return 0;
@@ -439,56 +460,72 @@ static int _trace_visit(PyObject* obj, trace_state* state) {
     return _move_obj(obj, state);
 }
 
-static int _trace_once(PyObject* obj, trace_result* result, PyGC_Head *gc_list) {
+static int _filter_visited(_Py_hashtable_t *ht, const void *key, const void *value, void *target_void) {
+    _Py_hashtable_t *target = (_Py_hashtable_t *)target_void;
+    // Only take objects with incoming references
+    if (value == 0) {
+        return 0;
+    }
+    if (_Py_hashtable_set(target, key, value)) {
+        return -1;
+    }
+    if (_Py_hashtable_len(target) >= ERROR_OBJECT_REPORT_COUNT) {
+        return 1;
+    }
+    return 0;
+}
+
+static int _trace_once(PyObject* obj, trace_state* state) {
     trace("  - starting trace from %p", obj);
     int res = TRACE_RES_DONE;
 
-    // init the trace state
-    trace_state state;
-    if (trace_state_init(&state, gc_list)) {
-        return TRACE_RES_ERR;
-    }
+    SUCCEEDS(_move_obj(obj, state));
 
-    SUCCEEDS(_move_obj(obj, &state));
-
-    while (PyList_GET_SIZE(state.pending) > 0) {
+    while (PyList_GET_SIZE(state->pending) > 0) {
         // Find the next pending item:
-        PyObject *item = list_pop(state.pending);
+        PyObject *item = list_pop(state->pending);
 
         // Traverse item
-        state.src = item;
+        state->src = item;
         trace("  - traversing %p", item);
         traverseproc proc = get_reachable_proc(Py_TYPE(item));
-        SUCCEEDS(proc(item, (visitproc)_trace_visit, (void*)&state));
+        SUCCEEDS(proc(item, (visitproc)_trace_visit, (void*)state));
 
         // Weak refs need special handling
         assert(!PyWeakref_Check(item));
     }
 
-    if (state.restart) {
+    if (state->restart) {
         res = TRACE_RES_RESTART;
     }
 
-    goto finally;
-error:
-    res = TRACE_RES_ERR;
-finally:
-    result->incoming_refs = state.external_rc;
-    result->objs = _Py_hashtable_len(state.visited);
-    trace_state_destroy(&state);
     return res;
+error:
+    return TRACE_RES_ERR;
 }
 
 static int trace_object(PyObject* obj, trace_result* result, PyGC_Head *gc_list) {
+    // We do two tracing attempts, the first one may freeze classes and objects
+    // and require a retrace. The second attempt should pass since all objects
+    // should now be frozen. Pre-freeze hooks can mess with this, but consenting
+    // adults and such.
     const int TRIES = 2;
     trace("Starting trace for %p", obj);
+
+    // Init trace state.
+    trace_state state;
+    if (trace_state_init(&state, gc_list)) {
+        return TRACE_RES_ERR;
+    }
+
+    result->obj_table = NULL;
+
+    int res = 0;
     for (int i = 0; i < TRIES; i++) {
-        // Reset trace
-        result->objs = 0;
-        result->incoming_refs = 0;
+        SUCCEEDS(trace_state_reset(&state, gc_list));
 
         // Trace object
-        int res = _trace_once(obj, result, gc_list);
+        res = _trace_once(obj, &state);
 
         // Restart trace on demand
         if (res == TRACE_RES_RESTART) {
@@ -499,10 +536,43 @@ static int trace_object(PyObject* obj, trace_result* result, PyGC_Head *gc_list)
             }
             continue;
         }
-        return res;
+
+        break;
     }
 
-    return TRACE_RES_DONE;
+    // The region can't be closed, we'll collect some extra meta data for
+    // a better error message.
+    if (state.external_rc > 1) {
+        //
+        result->obj_table = _Py_hashtable_new(
+            _Py_hashtable_hash_ptr,
+            _Py_hashtable_compare_direct);
+        if (result->obj_table == NULL) {
+            goto error;
+        }
+        int for_res = _Py_hashtable_foreach(state.visited, _filter_visited, (void*)result->obj_table);
+        if (for_res < -1) {
+            _Py_hashtable_destroy(result->obj_table);
+            result->obj_table = NULL;
+            goto error;
+        }
+        // If the region is "small" enough for a mermaid diagram we do the trace again.
+        //
+        // TODO: We probably want a flag to enable/disable this
+        // if (result->objs >= 500) {
+        //      // pass
+        // }
+    }
+
+    goto finally;
+error:
+    res = TRACE_RES_RESTART;
+finally:
+    result->incoming_refs = state.external_rc;
+    result->objs = _Py_hashtable_len(state.visited);
+    trace_state_destroy(&state);
+
+    return res;
 }
 
 static void detach_weak_refs(PyGC_Head *gc_list) {
@@ -569,12 +639,100 @@ static PyObject* TracingRegion_trace(PyObject *op) {
         return NULL;  // propagate Python exception
     }
 
+    if (result.obj_table != NULL) {
+        _Py_hashtable_destroy(result.obj_table);
+    }
+
     PyObject *t = Py_BuildValue("(ii)", result.objs, result.incoming_refs);
     if (t == NULL) {
         return NULL;  // propagate Python exception
     }
 
     return t;
+}
+
+// State threaded through `_report_incoming_ref` while building the
+// "region could not be closed" error message.
+typedef struct {
+    PyUnicodeWriter *writer;
+    // The region object being closed. One incoming reference to it is the
+    // expected owning reference and is not reported as a problem.
+    PyObject *region;
+    // Sum of the (problematic) incoming references reported so far.
+    Py_ssize_t accounted;
+} incoming_ref_report;
+
+// `_Py_hashtable_foreach` callback over `trace_result.obj_table`. Appends one
+// "- N incoming reference(s) to 'obj'" line per object to the writer.
+static int
+_report_incoming_ref(_Py_hashtable_t *ht, const void *key, const void *value, void *user_data) {
+    incoming_ref_report *report = (incoming_ref_report *)user_data;
+    PyObject *obj = (PyObject *)key;
+    Py_ssize_t refs = (Py_ssize_t)value;
+
+    // The caller holds one owning reference to the region object itself, which
+    // is expected and not a reason the region couldn't be closed. Don't report
+    // it, but do report any additional references to the region.
+    if (obj == report->region) {
+        refs -= 1;
+        if (refs <= 0) {
+            return 0;
+        }
+    }
+
+    report->accounted += refs;
+
+    // `%S` calls `str()` on the object.
+    if (PyUnicodeWriter_Format(report->writer,
+            "- %zd incoming reference%s to '%S'\n",
+            refs, (refs == 1) ? "" : "s", obj) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+// Builds the error message describing why a region could not be closed, listing
+// the objects that still have incoming references. Returns a new reference to
+// the message string, or NULL with an exception set.
+static PyObject *
+build_close_error_message(trace_result *trace_info, PyObject *region) {
+    PyUnicodeWriter *writer = PyUnicodeWriter_Create(0);
+    if (writer == NULL) {
+        return NULL;
+    }
+
+    incoming_ref_report report = { writer, region, 0 };
+
+    if (PyUnicodeWriter_WriteUTF8(writer,
+            "The region could not be closed due to:\n", -1) < 0) {
+        goto error;
+    }
+
+    // `obj_table` maps each object with incoming references to the number of
+    // such references. Emit one line per object.
+    if (_Py_hashtable_foreach(trace_info->obj_table, _report_incoming_ref, &report) < 0) {
+        goto error;
+    }
+
+    // One incoming reference is the expected owning reference to the region
+    // itself; everything beyond that is a reason the region stayed open. The
+    // `obj_table` is also capped at `ERROR_OBJECT_REPORT_COUNT` entries, so it
+    // may not list every object. Summarise whatever wasn't reported above.
+    Py_ssize_t problem_refs = trace_info->incoming_refs - 1;
+    if (report.accounted < problem_refs) {
+        Py_ssize_t others = problem_refs - report.accounted;
+        if (PyUnicodeWriter_Format(writer,
+                "- %zd reference%s to other objects\n",
+                others, (others == 1) ? "" : "s") < 0) {
+            goto error;
+        }
+    }
+
+    return PyUnicodeWriter_Finish(writer);
+
+error:
+    PyUnicodeWriter_Discard(writer);
+    return NULL;
 }
 
 /* This method traces the region and closes it if the caller has the only
@@ -590,18 +748,34 @@ int _PyTracingRegion_Close(PyObject* op) {
     TracingRegionObject *self = (TracingRegionObject*)op;
     assert(gc_list_is_empty(&self->gc_list));
 
-    trace_result result;
-    if (trace_object(op, &result, &self->gc_list)) {
-        return -1;  // propagate Python exception
+    int res = 0;
+    trace_result trace_info;
+    if (trace_object(op, &trace_info, &self->gc_list)) {
+        goto error; // propagate Python exception
     }
 
     // Keep the region open, if the there are more incoming references
     // besides the expected owning one
-    if (result.incoming_refs > 1) {
-        trace("- Failed to close region %p, there are %zd incoming references", self, result.incoming_refs);
+    if (trace_info.incoming_refs > 1) {
+        trace("- Failed to close region %p, there are %zd incoming references", self, trace_info.incoming_refs);
         gc_list_dissolve(&self->gc_list);
         assert(gc_list_is_empty(&self->gc_list));
-        return 0;
+
+        // Report which objects still have incoming references as a
+        // `RuntimeError`, e.g.:
+        //
+        //   RuntimeError: The region could not be closed due to:
+        //   - 1 incoming reference to '[1, 2, 3]'
+        //   - 2 incoming references to '(6, 7)'
+        PyObject *msg = build_close_error_message(&trace_info, op);
+        if (msg != NULL) {
+            PyErr_SetObject(PyExc_RuntimeError, msg);
+            Py_DECREF(msg);
+        }
+        // If `msg` is NULL, building the message failed and an exception
+        // (e.g. MemoryError) is already set; either way we propagate it.
+
+        goto error;
     }
 
     // FIXME: This can be optimized, for example by inserting all objects
@@ -610,7 +784,16 @@ int _PyTracingRegion_Close(PyObject* op) {
 
     trace("- Closed region %p", self);
     assert(!gc_list_is_empty(&self->gc_list));
-    return 1;
+    res = 1;
+    goto finally;
+error:
+    res = -1;
+finally:
+    if (trace_info.obj_table != NULL) {
+        _Py_hashtable_destroy(trace_info.obj_table);
+    }
+
+    return res;
 }
 
 /* This method opens the region by dissolving it and all objects into the
