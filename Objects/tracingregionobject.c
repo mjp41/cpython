@@ -7,6 +7,7 @@
 
 #define ERROR_OBJECT_REPORT_COUNT 5
 #define ERROR_MERMAID_REPORT_LIMIT 50
+#define ERROR_MERMAID_HIDE_IMMUTABLE true
 
 // #define REGION_TRACING
 
@@ -304,7 +305,8 @@ typedef struct {
     // These are the objects with incoming references, that
     // should be highlighted in the graph.
     _Py_hashtable_t *error_objs;
-    // TODO(mermaid): PyUnicodeWriter *writer;
+    // Accumulates the mermaid edge/node definitions as the graph is traversed.
+    PyUnicodeWriter *writer;
 } mermaid_builder_t;
 
 typedef struct {
@@ -328,18 +330,53 @@ typedef struct {
 } trace_state_t;
 
 static int mermaid_visit(PyObject* obj, trace_state_t* state) {
-    // TODO(mermaid):
-    // - Draw a reference from `state->src` to `obj`
-    // - if the object is immutable, give it the `immutable` class
-    // - if an object is inside `_Py_hashtable_t *error_objs` give it the `error` class
-    //
-    // An object node should look roughly like this:
-    // 0x12344321
-    // RC = 10
-    // [Type]
-    //
-    // In mermaid, it may look like this:
-    //   %p[%p<br>rc=%ld%s], obj, obj, Py_REFCTN(obj), ("[%s]", Py_TYPE(obj)->name)
+    if (_Py_IsImmutable(obj) && ERROR_MERMAID_HIDE_IMMUTABLE) {
+        return 0;
+    }
+
+    // Emit one mermaid edge `src --> obj` per reference, labelling both
+    // endpoints with a node of the form:
+    //   0x<ptr>
+    //   rc=<refcount>
+    //   [<type>]
+    // Node ids are prefixed with 'n' so they always start with a letter, and
+    // the label is quoted so the `<br>` and `[...]` are not parsed as mermaid
+    // syntax. Mermaid dedupes repeated node definitions, so re-emitting a
+    // node's label on every incoming edge is harmless.
+    mermaid_builder_t *mermaid = state->mermaid;
+    PyUnicodeWriter *writer = mermaid->writer;
+    PyObject *src = state->src;
+
+    if (src != NULL) {
+        if (PyUnicodeWriter_Format(writer,
+                "    n%p[\"%p<br>rc=%zd<br>[%s]\"] --> ",
+                src, src, Py_REFCNT(src), Py_TYPE(src)->tp_name) < 0) {
+            return -1;
+        }
+    }
+
+    if (PyUnicodeWriter_Format(writer,
+            "n%p[\"%p<br>rc=%zd<br>[%s]\"]",
+            obj, obj, Py_REFCNT(obj), Py_TYPE(obj)->tp_name) < 0) {
+        return -1;
+    }
+
+    // Highlight immutable objects and the objects with outstanding incoming
+    // references. These two sets never overlap: immutable objects are never
+    // added to the trace's visited set that `error_objs` is derived from.
+    if (_Py_IsImmutable(obj)) {
+        if (PyUnicodeWriter_WriteUTF8(writer, ":::immutable", -1) < 0) {
+            return -1;
+        }
+    } else if (_Py_hashtable_get_entry(mermaid->error_objs, (void*)obj) != NULL) {
+        if (PyUnicodeWriter_WriteUTF8(writer, ":::error", -1) < 0) {
+            return -1;
+        }
+    }
+
+    if (PyUnicodeWriter_WriteUTF8(writer, "\n", -1) < 0) {
+        return -1;
+    }
 
     return 0;
 }
@@ -376,6 +413,7 @@ static int trace_state_init(trace_state_t* state, PyGC_Head *gc_list) {
     state->restart = false;
     state->gc_list = gc_list;
     state->src = NULL;
+    state->mermaid = NULL;
 
     return 0;
 error:
@@ -390,6 +428,7 @@ static int trace_state_reset(trace_state_t* state, PyGC_Head *gc_list) {
     state->restart = false;
     state->gc_list = gc_list;
     state->src = NULL;
+    state->mermaid = NULL;
 
     return 0;
 error:
@@ -503,7 +542,7 @@ static int _filter_visited(_Py_hashtable_t *ht, const void *key, const void *val
     if (value == 0) {
         return 0;
     }
-    if (_Py_hashtable_set(target, key, value)) {
+    if (_Py_hashtable_set(target, key, (void*)value)) {
         return -1;
     }
     if (_Py_hashtable_len(target) >= ERROR_OBJECT_REPORT_COUNT) {
@@ -539,6 +578,88 @@ static int _trace_once(PyObject* obj, trace_state_t* state) {
     return res;
 error:
     return TRACE_RES_ERR;
+}
+
+// Builds a mermaid diagram of the object graph reachable from `obj` and dumps
+// it to `region-graph.md`. `error_objs` holds the objects with outstanding
+// incoming references, which are highlighted in the diagram.
+//
+// The diagram is produced by re-tracing the graph with a mermaid builder
+// attached to the trace state; `mermaid_visit` then appends one edge per
+// reference. No `gc_list` is passed, so no objects are moved, and by this
+// point every freezable object is already frozen.
+//
+// Writing the file is best-effort and silently skipped if it can't be opened.
+// Returns 0 on success and -1 with a Python exception set on error.
+static int dump_mermaid_diagram(PyObject* obj, _Py_hashtable_t *error_objs) {
+    int res = -1;
+    mermaid_builder_t mermaid = { error_objs, NULL };
+    trace_state_t state;
+    bool state_ready = false;
+    PyObject *diagram = NULL;
+
+    mermaid.writer = PyUnicodeWriter_Create(0);
+    if (mermaid.writer == NULL) {
+        goto finally;
+    }
+
+    // Top-down flowchart; `mermaid_visit` appends the edges as we traverse.
+    if (PyUnicodeWriter_WriteUTF8(mermaid.writer, "flowchart TD\n", -1) < 0) {
+        goto finally;
+    }
+
+    if (trace_state_init(&state, NULL)) {
+        goto finally;
+    }
+    state_ready = true;
+    state.mermaid = &mermaid;
+
+    if (_trace_once(obj, &state) == TRACE_RES_ERR) {
+        goto finally;
+    }
+
+    // `PyUnicodeWriter_Finish` consumes the writer regardless of outcome.
+    diagram = PyUnicodeWriter_Finish(mermaid.writer);
+    mermaid.writer = NULL;
+    if (diagram == NULL) {
+        goto finally;
+    }
+
+    const char *body = PyUnicode_AsUTF8(diagram);
+    if (body == NULL) {
+        goto finally;
+    }
+
+    FILE *f = fopen("region-graph.md", "w");
+    if (f != NULL) {
+        fputs(
+            "<div style='background: #fff'>\n"
+            "\n"
+            "```mermaid\n"
+            "%%{init: {'theme': 'neutral', 'themeVariables': { 'fontSize': '16px' }}}%%\n"
+            "\n",
+            f);
+        fputs(body, f);
+        fputs(
+            "\n"
+            "classDef immutable fill:#94f7ff\n"
+            "classDef error stroke-width:4px,stroke:red\n"
+            "```\n"
+            "</div>\n",
+            f);
+        fclose(f);
+    }
+
+    res = 0;
+finally:
+    if (mermaid.writer != NULL) {
+        PyUnicodeWriter_Discard(mermaid.writer);
+    }
+    if (state_ready) {
+        trace_state_destroy(&state);
+    }
+    Py_XDECREF(diagram);
+    return res;
 }
 
 static int trace_object(PyObject* obj, trace_info_t* result, PyGC_Head *gc_list) {
@@ -593,32 +714,12 @@ static int trace_object(PyObject* obj, trace_info_t* result, PyGC_Head *gc_list)
             goto error;
         }
 
-        // If the number of objects is below the limit we
-        // can create and dump a mermaid diagram of the graph.
-        if (trace_info.objs < ERROR_MERMAID_REPORT_LIMIT) {
-            // TODO(mermaid): Populate there mermaid state
-            // Then run the trace which should write the connections
-
-            // Here are is the mermaid template:
-            // ---
-            // <div style='background: #fff'>
-            //
-            // ```mermaid
-            // %%%%{init: {'theme': 'neutral', 'themeVariables': { 'fontSize': '16px' }}}%%%%
-            //
-            // // TODO Tracing
-            //
-            // "classDef immutable fill:#94f7ff"
-            // "classDef error stroke-width:4px,stroke:red"
-            // ```
-            // </div>
-            // ---
-
-            if (trace_object(op, &trace_info, NULL)) {
+        // If the number of objects is below the limit we can build and dump
+        // a mermaid diagram of the graph to `region-graph.md` for debugging.
+        if (_Py_hashtable_len(state.visited) < ERROR_MERMAID_REPORT_LIMIT) {
+            if (dump_mermaid_diagram(obj, result->obj_table)) {
                 goto error; // propagate Python exception
             }
-
-            // TODO(mermaid): Write the diagram to `region-graph.md`
         }
     }
 
