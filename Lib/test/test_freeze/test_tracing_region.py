@@ -92,7 +92,21 @@ class TestRegionOpening(unittest.TestCase):
         c.release()
         c.acquire()
 
+        self.assertTrue(c._is_closed())
         c.value.x = None
+        self.assertFalse(c._is_closed())
+
+    def test_release_closed_region(self):
+        c = Cown(Region())
+        c.value.x = []
+
+        c.release()
+        c.acquire()
+
+        self.assertTrue(c._is_closed())
+
+        c.release()
+
 
 class TestImplicitFreeze(unittest.TestCase):
     def test_implicit_freeze_func(self):

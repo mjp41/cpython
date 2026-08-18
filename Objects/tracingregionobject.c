@@ -681,6 +681,8 @@ static int trace_object(PyObject* obj, trace_info_t* result, PyGC_Head *gc_list)
     // and require a retrace. The second attempt should pass since all objects
     // should now be frozen. Pre-freeze hooks can mess with this, but consenting
     // adults and such.
+    //
+    // The first trace also finds sub-regions that needed to be closed before this one can.
     const int TRIES = 2;
     trace("Starting trace for %p", obj);
 
@@ -981,9 +983,8 @@ error:
     return NULL;
 }
 
-/* This method traces the region and closes it if the caller has the only
- * owning reference into the graph. The reference passed into this function
- * needs to be borrowed.
+/* This method traces the region and closes it, if there are no references
+ * pointing into the region. References to the bridge are allowed.
  *
  * This function requires the GIL to be held.
  *
@@ -992,6 +993,9 @@ error:
  */
 int _PyTracingRegion_Close(PyObject* op) {
     TracingRegionObject *self = (TracingRegionObject*)op;
+    if (!self->open) {
+        return 1;
+    }
     assert(gc_list_is_empty(&self->gc_list));
 
     int res = 0;
