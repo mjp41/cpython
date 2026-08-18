@@ -10,7 +10,7 @@ extern "C" {
 
 PyAPI_DATA(PyTypeObject) _PyTracingRegion_Type;
 PyAPI_FUNC(int) _PyTracingRegion_Close(PyObject* region);
-PyAPI_FUNC(int) _PyTracingRegion_Open(PyObject* region);
+PyAPI_FUNC(int) _PyTracingRegion_IsClosed(PyObject* region);
 
 struct _Py_immutability_state {
     int late_init_done;

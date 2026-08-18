@@ -2,6 +2,7 @@
 #include "pymacro.h"
 
 #include "pycore_cown.h"
+#include "pycore_immutability.h"
 #include "pycore_lock.h"
 #include "pycore_time.h"          // _PyTime_FromSeconds()
 
@@ -173,10 +174,6 @@ static int cown_lock(_PyCownObject* self, PyTime_t timeout, _PyCown_ipid_t locki
         self->locking_thread = _PyCown_ThisThreadId();
     } else {
         self->locking_thread = UNSET_THREAD_ID;
-    }
-
-    if (self->value && Region_Check(self->value)) {
-        _PyTracingRegion_Open(self->value);
     }
 
     return COWN_ACQUIRE_SUCCESS;
@@ -481,6 +478,23 @@ Ownership on the thread level is not enforced, any thread on the owning\n\
 interpreter can access and release the cown.  This is information is only\n\
 provided to give more control for those who seek it.");
 
+static PyObject *
+CownObject_is_closed(_PyCownObject *self, PyObject *Py_UNUSED(dummy))
+{
+    if (!Region_Check(self->value)) {
+        PyErr_SetString(PyExc_TypeError, "cown value is not a tracing region");
+        return NULL;
+    }
+
+    return PyBool_FromLong(_PyTracingRegion_IsClosed(self->value));
+}
+
+PyDoc_STRVAR(CownObject_is_closed_doc,
+"_is_closed($self, /)\n\
+--\n\
+\n\
+Return true if the cown's tracing region value is closed.");
+
 
 // Define the CownType with methods
 static PyMethodDef PyCown_methods[] = {
@@ -489,6 +503,7 @@ static PyMethodDef PyCown_methods[] = {
     {"locked", _PyCFunction_CAST(CownObject_locked), METH_NOARGS, CownObject_locked_doc},
     {"owned", _PyCFunction_CAST(CownObject_owned), METH_NOARGS, CownObject_owned_doc},
     {"owned_by_thread", _PyCFunction_CAST(CownObject_owned_by_thread), METH_NOARGS, CownObject_owned_by_thread_doc},
+    {"_is_closed", _PyCFunction_CAST(CownObject_is_closed), METH_NOARGS, CownObject_is_closed_doc},
     {NULL}  // Sentinel
 };
 

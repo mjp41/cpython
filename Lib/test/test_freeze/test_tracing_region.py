@@ -84,6 +84,16 @@ class TestTraceRefs(unittest.TestCase):
         _, ref_count = r.trace()
         self.assertEqual(ref_count, base_refs + 3)
 
+class TestRegionOpening(unittest.TestCase):
+    def test_open_after_acquire(self):
+        c = Cown(Region())
+        c.value.x = []
+
+        c.release()
+        c.acquire()
+
+        c.value.x = None
+
 class TestImplicitFreeze(unittest.TestCase):
     def test_implicit_freeze_func(self):
         @freezable

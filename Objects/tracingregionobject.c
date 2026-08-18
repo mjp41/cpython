@@ -9,7 +9,7 @@
 #define ERROR_MERMAID_REPORT_LIMIT 50
 #define ERROR_MERMAID_HIDE_IMMUTABLE true
 
-// #define REGION_TRACING
+#define REGION_TRACING
 
 #ifdef REGION_TRACING
 #define if_trace(...) __VA_ARGS__
@@ -536,16 +536,30 @@ static int _trace_visit(PyObject* obj, trace_state_t* state) {
     return _move_obj(obj, state);
 }
 
-static int _filter_visited(_Py_hashtable_t *ht, const void *key, const void *value, void *target_void) {
-    _Py_hashtable_t *target = (_Py_hashtable_t *)target_void;
-    // Only take objects with incoming references
-    if (value == 0) {
+typedef struct {
+    _Py_hashtable_t *target;
+    PyObject *region;
+} error_ref_filter;
+
+static int _filter_visited(_Py_hashtable_t *ht, const void *key, const void *value, void *filter_void) {
+    error_ref_filter *filter = (error_ref_filter *)filter_void;
+    Py_ssize_t refs = (Py_ssize_t)value;
+
+    // The caller holds one owning reference to the region object itself, which
+    // is expected and not a reason the region couldn't be closed. Don't let it
+    // consume one of the limited error-report slots.
+    if ((PyObject *)key == filter->region) {
+        refs -= 1;
+    }
+
+    // Only take objects with problematic incoming references.
+    if (refs <= 0) {
         return 0;
     }
-    if (_Py_hashtable_set(target, key, (void*)value)) {
+    if (_Py_hashtable_set(filter->target, key, (void*)refs)) {
         return -1;
     }
-    if (_Py_hashtable_len(target) >= ERROR_OBJECT_REPORT_COUNT) {
+    if (_Py_hashtable_len(filter->target) >= ERROR_OBJECT_REPORT_COUNT) {
         return 1;
     }
     return 0;
@@ -707,7 +721,8 @@ static int trace_object(PyObject* obj, trace_info_t* result, PyGC_Head *gc_list)
         if (result->obj_table == NULL) {
             goto error;
         }
-        int for_res = _Py_hashtable_foreach(state.visited, _filter_visited, (void*)result->obj_table);
+        error_ref_filter filter = { result->obj_table, obj };
+        int for_res = _Py_hashtable_foreach(state.visited, _filter_visited, (void*)&filter);
         if (for_res < -1) {
             _Py_hashtable_destroy(result->obj_table);
             result->obj_table = NULL;
@@ -759,13 +774,23 @@ static void detach_weak_refs(PyGC_Head *gc_list) {
 typedef struct {
     PyObject_HEAD
     PyObject *dict;
-    // The GC list containing all objects, used during transfer
+    // The GC list containing all objects while the region is closed. The bridge
+    // object is not in this GC list but in the list of the owning region or in no
+    // list if it's owned by a released cown.
     PyGC_Head gc_list;
+    // FIXME(regions): This can be inferred from the status of the gc_list
+    // or stored in the lower bits of the GC list. For now we keep it separate
+    // for the prototype
+    bool open;
 } TracingRegionObject;
 
 static int
 TracingRegion_init(TracingRegionObject *self, PyObject *args, PyObject *kwargs) {
     gc_list_init(&self->gc_list);
+    // We make the region open by default, this ensures that the first close
+    // will handle the region type correctly. Alternatively, we could make them
+    // closed in the beginning, but then handle the cases specifically.
+    self->open = true;
     return 0;
 }
 
@@ -777,6 +802,8 @@ TracingRegion_traverse(TracingRegionObject *self, visitproc visit, void *arg) {
 
 static int
 TracingRegion_clear(TracingRegionObject *self) {
+    // FIXME(regions): Special branch when closed to dealloc all
+
     // This is deallocating a closed region, we just dissolve it
     if (!gc_list_is_empty(&self->gc_list)) {
         gc_list_dissolve(&self->gc_list);
@@ -787,9 +814,82 @@ TracingRegion_clear(TracingRegionObject *self) {
 
 static void
 TracingRegion_dealloc(TracingRegionObject *self) {
+    // FIXME(regions): Special branch when closed to dealloc all
+
     PyObject_GC_UnTrack(self);
     TracingRegion_clear(self);
     Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static void _open_region(TracingRegionObject *self) {
+    if (self->open) {
+        return;
+    }
+
+    trace("Opening region %p", self);
+
+    // This only dissolves this region, all sub-regions remain closed.
+    gc_list_dissolve(&self->gc_list);
+    assert(gc_list_is_empty(&self->gc_list));
+
+    self->open = true;
+}
+
+static PyObject *
+TracingRegion_getattro(PyObject *op, PyObject *name) {
+    TracingRegionObject *self = (TracingRegionObject*)op;
+    _open_region(self);
+
+    return _PyObject_GenericGetAttrWithDict(op, name, self->dict, 0);
+}
+
+static int
+TracingRegion_setattro(PyObject *op, PyObject *name, PyObject *value) {
+    TracingRegionObject *self = (TracingRegionObject*)op;
+    _open_region(self);
+
+    // Allocate lazily because the generic helper only stores into a provided dict.
+    if (self->dict == NULL) {
+        self->dict = PyDict_New();
+        if (self->dict == NULL) {
+            return -1;
+        }
+    }
+
+    return _PyObject_GenericSetAttrWithDict(op, name, value, self->dict);
+}
+
+static PyObject *
+TracingRegion_get_dict(PyObject *op, void *Py_UNUSED(context)) {
+    TracingRegionObject *self = (TracingRegionObject*)op;
+    _open_region(self);
+
+    if (self->dict == NULL) {
+        self->dict = PyDict_New();
+        if (self->dict == NULL) {
+            return NULL;
+        }
+    }
+    return Py_NewRef(self->dict);
+}
+
+static int
+TracingRegion_set_dict(PyObject *op, PyObject *value, void *Py_UNUSED(context)) {
+    TracingRegionObject *self = (TracingRegionObject*)op;
+    _open_region(self);
+
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError, "cannot delete __dict__");
+        return -1;
+    }
+    if (!PyDict_Check(value)) {
+        PyErr_Format(PyExc_TypeError,
+                     "__dict__ must be set to a dictionary, not a '%.200s'",
+                     Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    Py_XSETREF(self->dict, Py_NewRef(value));
+    return 0;
 }
 
 static PyObject* TracingRegion_trace(PyObject *op) {
@@ -814,9 +914,6 @@ static PyObject* TracingRegion_trace(PyObject *op) {
 // "region could not be closed" error message.
 typedef struct {
     PyUnicodeWriter *writer;
-    // The region object being closed. One incoming reference to it is the
-    // expected owning reference and is not reported as a problem.
-    PyObject *region;
     // Sum of the (problematic) incoming references reported so far.
     Py_ssize_t accounted;
 } incoming_ref_report;
@@ -828,16 +925,6 @@ _report_incoming_ref(_Py_hashtable_t *ht, const void *key, const void *value, vo
     incoming_ref_report *report = (incoming_ref_report *)user_data;
     PyObject *obj = (PyObject *)key;
     Py_ssize_t refs = (Py_ssize_t)value;
-
-    // The caller holds one owning reference to the region object itself, which
-    // is expected and not a reason the region couldn't be closed. Don't report
-    // it, but do report any additional references to the region.
-    if (obj == report->region) {
-        refs -= 1;
-        if (refs <= 0) {
-            return 0;
-        }
-    }
 
     report->accounted += refs;
 
@@ -854,13 +941,13 @@ _report_incoming_ref(_Py_hashtable_t *ht, const void *key, const void *value, vo
 // the objects that still have incoming references. Returns a new reference to
 // the message string, or NULL with an exception set.
 static PyObject *
-build_close_error_message(trace_info_t *trace_info, PyObject *region) {
+build_close_error_message(trace_info_t *trace_info) {
     PyUnicodeWriter *writer = PyUnicodeWriter_Create(0);
     if (writer == NULL) {
         return NULL;
     }
 
-    incoming_ref_report report = { writer, region, 0 };
+    incoming_ref_report report = { writer, 0 };
 
     if (PyUnicodeWriter_WriteUTF8(writer,
             "The region could not be closed due to:\n", -1) < 0) {
@@ -926,7 +1013,7 @@ int _PyTracingRegion_Close(PyObject* op) {
         //   RuntimeError: The region could not be closed due to:
         //   - 1 incoming reference to '[1, 2, 3]'
         //   - 2 incoming references to '(6, 7)'
-        PyObject *msg = build_close_error_message(&trace_info, op);
+        PyObject *msg = build_close_error_message(&trace_info);
         if (msg != NULL) {
             PyErr_SetObject(PyExc_RuntimeError, msg);
             Py_DECREF(msg);
@@ -941,6 +1028,7 @@ int _PyTracingRegion_Close(PyObject* op) {
 
     trace("- Closed region %p", self);
     assert(!gc_list_is_empty(&self->gc_list));
+    self->open = false;
     res = 1;
     goto finally;
 error:
@@ -953,17 +1041,9 @@ finally:
     return res;
 }
 
-/* This method opens the region by dissolving it and all objects into the
- * local GC list.
- *
- * This function requires the GIL to be held.
- */
-int _PyTracingRegion_Open(PyObject* op) {
-    TracingRegionObject *self = (TracingRegionObject*)op;
-    assert(!gc_list_is_empty(&self->gc_list));
-    gc_list_dissolve(&self->gc_list);
-    assert(gc_list_is_empty(&self->gc_list));
-    return 0;
+int _PyTracingRegion_IsClosed(PyObject* region) {
+    TracingRegionObject *self = (TracingRegionObject*)region;
+    return !self->open;
 }
 
 static PyMethodDef TracingRegion_methods[] = {
@@ -972,8 +1052,8 @@ static PyMethodDef TracingRegion_methods[] = {
     {NULL,              NULL}           /* sentinel */
 };
 
-static PyMemberDef TracingRegion_members[] = {
-    {"__dict__", _Py_T_OBJECT, offsetof(TracingRegionObject, dict), Py_READONLY},
+static PyGetSetDef TracingRegion_getset[] = {
+    {"__dict__", TracingRegion_get_dict, TracingRegion_set_dict},
     {NULL}
 };
 
@@ -985,9 +1065,10 @@ PyTypeObject _PyTracingRegion_Type = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_IMMUTABLETYPE,
     .tp_traverse = (traverseproc)TracingRegion_traverse,
     .tp_clear = (inquiry)TracingRegion_clear,
-    .tp_members = TracingRegion_members,
+    .tp_getset = TracingRegion_getset,
     .tp_methods = TracingRegion_methods,
-    .tp_dictoffset = offsetof(TracingRegionObject, dict),
+    .tp_getattro = TracingRegion_getattro,
+    .tp_setattro = TracingRegion_setattro,
     .tp_init = (initproc)TracingRegion_init,
     .tp_new = PyType_GenericNew,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
