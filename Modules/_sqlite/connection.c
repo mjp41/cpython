@@ -155,6 +155,11 @@ static PyObject *
 new_statement_cache(pysqlite_Connection *self, pysqlite_state *state,
                     int maxsize)
 {
+    // FIXME(regions): statement cache disabled for testing. Return the connection
+    // itself (its tp_call creates a fresh statement) so callers of
+    // statement_cache(sql) bypass the functools.lru_cache wrapper.
+    return Py_NewRef((PyObject *)self);
+
     PyObject *args[] = { NULL, PyLong_FromLong(maxsize), };
     if (args[1] == NULL) {
         return NULL;
