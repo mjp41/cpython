@@ -176,6 +176,11 @@ static int cown_lock(_PyCownObject* self, PyTime_t timeout, _PyCown_ipid_t locki
         self->locking_thread = UNSET_THREAD_ID;
     }
 
+    if (self->value && Region_Check(self->value)) {
+        assert(!PyObject_GC_IsTracked(self->value));
+        PyObject_GC_Track(self->value);
+    }
+
     return COWN_ACQUIRE_SUCCESS;
 }
 
@@ -378,16 +383,38 @@ static int cown_check_owner_before_release(_PyCownObject *self, _PyCown_ipid_t u
     return 0;
 }
 
-/* Try closing the region by cleaning it.
- * Returns:
- * (-1) If an error occurred while trying to clean the region.
- * (0) If the region is still open after this call.
- * (1) If the region is closed after this call.
+/* This attempts to close the region
+ *
+ * It returns non-zero if the closing failed
  */
-static int cown_try_closing_region(_PyCownObject *self) {
+static int cown_close_region(_PyCownObject *self) {
     assert(Region_Check(self->value));
 
-    return _PyTracingRegion_Close(self->value);
+    // Close the region
+    int closing_res = _PyTracingRegion_Close(self->value);
+    if (closing_res < 0) {
+        return -1;
+    }
+    if (closing_res == 0) {
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "the region in the cown couldn't be closed due to incoming references");
+        return -1;
+    }
+
+    // Make sure that the cown owns the only external reference to the bridge object.
+    if (Py_REFCNT(self->value) > 1) {
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "the cown couldn't be released, due to the bridge having incoming references");
+        return -1;
+    }
+
+    // The region is closed and this is the only owner of the bridge. We untrack
+    // from the current GC list.
+    PyObject_GC_UnTrack(self->value);
+
+    return 0;
 }
 
 static int cown_release(_PyCownObject *self, _PyCown_ipid_t unlocking_ip) {
@@ -395,22 +422,17 @@ static int cown_release(_PyCownObject *self, _PyCown_ipid_t unlocking_ip) {
         return -1;
     }
 
+    // Immutable objects are safe to share, the cown can be release directly
     if (_Py_IsImmutable(self->value)) {
-        // Can be released without any restrictions
         return cown_release_unchecked(self, unlocking_ip);
     }
     assert(Region_Check(self->value));
 
-    int cleaning_res = cown_try_closing_region(self);
-    if (cleaning_res < 0) {
+    // The contained region needs to be closed, to allow the cown to release
+    if (cown_close_region(self)) {
         return -1;
     }
-    if (cleaning_res == 0) {
-        PyErr_Format(
-            PyExc_RuntimeError,
-            "the cown can't be released, since the contained region is still open");
-        return -1;
-    }
+
     // Region is closed, safe to release
     return cown_release_unchecked(self, unlocking_ip);
 }
