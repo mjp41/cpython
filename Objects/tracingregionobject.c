@@ -549,8 +549,334 @@ typedef struct {
     Py_ssize_t incoming_refs;
 } trace_info_t;
 
+typedef struct {
+    _Py_hashtable_t *obj_table;
+    Py_ssize_t incoming_refs;
+} close_error_info_t;
+
+typedef struct {
+    _Py_hashtable_t *target;
+    PyObject *bridge;
+    Py_ssize_t ignored_refs;
+} close_error_filter_t;
+
+typedef struct {
+    PyUnicodeWriter *writer;
+    Py_ssize_t accounted;
+} incoming_ref_report_t;
+
+typedef struct {
+    PyUnicodeWriter *writer;
+    _Py_hashtable_t *visited;
+    _Py_hashtable_t *error_objs;
+    PyObject *pending;
+    PyObject *src;
+} mermaid_dump_state_t;
+
 const int TRACE_RES_ERR = -1;
 const int TRACE_RES_DONE = 0;
+
+static int
+collect_close_error_obj(_Py_hashtable_t *ht, const void *key, const void *value, void *user_data)
+{
+    close_error_filter_t *filter = (close_error_filter_t *)user_data;
+    Py_ssize_t refs = (Py_ssize_t)value;
+
+    if ((PyObject *)key == filter->bridge) {
+        refs -= 1;
+        filter->ignored_refs += 1;
+    }
+
+    if (refs <= 0) {
+        return 0;
+    }
+    if (_Py_hashtable_set(filter->target, key, (void *)refs) < 0) {
+        return -1;
+    }
+    if (_Py_hashtable_len(filter->target) >= ERROR_OBJECT_REPORT_COUNT) {
+        return 1;
+    }
+    return 0;
+}
+
+static int
+close_error_info_init(close_error_info_t *info, region_trace_state_t *state)
+{
+    info->incoming_refs = state->external_rc;
+    info->obj_table = _Py_hashtable_new(
+        _Py_hashtable_hash_ptr,
+        _Py_hashtable_compare_direct);
+    if (info->obj_table == NULL) {
+        return -1;
+    }
+
+    close_error_filter_t filter = {info->obj_table, state->bridge, 0};
+    int res = _Py_hashtable_foreach(state->visited, collect_close_error_obj, &filter);
+    if (res < 0) {
+        _Py_hashtable_destroy(info->obj_table);
+        info->obj_table = NULL;
+        return -1;
+    }
+    info->incoming_refs -= filter.ignored_refs;
+    return 0;
+}
+
+static void
+close_error_info_destroy(close_error_info_t *info)
+{
+    if (info->obj_table != NULL) {
+        _Py_hashtable_destroy(info->obj_table);
+        info->obj_table = NULL;
+    }
+}
+
+static int
+report_incoming_ref(_Py_hashtable_t *ht, const void *key, const void *value, void *user_data)
+{
+    incoming_ref_report_t *report = (incoming_ref_report_t *)user_data;
+    PyObject *obj = (PyObject *)key;
+    Py_ssize_t refs = (Py_ssize_t)value;
+
+    report->accounted += refs;
+
+    if (PyUnicodeWriter_Format(report->writer,
+            "- %zd incoming reference%s to '%S'\n",
+            refs, (refs == 1) ? "" : "s", obj) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static PyObject *
+build_close_error_message(close_error_info_t *info)
+{
+    PyUnicodeWriter *writer = PyUnicodeWriter_Create(0);
+    if (writer == NULL) {
+        return NULL;
+    }
+
+    incoming_ref_report_t report = {writer, 0};
+
+    if (PyUnicodeWriter_WriteUTF8(writer,
+            "The region could not be closed due to:\n", -1) < 0) {
+        goto error;
+    }
+
+    if (_Py_hashtable_foreach(info->obj_table, report_incoming_ref, &report) < 0) {
+        goto error;
+    }
+
+    if (report.accounted < info->incoming_refs) {
+        Py_ssize_t others = info->incoming_refs - report.accounted;
+        if (PyUnicodeWriter_Format(writer,
+                "- %zd reference%s to other objects\n",
+                others, (others == 1) ? "" : "s") < 0) {
+            goto error;
+        }
+    }
+
+    return PyUnicodeWriter_Finish(writer);
+
+error:
+    if (!PyErr_Occurred()) {
+        PyErr_SetString(PyExc_RuntimeError, "failed to build region close error message");
+    }
+    PyUnicodeWriter_Discard(writer);
+    return NULL;
+}
+
+static int
+mermaid_write_node(PyUnicodeWriter *writer, PyObject *obj)
+{
+    if (Region_Check(obj)) {
+        const char *status = ((TracingRegionObject *)obj)->open ? "open" : "closed";
+        return PyUnicodeWriter_Format(writer,
+            "n%p[[\"Region %p<br>rc=%zd<br>%s\"]]",
+            obj, obj, Py_REFCNT(obj), status);
+    }
+    if (Cown_Check(obj)) {
+        return PyUnicodeWriter_Format(writer,
+            "n%p([\"Cown %p<br>rc=%zd\"])",
+            obj, obj, Py_REFCNT(obj));
+    }
+    return PyUnicodeWriter_Format(writer,
+        "n%p[\"%p<br>rc=%zd<br>[%s]\"]",
+        obj, obj, Py_REFCNT(obj), Py_TYPE(obj)->tp_name);
+}
+
+static int
+mermaid_write_class(PyUnicodeWriter *writer, PyObject *obj, _Py_hashtable_t *error_objs)
+{
+    if (_Py_IsImmutable(obj)) {
+        return PyUnicodeWriter_WriteUTF8(writer, ":::immutable", -1);
+    }
+    if (_Py_hashtable_get_entry(error_objs, obj) != NULL) {
+        return PyUnicodeWriter_WriteUTF8(writer, ":::error", -1);
+    }
+    return 0;
+}
+
+static int
+mermaid_enqueue_if_needed(mermaid_dump_state_t *state, PyObject *obj)
+{
+    if (_Py_IsImmutable(obj) || Cown_Check(obj)) {
+        return 0;
+    }
+    if (Region_Check(obj) && state->src != NULL) {
+        return 0;
+    }
+    if (_Py_hashtable_get_entry(state->visited, obj) != NULL) {
+        return 0;
+    }
+    if (_Py_hashtable_set(state->visited, obj, obj) < 0) {
+        return -1;
+    }
+    return PyList_Append(state->pending, obj);
+}
+
+static int
+mermaid_visit(PyObject *obj, mermaid_dump_state_t *state)
+{
+    if (_Py_IsImmutable(obj) && ERROR_MERMAID_HIDE_IMMUTABLE) {
+        return 0;
+    }
+
+    if (state->src != NULL) {
+        if (PyUnicodeWriter_WriteUTF8(state->writer, "    ", -1) < 0) {
+            return -1;
+        }
+        if (mermaid_write_node(state->writer, state->src) < 0) {
+            return -1;
+        }
+        if (PyUnicodeWriter_WriteUTF8(state->writer, " --> ", -1) < 0) {
+            return -1;
+        }
+    } else if (PyUnicodeWriter_WriteUTF8(state->writer, "    ", -1) < 0) {
+        return -1;
+    }
+
+    if (mermaid_write_node(state->writer, obj) < 0) {
+        return -1;
+    }
+    if (mermaid_write_class(state->writer, obj, state->error_objs) < 0) {
+        return -1;
+    }
+    if (PyUnicodeWriter_WriteUTF8(state->writer, "\n", -1) < 0) {
+        return -1;
+    }
+
+    return mermaid_enqueue_if_needed(state, obj);
+}
+
+static void
+mermaid_dump_state_destroy(mermaid_dump_state_t *state)
+{
+    if (state->writer != NULL) {
+        PyUnicodeWriter_Discard(state->writer);
+        state->writer = NULL;
+    }
+    Py_CLEAR(state->pending);
+    if (state->visited != NULL) {
+        _Py_hashtable_destroy(state->visited);
+        state->visited = NULL;
+    }
+}
+
+static int
+mermaid_dump_state_init(mermaid_dump_state_t *state, _Py_hashtable_t *error_objs)
+{
+    state->writer = NULL;
+    state->visited = NULL;
+    state->pending = NULL;
+    state->src = NULL;
+    state->error_objs = error_objs;
+
+    state->writer = PyUnicodeWriter_Create(0);
+    if (state->writer == NULL) {
+        goto error;
+    }
+    state->visited = _Py_hashtable_new(
+        _Py_hashtable_hash_ptr,
+        _Py_hashtable_compare_direct);
+    if (state->visited == NULL) {
+        goto error;
+    }
+    state->pending = PyList_New(0);
+    if (state->pending == NULL) {
+        goto error;
+    }
+    return 0;
+
+error:
+    mermaid_dump_state_destroy(state);
+    return -1;
+}
+
+static int
+dump_mermaid_diagram(PyObject *root, _Py_hashtable_t *error_objs)
+{
+    int res = -1;
+    mermaid_dump_state_t state;
+    PyObject *diagram = NULL;
+
+    if (mermaid_dump_state_init(&state, error_objs) < 0) {
+        return -1;
+    }
+
+    if (PyUnicodeWriter_WriteUTF8(state.writer, "flowchart TD\n", -1) < 0) {
+        goto finally;
+    }
+    if (mermaid_visit(root, &state) < 0) {
+        goto finally;
+    }
+
+    while (PyList_GET_SIZE(state.pending) > 0) {
+        PyObject *item = list_pop(state.pending);
+        state.src = item;
+        traverseproc proc = get_reachable_proc(Py_TYPE(item));
+        SUCCEEDS(proc(item, (visitproc)mermaid_visit, &state));
+    }
+
+    diagram = PyUnicodeWriter_Finish(state.writer);
+    state.writer = NULL;
+    if (diagram == NULL) {
+        goto finally;
+    }
+
+    const char *body = PyUnicode_AsUTF8(diagram);
+    if (body == NULL) {
+        goto finally;
+    }
+
+    FILE *f = fopen("region-graph.md", "w");
+    if (f != NULL) {
+        fputs(
+            "<div style='background: #fff'>\n"
+            "\n"
+            "```mermaid\n"
+            "%%{init: {'theme': 'neutral', 'themeVariables': { 'fontSize': '16px' }}}%%\n"
+            "\n",
+            f);
+        fputs(body, f);
+        fputs(
+            "\n"
+            "classDef immutable fill:#94f7ff\n"
+            "classDef error stroke-width:4px,stroke:red\n"
+            "```\n"
+            "</div>\n",
+            f);
+        fclose(f);
+    }
+
+    res = 0;
+
+finally:
+    mermaid_dump_state_destroy(&state);
+    Py_XDECREF(diagram);
+    return res;
+error:
+    goto finally;
+}
 
 static int _move_obj(PyObject* obj, region_trace_state_t* state) {
     // Check the movability of the object:
@@ -707,11 +1033,24 @@ static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trac
         }
 
         dbg("- Failed to close region %p, there are %zd incoming references", region, state.external_rc);
-        PyErr_Format(
-            PyExc_RuntimeError,
-            "Failed to close region %p, there are %zd incoming references",
-            region,
-            state.external_rc);
+        close_error_info_t error_info = {NULL, 0};
+        if (close_error_info_init(&error_info, &state) < 0) {
+            goto error;
+        }
+        if (_Py_hashtable_len(state.visited) < ERROR_MERMAID_REPORT_LIMIT) {
+            // Borrowed error table; dump_mermaid_diagram() does not take ownership.
+            if (dump_mermaid_diagram(region_obj, error_info.obj_table) < 0) {
+                PyErr_Clear();
+            }
+        }
+
+        PyObject *msg = build_close_error_message(&error_info);
+        close_error_info_destroy(&error_info);
+        if (msg == NULL) {
+            goto error;
+        }
+        PyErr_SetObject(PyExc_RuntimeError, msg);
+        Py_DECREF(msg);
         goto error;
     }
 
@@ -896,7 +1235,7 @@ int _PyTracingRegion_Close(PyObject* op) {
     }
     assert(gc_list_is_empty(&self->gc_list));
 
-    return try_close_region_tree(self);
+    return try_close_region_tree(op);
 }
 
 int _PyTracingRegion_IsClosed(PyObject* region) {

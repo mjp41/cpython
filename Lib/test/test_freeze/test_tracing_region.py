@@ -1,8 +1,11 @@
 import sys
 import unittest
+from test.support import os_helper
 from immutable import freeze, is_frozen, freezable
 from immutable import TracingRegion as Region
 from immutable import Cown
+
+REGION_GRAPH = "region-graph.md"
 
 def sort_region_error(msg):
     """Normalize a 'region could not be closed' message by sorting its
@@ -12,6 +15,9 @@ def sort_region_error(msg):
     return [header, *sorted(lines)]
 
 class TestTraceRefs(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(os_helper.unlink, REGION_GRAPH)
+        os_helper.unlink(REGION_GRAPH)
 
     def test_release_error(self):
         x = [1]
@@ -32,7 +38,7 @@ class TestTraceRefs(unittest.TestCase):
                 "- 1 incoming reference to '[2]'"
             ])
 
-    def test_release_error(self):
+    def test_release_error_capped_output(self):
         # The object order in the error message is based on the address
         # and therefore fairly random. All elements look the same of
         # make testing stable.
@@ -63,11 +69,30 @@ class TestTraceRefs(unittest.TestCase):
         l = None
         c.release()
 
+    def test_release_error_in_subregion(self):
+        x = [1]
+
+        c = Cown(Region())
+        child = Region()
+        child.x = x
+        c.value.child = child
+
+        with self.assertRaises(RuntimeError) as cm:
+            c.release()
+
+        self.assertEqual(
+            sort_region_error(str(cm.exception)),
+            [
+                "The region could not be closed due to:",
+                "- 1 incoming reference to '[1]'",
+            ])
+
 
 class TestRegionOpening(unittest.TestCase):
     def test_open_after_acquire(self):
         c = Cown(Region())
         c.value.x = []
+        self.assertFalse(c._is_closed())
 
         c.release()
         c.acquire()
@@ -79,6 +104,7 @@ class TestRegionOpening(unittest.TestCase):
     def test_release_closed_region(self):
         c = Cown(Region())
         c.value.x = []
+        self.assertFalse(c._is_closed())
 
         c.release()
         c.acquire()
@@ -86,6 +112,32 @@ class TestRegionOpening(unittest.TestCase):
         self.assertTrue(c._is_closed())
 
         c.release()
+    
+    def test_bridge_refs_keep_region_closed(self):
+        c = Cown(Region())
+        c.release()
+        c.acquire()
+        self.assertTrue(c._is_closed())
+
+        # Adding new references to the bridge object should keep it closed.
+        # only attribute accesses should open it.
+        r1 = c.value
+        r2 = c.value
+        self.assertTrue(c._is_closed())
+
+        # However, these references should prevent the cown from being released
+        with self.assertRaises(RuntimeError) as cm:
+            c.release()
+
+        self.assertEqual(
+            str(cm.exception),
+            "the cown couldn't be released, due to the bridge having incoming references")
+
+        # The release should succeed once all refs have been killed
+        del r1
+        del r2
+        c.release()
+
 
 
 class TestImplicitFreeze(unittest.TestCase):
