@@ -63,26 +63,6 @@ class TestTraceRefs(unittest.TestCase):
         l = None
         c.release()
 
-    def test_trace(self):
-        @freezable
-        class A:
-            pass
-
-        r = Region()
-        r.a = A()
-        r.b = A()
-        r.c = A()
-
-        _, base_refs = r.trace()
-
-        a = r.a
-        _, ref_count = r.trace()
-        self.assertEqual(ref_count, base_refs + 1)
-
-        b = r.b
-        c = r.c
-        _, ref_count = r.trace()
-        self.assertEqual(ref_count, base_refs + 3)
 
 class TestRegionOpening(unittest.TestCase):
     def test_open_after_acquire(self):
@@ -113,48 +93,53 @@ class TestImplicitFreeze(unittest.TestCase):
         @freezable
         def some_func():
             pass
-        r = Region()
+        c = Cown(Region())
 
-        r.obj = some_func
-        self.assertFalse(is_frozen(r.obj))
-        r.trace()
-        self.assertTrue(is_frozen(r.obj))
+        c.value.obj = some_func
+        self.assertFalse(is_frozen(c.value.obj))
+        c.release()
+        c.acquire()
+        self.assertTrue(is_frozen(c.value.obj))
 
     def test_implicit_freeze_type(self):
         @freezable
         class A:
             pass
-        r = Region()
+        c = Cown(Region())
 
-        r.obj = A
-        self.assertFalse(is_frozen(r.obj))
-        r.trace()
-        self.assertTrue(is_frozen(r.obj))
+        c.value.obj = A
+        self.assertFalse(is_frozen(c.value.obj))
+        c.release()
+        c.acquire()
+        self.assertTrue(is_frozen(c.value.obj))
 
     def test_implicit_freeze_module(self):
         import random;
-        r = Region()
+        c = Cown(Region())
 
-        r.obj = random
-        self.assertFalse(is_frozen(r.obj))
-        r.trace()
-        self.assertTrue(is_frozen(r.obj))
+        c.value.obj = random
+        self.assertFalse(is_frozen(c.value.obj))
+        c.release()
+        c.acquire()
+        self.assertTrue(is_frozen(c.value.obj))
 
         # Unimport module
         sys.modules.pop("random", None)
         sys.mut_modules.pop("random", None)
 
     def test_implicit_freeze_str(self):
-        r = Region()
+        c = Cown(Region())
 
-        r.obj = "Ducks are cool"
-        r.trace()
-        self.assertTrue(is_frozen(r.obj))
+        c.value.obj = "Ducks are cool"
+        c.release()
+        c.acquire()
+        self.assertTrue(is_frozen(c.value.obj))
 
     def test_implicit_freeze_int(self):
-        r = Region()
+        c = Cown(Region())
 
-        r.obj = 17
-        r.trace()
-        self.assertTrue(is_frozen(r.obj))
+        c.value.obj = 17
+        c.release()
+        c.acquire()
+        self.assertTrue(is_frozen(c.value.obj))
 
