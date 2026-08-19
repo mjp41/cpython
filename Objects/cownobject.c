@@ -24,6 +24,8 @@ typedef enum CownLockStatus {
     COWN_ACQUIRE_SUCCESS = 1
 } CownLockStatus;
 
+// Cowns rely on the immutability machinery for atomic reference counting:
+// PyCown_init() freezes each instance once its initial value is installed.
 struct _PyCownObject {
     PyObject_HEAD
     /* The id of the interpreter that currently owns this cown.
@@ -393,12 +395,6 @@ static int cown_close_region(_PyCownObject *self) {
     // Close the region
     int closing_res = _PyTracingRegion_Close(self->value);
     if (closing_res < 0) {
-        return -1;
-    }
-    if (closing_res == 0) {
-        PyErr_Format(
-            PyExc_RuntimeError,
-            "the region in the cown couldn't be closed due to incoming references");
         return -1;
     }
 

@@ -4,6 +4,7 @@
 #include "pycore_object.h"        // _PyObject_GC_TRACK(), _PyDebugAllocatorStats()
 #include "pycore_descrobject.h"
 #include "pycore_weakref.h"
+#include "pycore_cown.h"
 
 #define ERROR_OBJECT_REPORT_COUNT 5
 #define ERROR_MERMAID_REPORT_LIMIT 50
@@ -39,6 +40,7 @@
 #define SUCCEEDS(x) do { int r = (x); if (r != 0) goto error; } while (0)
 
 #define Region_Check(x) Py_IS_TYPE((x), &_PyTracingRegion_Type)
+#define Cown_Check(x) Py_IS_TYPE((x), &_PyCown_Type)
 
 // ###################################################################
 // Copied from gc.c
@@ -151,7 +153,11 @@ static PyObject* list_pop(PyObject* s){
 typedef enum {
     Py_MOVABLE_YES = 0,
     Py_MOVABLE_NO = 1,
+    // The object should be frozen
     Py_MOVABLE_FREEZE = 2,
+    // The object is not movable, but the reference is allowed. The object
+    // should be skipped
+    Py_MOVABLE_COWN = 3,
 } movable_status;
 
 movable_status get_movable_status(PyObject *obj) {
@@ -203,6 +209,11 @@ movable_status get_movable_status(PyObject *obj) {
         return Py_MOVABLE_FREEZE;
     }
 
+    // Cowns are not movable, but the reference is explicitly allowed.
+    if (Cown_Check(obj)) {
+        return Py_MOVABLE_COWN;
+    }
+
     // Freezing or moving these objects is... complicated. In some cases it is
     // possible but more hassle than it's probably worth. For not we mark them
     // all as unmovable.
@@ -224,6 +235,9 @@ movable_status get_movable_status(PyObject *obj) {
     if (PyExceptionInstance_Check(obj)) {
         return Py_MOVABLE_NO;
     }
+
+    // Regions are theoretically only movable, if they're closed. The traversal
+    // checks this manually.
 
     // For now, we define all other objects as movable by default. (Surely
     // this will not backfire)
@@ -345,6 +359,52 @@ typedef struct {
     // this bridge object.
     Py_ssize_t internal_bridge_refs;
 } TracingRegionObject;
+
+static void _region_close(TracingRegionObject *self, Py_ssize_t bridge_rc) {
+    if (!self->open) {
+        return;
+    }
+
+    dbg("Closing region %p", self);
+
+    // FIXME: This can be optimized, for example by inserting all objects
+    // with weak refs in the beginning.
+    detach_weak_refs(&self->gc_list);
+
+    // TODO(regions): explain RC magic
+    if (bridge_rc != 0) {
+        assert(bridge_rc >= 0);
+        dbg("- subtracting %ld internal references from the bridge object %p", bridge_rc, self);
+        _Py_RefcntAdd(self, -bridge_rc);
+        self->internal_bridge_refs = bridge_rc;
+    } else {
+        assert(self->internal_bridge_refs == 0);
+    }
+
+    self->open = false;
+}
+
+static void _open_region(TracingRegionObject *self) {
+    if (self->open) {
+        return;
+    }
+
+    dbg("Opening region %p", self);
+
+    // We re-add the internal references to the RC that have been subtracted during closing.
+    if (self->internal_bridge_refs != 0) {
+        assert(self->internal_bridge_refs >= 0);
+        dbg("- adding %ld internal references from the bridge object %p", self->internal_bridge_refs, self);
+        _Py_RefcntAdd(self, self->internal_bridge_refs);
+        self->internal_bridge_refs = 0;
+    }
+
+    // This only dissolves this region, all sub-regions remain closed.
+    gc_list_dissolve(&self->gc_list);
+    assert(gc_list_is_empty(&self->gc_list));
+
+    self->open = true;
+}
 
 const int PER_REGION_TRACE_LIMIT = 2;
 
@@ -484,6 +544,14 @@ static int region_trace_state_init(
 error:
     region_trace_state_destroy(state);
     return -1;
+}
+
+static void region_trace_state_set_restart(region_trace_state_t* state) {
+    state->restart = true;
+    // Setting the gc_list to NULL will stop objects from being moved
+    // between GC lists. Just a small thing we can avoid. The next (full)
+    // trace will have this set again.
+    state->gc_list = NULL;
 }
 
 // TODO: Continue Migration
@@ -634,14 +702,14 @@ const int TRACE_RES_ERR = -1;
 const int TRACE_RES_DONE = 0;
 const int TRACE_RES_RESTART = 1;
 
-static int _move_obj(PyObject* obj, trace_state_t* state) {
+static int _move_obj(PyObject* obj, region_trace_state_t* state) {
     // Check the movability of the object:
     movable_status status = get_movable_status(obj);
     switch (status) {
     case Py_MOVABLE_YES:
         break;
     case Py_MOVABLE_NO:
-        trace("    - %p is not movable", obj);
+        dbg("    - %p is not movable", obj);
         throw_region_error(
             "Instances of type '%s' are not movable", Py_TYPE(obj)->tp_name,
             state->src, obj);
@@ -649,29 +717,23 @@ static int _move_obj(PyObject* obj, trace_state_t* state) {
     case Py_MOVABLE_FREEZE:
         // Freeze the object, this can invalidate our `external_rc`,
         // we restart after this trace
-        trace("    - freezing %p", obj);
+        dbg("    - freezing %p", obj);
         if (_PyImmutability_Freeze(obj)) {
             return TRACE_RES_ERR;
         }
 
-        state->restart = true;
-        // Setting the gc_list to NULL will stop objects from being moved
-        // between GC lists. Just a small thing we can avoid. The next (full)
-        // trace will have this set again.
-        state->gc_list = NULL;
+        region_trace_state_set_restart(state);
+        return 0;
+    case Py_MOVABLE_COWN:
         return 0;
     default:
         assert(false);
         break;
     }
 
-    // Move the object
-    Py_ssize_t lrc_change = Py_REFCNT(obj);
-    if (state->src != NULL) {
-        // -1 for the reference we just followed
-        lrc_change -= 1;
-    }
-    trace("    - moving %p; LRC += %zd", obj, lrc_change);
+    // Update the LRC, -1 for the reference we just followed
+    Py_ssize_t lrc_change = Py_REFCNT(obj) - 1;
+    dbg("    - moving %p; LRC += %zd", obj, lrc_change);
     state->external_rc += lrc_change;
 
     // Mark the object as visited, this stores the lrc_change for better error reporting
@@ -691,23 +753,56 @@ static int _move_obj(PyObject* obj, trace_state_t* state) {
         gc_list_move(_Py_AS_GC(obj), state->gc_list);
     }
 
-    if (PyList_Append(state->pending, obj)) {
-        return -1;
+    // Bridge objects of sub-regions are moved, but shouldn't be traversed.
+    if (!Region_Check(obj)) {
+        if (PyList_Append(state->pending, obj)) {
+            return -1;
+        }
     }
 
     return 0;
 }
 
-static int _trace_visit(PyObject* obj, trace_state_t* state) {
-    if (state->mermaid) {
-        if (mermaid_visit(obj, state)) {
+static int
+_enqueue_region_for_closing(tree_trace_state_t *state, PyObject *region)
+{
+    for (int i = 0; i < PER_REGION_TRACE_LIMIT; i++) {
+        if (PyList_Append(state->pending, region) < 0) {
             return -1;
         }
     }
+    return 0;
+}
 
+static int _trace_visit(PyObject* obj, region_trace_state_t* state) {
     // References to immutable objects are allowed
     if (_PyImmutability_CanViewAsImmutable(obj)) {
         assert(_Py_IsImmutable(obj));
+        return 0;
+    }
+
+    // References to the bridge are tracked separately
+    if (obj == state->bridge) {
+        // This branch also accounts for references from the bridge object to itself.
+        dbg("    - Internal reference to bridge from %p; bridge_rc += 1", state->src);
+        state->bridge_rc += 1;
+        return 0;
+    }
+
+    // References external regions turns them into sub-regions. These
+    // need to be traversed and closed separately
+    if (Region_Check(obj)) {
+        if (_PyTracingRegion_IsClosed(obj)) {
+            // If the child region is closed we can move it directly
+            return _move_obj(obj, state);
+        } else {
+            // The child region is open, we need to traverse it first and then
+            // retry closing this.
+            if (_enqueue_region_for_closing(state->tree_trace_state, obj) < 0) {
+                return -1;
+            }
+            region_trace_state_set_restart(state);
+        }
         return 0;
     }
 
@@ -715,7 +810,7 @@ static int _trace_visit(PyObject* obj, trace_state_t* state) {
     _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(state->visited, (void*)obj);
     if (entry != NULL) {
         entry->value -= 1;
-        trace("    - Internal reference to %p; LRC -= 1", obj);
+        dbg("    - Internal reference to %p; LRC -= 1", obj);
         state->external_rc -= 1;
         return 0;
     }
@@ -949,6 +1044,8 @@ static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trac
     }
     int region_trace_res = TRACE_RES_DONE;
 
+    SUCCEEDS(PyList_Append(state.pending, _PyObject_CAST(region)));
+
     while (PyList_GET_SIZE(state.pending) > 0) {
         // Find the next pending item:
         PyObject *item = list_pop(state.pending);
@@ -963,9 +1060,28 @@ static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trac
         assert(!PyWeakref_Check(item));
     }
 
+    if (state.restart) {
+        goto finally;
+    }
+
+    if (state.external_rc == 0) {
+        _region_close(region, state.bridge_rc);
+    } else {
+        dbg("- Failed to close region %p, there are %zd incoming references", region, state.external_rc);
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "Failed to close region %p, there are %zd incoming references",
+            region,
+            state.external_rc);
+        gc_list_dissolve(&region->gc_list);
+        assert(gc_list_is_empty(&region->gc_list));
+
+        goto error;
+    }
+
     goto finally;
 error:
-    region_trace_res = TRACE_RES_RESTART;
+    region_trace_res = TRACE_RES_ERR;
 finally:
     region_trace_state_destroy(&state);
 
@@ -980,7 +1096,7 @@ static int try_close_region_tree(PyObject *root) {
         return -1;
     }
 
-    SUCCEEDS(PyList_Append(state.pending, root));
+    _enqueue_region_for_closing(&state, root);
 
     int tree_trace_res = TRACE_RES_DONE;
     while (PyList_GET_SIZE(state.pending) > 0) {
@@ -1070,20 +1186,6 @@ TracingRegion_dealloc(TracingRegionObject *self) {
     PyObject_GC_UnTrack(self);
     TracingRegion_clear(self);
     Py_TYPE(self)->tp_free((PyObject *)self);
-}
-
-static void _open_region(TracingRegionObject *self) {
-    if (self->open) {
-        return;
-    }
-
-    trace("Opening region %p", self);
-
-    // This only dissolves this region, all sub-regions remain closed.
-    gc_list_dissolve(&self->gc_list);
-    assert(gc_list_is_empty(&self->gc_list));
-
-    self->open = true;
 }
 
 static PyObject *
@@ -1219,8 +1321,7 @@ error:
  *
  * This function requires the GIL to be held.
  *
- * Returns -1 if an exception was raised. 0 if the region couldn't be closed
- * and 1 if the region was closed.
+ * Returns -1 if an exception was raised. 0 if the region could be closed.
  */
 int _PyTracingRegion_Close(PyObject* op) {
     TracingRegionObject *self = (TracingRegionObject*)op;
@@ -1229,6 +1330,15 @@ int _PyTracingRegion_Close(PyObject* op) {
     }
     assert(gc_list_is_empty(&self->gc_list));
 
+    return try_close_region_tree(self);
+}
+
+int __old_PyTracingRegion_Close(PyObject* op) {
+    TracingRegionObject *self = (TracingRegionObject*)op;
+    if (!self->open) {
+        return 1;
+    }
+    assert(gc_list_is_empty(&self->gc_list));
     int res = 0;
     trace_info_t trace_info;
     if (trace_object(op, &trace_info, &self->gc_list)) {
