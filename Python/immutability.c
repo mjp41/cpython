@@ -1828,6 +1828,14 @@ int _PyImmutability_CanViewAsImmutable(PyObject *obj)
     }
 
     _Py_hashtable_destroy(state.visited);
+
+    // We can't call the destructor directly as we didn't newref the objects
+    // on push. Breaking out of the loop above leaves the remaining objects
+    // on the worklist, so drain it here. This is a slow path if there are
+    // still objects in the stack, so there is no need to optimize it.
+    while (PyList_Size(state.worklist) > 0) {
+        pop(state.worklist);
+    }
     Py_DECREF(state.worklist);
 
     if (result < 0) {
