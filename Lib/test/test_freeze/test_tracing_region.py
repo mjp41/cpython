@@ -112,7 +112,7 @@ class TestRegionOpening(unittest.TestCase):
         self.assertTrue(c._is_closed())
 
         c.release()
-    
+
     def test_bridge_refs_keep_region_closed(self):
         c = Cown(Region())
         c.release()
@@ -137,6 +137,60 @@ class TestRegionOpening(unittest.TestCase):
         del r1
         del r2
         c.release()
+
+    def test_sub_region_closing(self):
+        @freezable
+        class A:
+            pass
+        c = Cown(Region())
+        c.value.a = A()
+        c.value.a.child = Region()
+        c.value.a.child.b = A()
+
+        c.release()
+        c.acquire()
+
+        r2 = c.value.a.child
+        c2 = Cown(r2)
+
+        self.assertTrue(c2._is_closed())
+
+    def test_sub_region_multiple_refs(self):
+        @freezable
+        class A:
+            pass
+        c = Cown(Region())
+        c.value.a = A()
+        sub = Region()
+        c.value.a.child_a = sub
+        c.value.a.child_b = sub
+
+        c.release()
+        c.acquire()
+
+        r2 = c.value.a.child_a
+        c2 = Cown(r2)
+
+        self.assertTrue(c2._is_closed())
+
+    def test_ref_to_sub_region_bridge_keeps_parent_open(self):
+        c1 = Cown(Region())
+        c2 = Cown(Region())
+        c1.value.child = c2.value
+
+        self.assertFalse(c2._is_closed())
+
+        with self.assertRaises(RuntimeError) as cm:
+            c1.release()
+
+        # Attempting to close the region c1 should have closed c2 and then
+        # failed due to the incoming reference to the bridge stored in c2
+        self.assertTrue(c2._is_closed())
+
+
+        error = sort_region_error(str(cm.exception))
+        self.assertEqual(error[0], "The region could not be closed due to:")
+        self.assertTrue(error[1].startswith("- 1 incoming reference to '<TracingRegion object at "))
 
 
 
