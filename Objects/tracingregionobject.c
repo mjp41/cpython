@@ -18,14 +18,27 @@
     do { \
         printf(msg "\n" __VA_OPT__(,) __VA_ARGS__); \
     } while(0)
+
+#define if_dbg(...) __VA_ARGS__
+#define dbg_arg(arg) , (Py_uintptr_t)(arg)
+#define dbg(msg, ...) \
+    do { \
+        printf(msg "\n" __VA_OPT__(,) __VA_ARGS__); \
+    } while(0)
 #else
 #define if_trace(...)
 #define trace_arg(...)
 #define trace(...)
+
+#define if_dbg(...)
+#define dbg_arg(...)
+#define dbg(...)
 #endif
 
 /* Macro that jumps to error, if the expression `x` does not succeed. */
 #define SUCCEEDS(x) do { int r = (x); if (r != 0) goto error; } while (0)
+
+#define Region_Check(x) Py_IS_TYPE((x), &_PyTracingRegion_Type)
 
 // ###################################################################
 // Copied from gc.c
@@ -296,10 +309,184 @@ get_reachable_proc(PyTypeObject *tp)
 static void
 gc_list_dissolve(PyGC_Head *list) {
     struct _gc_runtime_state* gc_state = get_gc_state();
-    //gc_list_merge(list, &(gc_state->young.head));
     gc_list_merge(list, &(gc_state->old[0].head));
 }
 
+static void detach_weak_refs(PyGC_Head *gc_list) {
+    PyGC_Head *current = GC_NEXT(gc_list);
+    while (current != gc_list) {
+        PyObject *item = _Py_FROM_GC(current);
+#ifdef PY_DEBUG
+        Py_ssize_t weak_ctn = _PyWeakref_GetWeakrefCount(item);
+        if (weak_ctn) {
+            trace("- Clearing %zd weak references to %p", weak_ctn, item);
+        }
+#endif
+        if (_PyType_SUPPORTS_WEAKREFS(Py_TYPE(item))) {
+            _PyWeakref_ClearWeakRefsNoCallbacks(item);
+        }
+
+        current = GC_NEXT(current);
+    }
+}
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *dict;
+    // The GC list containing all objects while the region is closed. The bridge
+    // object is not in this GC list but in the list of the owning region or in no
+    // list if it's owned by a released cown.
+    PyGC_Head gc_list;
+    // FIXME(regions): This can be inferred from the status of the gc_list
+    // or stored in the lower bits of the GC list. For now we keep it separate
+    // for the prototype
+    bool open;
+    // This is the number of references from inside the region that reference
+    // this bridge object.
+    Py_ssize_t internal_bridge_refs;
+} TracingRegionObject;
+
+const int PER_REGION_TRACE_LIMIT = 2;
+
+typedef struct {
+    // This is the stack of pending regions needing to be closed to close
+    // this region tree. Objects will be inqueued `PER_REGION_TRACE_LIMIT`
+    // times. It the region is not closed when it hits the limit, the closing
+    // will fail.
+    PyObject *pending;
+    // This tracks per region in the tree how often it has been traversed.
+    // Some things require the trace to be redone, namely freezing an object
+    // as that may create references and finding an open sub-region, as that
+    // one needs to be traced and closed first.
+    //
+    // We limit the number of times we restart the trace per region.
+    // Theoretically, this may reject some programs that would eventually
+    // reach a fixed point, but if somebody wants to do dark magic, that's
+    // really not our problem.
+    _Py_hashtable_t *traceing_counts;
+} tree_trace_state_t;
+
+static void tree_trace_state_destroy(tree_trace_state_t* state) {
+    if (state->traceing_counts) {
+        _Py_hashtable_destroy(state->traceing_counts);
+        state->traceing_counts = NULL;
+    }
+    if (state->pending) {
+        Py_CLEAR(state->pending);
+    }
+}
+
+static int tree_trace_state_init(tree_trace_state_t* state) {
+    state->traceing_counts = _Py_hashtable_new(
+        _Py_hashtable_hash_ptr,
+        _Py_hashtable_compare_direct);
+    if (state->traceing_counts == NULL) {
+        goto error;
+    }
+
+    state->pending = PyList_New(0);
+    if (state->pending == NULL) {
+        goto error;
+    }
+
+    return 0;
+error:
+    tree_trace_state_destroy(state);
+    return -1;
+}
+
+typedef struct {
+    // List of pending objects that are not GC
+    PyObject *pending;
+    // A list of all visited objects
+    _Py_hashtable_t *visited;
+
+    // The trace state belonging to the region tree that this region
+    // is a part of.
+    tree_trace_state_t *tree_trace_state;
+    // The bridge object of the region that is currently being traced.
+    PyObject* bridge;
+    // The source of the reference, this is used for error reporting
+    PyObject *src;
+
+    // The number of refs coming into this object graph
+    Py_ssize_t external_rc;
+    // The number of refs coming from inside the region to the bridge object
+    Py_ssize_t bridge_rc;
+
+    // The GC list used for this trace, it may be null if the trace
+    // should not move the objects from their current list.
+    PyGC_Head* gc_list;
+
+
+    // This is set if an object was frozen and the trace needs
+    // to restart to be valid
+    bool restart;
+} region_trace_state_t;
+
+static void region_trace_state_destroy(region_trace_state_t* state) {
+    if (state->pending) {
+        Py_CLEAR(state->pending);
+    }
+    if (state->visited) {
+        _Py_hashtable_destroy(state->visited);
+        state->visited = NULL;
+    }
+}
+
+static int region_trace_state_reset(region_trace_state_t* state, PyGC_Head *gc_list) {
+    assert(gc_list == NULL || gc_list_is_empty(gc_list));
+
+    SUCCEEDS(PyList_Clear(state->pending));
+    _Py_hashtable_clear(state->visited);
+
+    // state->tree_trace_state stays unchanged
+    // state->bridge stays unchanged
+    state->src = NULL;
+
+    state->external_rc = 0;
+    state->bridge_rc = 0;
+    state->gc_list = gc_list;
+    state->restart = false;
+
+    return 0;
+error:
+    region_trace_state_destroy(state);
+    return -1;
+}
+
+static int region_trace_state_init(
+    region_trace_state_t* state,
+    PyObject* bridge,
+    PyGC_Head* gc_list,
+    tree_trace_state_t *tree_trace_state
+) {
+    state->pending = NULL;
+    state->visited = NULL;
+
+    state->pending = PyList_New(0);
+    if (state->pending == NULL) {
+        goto error;
+    }
+
+    state->visited = _Py_hashtable_new(
+        _Py_hashtable_hash_ptr,
+        _Py_hashtable_compare_direct);
+    if (state->visited == NULL) {
+        goto error;
+    }
+
+
+    state->bridge = bridge;
+    state->tree_trace_state = tree_trace_state;
+
+    return region_trace_state_reset(state, gc_list);
+error:
+    region_trace_state_destroy(state);
+    return -1;
+}
+
+// TODO: Continue Migration
 
 typedef struct {
     // These are the objects with incoming references, that
@@ -581,7 +768,7 @@ static int _trace_once(PyObject* obj, trace_state_t* state) {
         traverseproc proc = get_reachable_proc(Py_TYPE(item));
         SUCCEEDS(proc(item, (visitproc)_trace_visit, (void*)state));
 
-        // Weak refs need special handling
+        // TODO(regions): Handle weakrefs
         assert(!PyWeakref_Check(item));
     }
 
@@ -751,40 +938,102 @@ finally:
     return res;
 }
 
-static void detach_weak_refs(PyGC_Head *gc_list) {
-    PyGC_Head *current = GC_NEXT(gc_list);
-    while (current != gc_list) {
-        PyObject *item = _Py_FROM_GC(current);
-#ifdef PY_DEBUG
-        Py_ssize_t weak_ctn = _PyWeakref_GetWeakrefCount(item);
-        if (weak_ctn) {
-            trace("- Clearing %zd weak references to %p", weak_ctn, item);
-        }
-#endif
-        if (_PyType_SUPPORTS_WEAKREFS(Py_TYPE(item))) {
-            _PyWeakref_ClearWeakRefsNoCallbacks(item);
+static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trace_state) {
+    assert(Region_Check(region_obj));
+    TracingRegionObject* region = (TracingRegionObject*)region_obj;
+    
+    // Init trace state.
+    region_trace_state_t state;
+    if (region_trace_state_init(&state, _PyObject_CAST(region), &region->gc_list, tree_trace_state)) {
+        return TRACE_RES_ERR;
+    }
+    int region_trace_res = TRACE_RES_DONE;
+
+    while (PyList_GET_SIZE(state.pending) > 0) {
+        // Find the next pending item:
+        PyObject *item = list_pop(state.pending);
+
+        // Traverse item
+        state.src = item;
+        trace("  - traversing %p", item);
+        traverseproc proc = get_reachable_proc(Py_TYPE(item));
+        SUCCEEDS(proc(item, (visitproc)_trace_visit, (void*)&state));
+
+        // TODO(regions): Handle weakrefs
+        assert(!PyWeakref_Check(item));
+    }
+
+    goto finally;
+error:
+    region_trace_res = TRACE_RES_RESTART;
+finally:
+    region_trace_state_destroy(&state);
+
+    return region_trace_res;
+}
+
+static int try_close_region_tree(PyObject *root) {
+    dbg("Starting region tree trace from %p", root);
+
+    tree_trace_state_t state;
+    if (tree_trace_state_init(&state)) {
+        return -1;
+    }
+
+    SUCCEEDS(PyList_Append(state.pending, root));
+
+    int tree_trace_res = TRACE_RES_DONE;
+    while (PyList_GET_SIZE(state.pending) > 0) {
+        // Find the next pending item:
+        PyObject *region = list_pop(state.pending);
+        assert(Region_Check(region));
+
+        // If the region is closed we can safely skip it. Regions can be enqueued
+        // multiple times, this handles all safe cases.
+        if (_PyTracingRegion_IsClosed(region)) {
+            continue;
         }
 
-        current = GC_NEXT(current);
+        dbg("- tracing region %p", region);
+        int res = _try_close_region(region, &state);
+        if (res == TRACE_RES_ERR) {
+            goto error;
+        }
+
+        _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(state.traceing_counts, (void*)region);
+        if (entry != NULL) {
+            if ((Py_uintptr_t)entry->value < PER_REGION_TRACE_LIMIT) {
+                entry->value = (void*)(((Py_uintptr_t)entry->value) + 1);
+            } else {
+                // FIXME(regions): This should maybe be turned into a trace that creates a
+                // error, the problem is, that this retrace may then close the region. This
+                // means that this increase the tracing limit by one. There is also a question
+                // how often this actually happens. This case is pretty specific for sub-regions
+                // that can't be closed and pre-freeze hooks
+                PyErr_Format(
+                    PyExc_RuntimeError,
+                    "the region %p could not be closed after %d tracing attempts",
+                    (void *)region,
+                    PER_REGION_TRACE_LIMIT);
+                goto error;
+            }
+        } else {
+            SUCCEEDS(_Py_hashtable_set(state.traceing_counts, (void*)region, (void*)1));
+        }
     }
+
+    goto finally;
+error:
+    tree_trace_res = TRACE_RES_ERR;
+finally:
+    tree_trace_state_destroy(&state);
+
+    return tree_trace_res;
 }
 
 // ###################################################################
 // Region Object
 // ###################################################################
-
-typedef struct {
-    PyObject_HEAD
-    PyObject *dict;
-    // The GC list containing all objects while the region is closed. The bridge
-    // object is not in this GC list but in the list of the owning region or in no
-    // list if it's owned by a released cown.
-    PyGC_Head gc_list;
-    // FIXME(regions): This can be inferred from the status of the gc_list
-    // or stored in the lower bits of the GC list. For now we keep it separate
-    // for the prototype
-    bool open;
-} TracingRegionObject;
 
 static int
 TracingRegion_init(TracingRegionObject *self, PyObject *args, PyObject *kwargs) {
@@ -892,24 +1141,6 @@ TracingRegion_set_dict(PyObject *op, PyObject *value, void *Py_UNUSED(context)) 
     }
     Py_XSETREF(self->dict, Py_NewRef(value));
     return 0;
-}
-
-static PyObject* TracingRegion_trace(PyObject *op) {
-    trace_info_t result;
-    if (trace_object(op, &result, NULL)) {
-        return NULL;  // propagate Python exception
-    }
-
-    if (result.obj_table != NULL) {
-        _Py_hashtable_destroy(result.obj_table);
-    }
-
-    PyObject *t = Py_BuildValue("(ii)", result.objs, result.incoming_refs);
-    if (t == NULL) {
-        return NULL;  // propagate Python exception
-    }
-
-    return t;
 }
 
 // State threaded through `_report_incoming_ref` while building the
@@ -1051,8 +1282,6 @@ int _PyTracingRegion_IsClosed(PyObject* region) {
 }
 
 static PyMethodDef TracingRegion_methods[] = {
-    {"trace", _PyCFunction_CAST(TracingRegion_trace), METH_NOARGS,
-        "This traces the region and returns the number of incoming references"},
     {NULL,              NULL}           /* sentinel */
 };
 
