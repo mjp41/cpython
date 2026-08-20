@@ -1,24 +1,19 @@
+import re
 import sys
 import unittest
-from test.support import os_helper
 from immutable import freeze, is_frozen, freezable
 from immutable import TracingRegion as Region
 from immutable import Cown
 
-REGION_GRAPH = "region-graph.md"
-
 def sort_region_error(msg):
-    """Normalize a 'region could not be closed' message by sorting its
-    per-object lines. Useful for deterministic test assertions, since the
-    object order comes from hashtable iteration and isn't stable."""
-    header, *lines = msg.splitlines()
+    """Normalize a 'region could not be closed' message by masking the object
+    addresses and sorting its per-object lines. Useful for deterministic test
+    assertions, since the addresses differ per run and the object order comes
+    from hashtable iteration and isn't stable."""
+    header, *lines = re.sub(r"0x[0-9a-fA-F]+", "0x...", msg).splitlines()
     return [header, *sorted(lines)]
 
 class TestTraceRefs(unittest.TestCase):
-    def setUp(self):
-        self.addCleanup(os_helper.unlink, REGION_GRAPH)
-        os_helper.unlink(REGION_GRAPH)
-
     def test_release_error(self):
         x = [1]
         y = [2]
@@ -34,8 +29,8 @@ class TestTraceRefs(unittest.TestCase):
             sort_region_error(str(cm.exception)),
             [
                 "The region could not be closed due to:",
-                "- 1 incoming reference to '[1]'",
-                "- 1 incoming reference to '[2]'"
+                "- 1 incoming reference to list '[1]'",
+                "- 1 incoming reference to list '[2]'"
             ])
 
     def test_release_error_capped_output(self):
@@ -57,11 +52,11 @@ class TestTraceRefs(unittest.TestCase):
             sort_region_error(str(cm.exception)),
             [
                 "The region could not be closed due to:",
-                "- 1 incoming reference to '[1]'",
-                "- 1 incoming reference to '[1]'",
-                "- 1 incoming reference to '[1]'",
-                "- 1 incoming reference to '[1]'",
-                "- 1 incoming reference to '[1]'",
+                "- 1 incoming reference to list '[1]'",
+                "- 1 incoming reference to list '[1]'",
+                "- 1 incoming reference to list '[1]'",
+                "- 1 incoming reference to list '[1]'",
+                "- 1 incoming reference to list '[1]'",
                 "- 3 references to other objects",
             ])
 
@@ -84,7 +79,7 @@ class TestTraceRefs(unittest.TestCase):
             sort_region_error(str(cm.exception)),
             [
                 "The region could not be closed due to:",
-                "- 1 incoming reference to '[1]'",
+                "- 1 incoming reference to list '[1]'",
             ])
 
 
@@ -164,6 +159,10 @@ class TestRegionOpening(unittest.TestCase):
         sub = Region()
         c.value.a.child_a = sub
         c.value.a.child_b = sub
+        # A reference to the bridge of a sub-region counts as an incoming
+        # reference into the parent region, see
+        # test_ref_to_sub_region_bridge_keeps_parent_open.
+        del sub
 
         c.release()
         c.acquire()
@@ -188,9 +187,12 @@ class TestRegionOpening(unittest.TestCase):
         self.assertTrue(c2._is_closed())
 
 
-        error = sort_region_error(str(cm.exception))
-        self.assertEqual(error[0], "The region could not be closed due to:")
-        self.assertTrue(error[1].startswith("- 1 incoming reference to '<TracingRegion object at "))
+        self.assertEqual(
+            sort_region_error(str(cm.exception)),
+            [
+                "The region could not be closed due to:",
+                "- 1 incoming reference to TracingRegion '<TracingRegion closed>'",
+            ])
 
 
 
