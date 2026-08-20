@@ -440,6 +440,19 @@ static void _region_close(
     self->open = false;
 }
 
+/* Re-adds the references to the bridge object that `_region_close()` subtracted.
+ *
+ * Note that this may resurrect the bridge object. Callers may need to handle this case.
+ */
+static void _restore_internal_bridge_refs(TracingRegionObject *self) {
+    if (self->internal_bridge_refs != 0) {
+        assert(self->internal_bridge_refs >= 0);
+        dbg("- adding %zd internal references from the bridge object %p", self->internal_bridge_refs, self);
+        _Py_RefcntAdd(self, self->internal_bridge_refs);
+        self->internal_bridge_refs = 0;
+    }
+}
+
 static void _open_region(TracingRegionObject *self) {
     if (self->open) {
         return;
@@ -447,13 +460,7 @@ static void _open_region(TracingRegionObject *self) {
 
     dbg("Opening region %p", self);
 
-    // We re-add the internal references to the RC that have been subtracted during closing.
-    if (self->internal_bridge_refs != 0) {
-        assert(self->internal_bridge_refs >= 0);
-        dbg("- adding %zd internal references from the bridge object %p", self->internal_bridge_refs, self);
-        _Py_RefcntAdd(self, self->internal_bridge_refs);
-        self->internal_bridge_refs = 0;
-    }
+    _restore_internal_bridge_refs(self);
 
     // This only dissolves this region, all sub-regions remain closed.
     gc_list_dissolve(&self->gc_list);
@@ -1331,6 +1338,16 @@ static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trac
     assert(Region_Check(region_obj));
     TracingRegionObject* region = (TracingRegionObject*)region_obj;
 
+    // Finalized regions can't be closed since they're deletion would not call the
+    // finalizer and therefore leak the owned nodes.
+    if (_PyGC_FINALIZED(region_obj)) {
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "the region %p has been finalized and cannot be closed again",
+            (void *)region_obj);
+        return TRACE_RES_ERR;
+    }
+
     // Init trace state.
     region_trace_state_t state;
     if (region_trace_state_init(&state, _PyObject_CAST(region), &region->gc_list, tree_trace_state)) {
@@ -1517,6 +1534,57 @@ TracingRegion_init(TracingRegionObject *self, PyObject *args, PyObject *kwargs) 
     return 0;
 }
 
+/* Disposes of everything a closed region owns.
+ *
+ * Closing a region establishes that no object inside it has incoming references
+ * from the outside; only the bridge object may have those. So once the bridge
+ * object dies, every member of the region is garbage too, however the references
+ * between them happen to be arranged.
+ *
+ * That lets the region clean up after itself instead of handing the objects back
+ * to the GC.
+ *
+ * This can resurrect the bridge object, so it has to run as a finalizer.
+ */
+static void _region_delete_contents(TracingRegionObject *self) {
+    assert(!self->open);
+
+    dbg("Deleting the contents of region %p", self);
+
+    PyGC_Head members;
+    PyGC_Head survivors;
+    gc_list_init(&members);
+    gc_list_init(&survivors);
+
+    // Steal the members and open the region first. A finalizer reaching the
+    // bridge calls `_open_region()`, which would otherwise dissolve the very
+    // list being disposed of here.
+    gc_list_merge(&self->gc_list, &members);
+    assert(gc_list_is_empty(&self->gc_list));
+    // Has to happen before anything is released, the members still hold these.
+    _restore_internal_bridge_refs(self);
+    self->open = true;
+
+    // The disposal needs a clean error state; a dealloc can happen mid-raise.
+    PyObject *exc = PyErr_GetRaisedException();
+    
+    // Cleaning the dict should deallocate most things.
+    Py_CLEAR(self->dict);
+    
+    // Deallocate remaining cyclic garbage
+    _PyGC_FinalizeGarbage(&members);
+    _PyGC_DeleteGarbage(&members, &survivors);
+    PyErr_SetRaisedException(exc);
+
+    // Anything a finalizer kept alive is not owned by the region any more.
+    if (!gc_list_is_empty(&survivors)) {
+        gc_list_dissolve(&survivors);
+    }
+    // Nothing may still point at these stack allocated list heads.
+    assert(gc_list_is_empty(&members));
+    assert(gc_list_is_empty(&survivors));
+}
+
 static int
 TracingRegion_traverse(TracingRegionObject *self, visitproc visit, void *arg) {
     Py_VISIT(self->dict);
@@ -1525,8 +1593,6 @@ TracingRegion_traverse(TracingRegionObject *self, visitproc visit, void *arg) {
 
 static int
 TracingRegion_clear(TracingRegionObject *self) {
-    // FIXME(regions): Special branch when closed to dealloc all
-
     _open_region(self);
     Py_CLEAR(self->dict);
     return 0;
@@ -1534,11 +1600,19 @@ TracingRegion_clear(TracingRegionObject *self) {
 
 static void
 TracingRegion_finalize(PyObject *op) {
-    // Reopening the region restores the references that the objects inside it
-    // hold to the bridge object, which can resurrect `op`. This has to run as a
-    // finalizer so that `PyObject_CallFinalizerFromDealloc()` notices the
-    // resurrection, instead of freeing an object that is still referenced.
-    (void)TracingRegion_clear((TracingRegionObject *)op);
+    TracingRegionObject *self = (TracingRegionObject *)op;
+
+    if (self->open) {
+        assert(gc_list_is_empty(&self->gc_list));
+        // An open region does not own its members. They live in the GC
+        // generations and the usual reference counting disposes of them.
+        Py_CLEAR(self->dict);
+    } else {
+        // Objects in a closed region have no incoming references besides the
+        // one from the bridge. We can therefore delete all objects directly
+        // instead of returning them to the GC.
+        _region_delete_contents(self);
+    }
 }
 
 static void
@@ -1556,6 +1630,9 @@ TracingRegion_dealloc(TracingRegionObject *self) {
         // region. It is deallocated again once those are gone.
         return;
     }
+
+    // Make sure any objects added after/during finalization are freed
+    Py_CLEAR(self->dict);
 
     PyObject_GC_UnTrack(self);
     Py_TYPE(self)->tp_free(op);
