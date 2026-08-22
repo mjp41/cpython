@@ -1,9 +1,10 @@
+import gc
 import re
 import sys
 import unittest
 from immutable import freeze, is_frozen, freezable
 from immutable import TracingRegion as Region
-from immutable import Cown
+from immutable import Cown, InterpreterLocal
 
 def sort_region_error(msg):
     """Normalize a 'region could not be closed' message by masking the object
@@ -250,4 +251,117 @@ class TestImplicitFreeze(unittest.TestCase):
         c.release()
         c.acquire()
         self.assertTrue(is_frozen(c.value.obj))
+
+
+class TestClosedRegionTeardown(unittest.TestCase):
+    """A closed region disposes of its own contents.
+
+    Closing proves nothing outside the region references its members, so the
+    death of the bridge object makes all of them garbage. The region finalizes
+    and clears them itself rather than handing them to the GC.
+    """
+
+    def test_cycles_reclaimed_without_the_collector(self):
+        """Check that cycles in closed regions are reclaimed without the collector"""
+
+        @freezable
+        class Node:
+            pass
+
+        def _live_nodes():
+            """The number of nodes the collector can see."""
+            return sum(1 for o in gc.get_objects() if type(o) is Node)
+
+        gc.disable()
+        try:
+            before = _live_nodes()
+
+            # Create a cycle
+            a = Node()
+            b = Node()
+            a.b = b
+            b.a = a
+
+            # Move the cycle into a cown
+            c = Cown(Region())
+            c.value.cycle = a
+            del a
+            del b
+            mid = _live_nodes()
+
+            # Close the region
+            c.release()
+            del c
+
+            leaked = _live_nodes() - before
+        finally:
+            gc.enable()
+
+        self.assertEqual(mid, 2, "the cycle wasn't detected while the region is open")
+        self.assertEqual(leaked, 0, "closed region contents were not reclaimed")
+
+    def test_finalizers_run(self):
+        local = InterpreterLocal(0)
+
+        @freezable
+        class Recorder:
+            def __del__(self, local=local):
+                local.set(local.get() + 1)
+
+        c = Cown(Region())
+        for i in range(5):
+            setattr(c.value, "r%d" % i, Recorder())
+        c.release()
+
+        self.assertEqual(local.get(), 0)
+        del c
+        self.assertEqual(local.get(), 5)
+
+
+    def test_finalizer_can_modify_the_bridge(self):
+        local = InterpreterLocal(False)
+
+        @freezable
+        class Reenter:
+            def __del__(self, local=local):
+                # This will open the region and also prove that the finalizer ran
+                local.set(self.bridge.reenter == self)
+                self.bridge.__dict__ = {}
+
+        # Create a cycle, and allow Reenter to modify the bridge
+        c = Cown(Region())
+        c.value.reenter = Reenter()
+        c.value.reenter.bridge = c.value
+        c.release()
+        del c
+
+        self.assertTrue(local.get(), "the finalizer did not run or got the wrong object")
+
+    def test_finalizer_revivial(self):
+        local_bridge = InterpreterLocal(None)
+        local_medic = InterpreterLocal(None)
+
+        @freezable
+        class Medic:
+            def __del__(self, loca_bridge=local_bridge, local_medic=local_medic):
+                local_bridge.set(self.bridge)
+                local_medic.set(self)
+
+        c1 = Cown(Region())
+        c1.value.reviver = Medic()
+        c1.value.reviver.bridge = c1.value
+        c1.release()
+        del c1
+
+        # Retrieve the revived bridge
+        self.assertIsInstance(local_bridge.get(), Region);
+        c2 = Cown(local_bridge.get())
+        local_bridge.set(None)
+
+        with self.assertRaises(RuntimeError) as e:
+            c2.release()
+        self.assertTrue(str(e.exception).endswith("has been finalized and cannot be closed again"))
+
+        # Check that the revived medic object is valid
+        self.assertIn("Medic object at 0x", str(local_medic.get()))
 

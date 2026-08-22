@@ -406,6 +406,8 @@ static int cown_close_region(_PyCownObject *self) {
         return -1;
     }
 
+    // TODO(regions): Test that we can't create weak refs to the bridge object. Otherwise, we also need to clear them.
+
     // The region is closed and this is the only owner of the bridge. We untrack
     // from the current GC list.
     PyObject_GC_UnTrack(self->value);

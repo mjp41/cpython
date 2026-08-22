@@ -16,7 +16,7 @@
  * graph to. The graph is not written when the variable is unset or empty. */
 #define REGION_GRAPH_ENV_VAR "PYTHON_REGION_GRAPH"
 
-#define REGION_TRACING
+// #define REGION_TRACING
 
 #ifdef REGION_TRACING
 #define dbg(msg, ...) \
@@ -1568,11 +1568,14 @@ static void _region_delete_contents(TracingRegionObject *self) {
     // The disposal needs a clean error state; a dealloc can happen mid-raise.
     PyObject *exc = PyErr_GetRaisedException();
     
+    // Finalize everything before anything is released, so that no `__del__`
+    // observes a member that is already gone.
+    _PyGC_FinalizeGarbage(&members);
+
     // Cleaning the dict should deallocate most things.
     Py_CLEAR(self->dict);
-    
+
     // Deallocate remaining cyclic garbage
-    _PyGC_FinalizeGarbage(&members);
     _PyGC_DeleteGarbage(&members, &survivors);
     PyErr_SetRaisedException(exc);
 
