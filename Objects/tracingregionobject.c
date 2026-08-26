@@ -493,6 +493,8 @@ typedef struct {
     // tp_reachable. Used to report each of them once per trace, see
     // `get_reachable_proc()`.
     _Py_hashtable_t *missing_reachable;
+    // The region hierarchy of this trace, child nodes map to their parents.
+    _Py_hashtable_t *hierarchy;
 } tree_trace_state_t;
 
 static void tree_trace_state_destroy(tree_trace_state_t* state) {
@@ -506,6 +508,10 @@ static void tree_trace_state_destroy(tree_trace_state_t* state) {
         _Py_hashtable_destroy(state->missing_reachable);
         state->missing_reachable = NULL;
     }
+    if (state->hierarchy) {
+        _Py_hashtable_destroy(state->hierarchy);
+        state->hierarchy = NULL;
+    } 
     if (state->pending) {
         Py_CLEAR(state->pending);
     }
@@ -537,11 +543,13 @@ static int tree_trace_state_init(tree_trace_state_t* state) {
     state->tracing_counts = NULL;
     state->missing_reachable = NULL;
     state->pending = NULL;
+    state->hierarchy = NULL;
 
     state->tracing_counts = _Py_hashtable_new(
         _Py_hashtable_hash_ptr,
         _Py_hashtable_compare_direct);
     if (state->tracing_counts == NULL) {
+        PyErr_NoMemory();
         goto error;
     }
 
@@ -549,11 +557,20 @@ static int tree_trace_state_init(tree_trace_state_t* state) {
         _Py_hashtable_hash_ptr,
         _Py_hashtable_compare_direct);
     if (state->missing_reachable == NULL) {
+        PyErr_NoMemory();
         goto error;
     }
 
     state->pending = PyList_New(0);
     if (state->pending == NULL) {
+        goto error;
+    }
+
+    state->hierarchy = _Py_hashtable_new(
+        _Py_hashtable_hash_ptr,
+        _Py_hashtable_compare_direct);
+    if (state->hierarchy == NULL) {
+        PyErr_NoMemory();
         goto error;
     }
 
@@ -703,10 +720,12 @@ collect_close_error_obj(_Py_hashtable_t *ht, const void *key, const void *value,
         return 0;
     }
     if (_Py_hashtable_set(filter->problem_objs, key, (void *)refs) < 0) {
+        PyErr_NoMemory();
         return -1;
     }
     if (_Py_hashtable_len(filter->reported_objs) < ERROR_OBJECT_REPORT_COUNT) {
         if (_Py_hashtable_set(filter->reported_objs, key, (void *)refs) < 0) {
+            PyErr_NoMemory();
             return -1;
         }
     }
@@ -960,6 +979,7 @@ mermaid_enqueue_if_needed(mermaid_dump_state_t *state, PyObject *obj)
         return 0;
     }
     if (_Py_hashtable_set(state->visited, obj, obj) < 0) {
+        PyErr_NoMemory();
         return -1;
     }
     return PyList_Append(state->pending, obj);
@@ -1264,6 +1284,7 @@ static int _move_obj(PyObject* obj, region_trace_state_t* state) {
 
     // Mark the object as visited, this stores the lrc_change for better error reporting
     if (_Py_hashtable_set(state->visited, obj, (void*)lrc_change) == -1) {
+        PyErr_NoMemory();
         return -1;
     }
 
@@ -1285,6 +1306,53 @@ static int _move_obj(PyObject* obj, region_trace_state_t* state) {
             return -1;
         }
     }
+
+    return 0;
+}
+
+static int _trace_visit_bridge_ref(PyObject* obj, region_trace_state_t* state) {
+    assert(Region_Check(obj));
+    tree_trace_state_t *tree_state = state->tree_trace_state;
+
+    // If the child region is closed we can move it directly
+    if (_PyTracingRegion_IsClosed(obj)) {
+        return _move_obj(obj, state);
+    }
+
+    _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(tree_state->hierarchy, (void*)obj);
+    if (entry == NULL) {
+        if (_Py_hashtable_set(tree_state->hierarchy, (void*)obj, state->bridge)) {
+            PyErr_NoMemory();
+            return -1;
+        }
+
+        void *child = (void*)state->bridge;
+        entry = _Py_hashtable_get_entry(tree_state->hierarchy, child);
+        while (entry != NULL) {
+            if (entry->value == obj) {
+                PyErr_Format(
+                    PyExc_RuntimeError,
+                    "the region %p can not be closed as it attempts to reference one of its parent regions %p",
+                    (void *)obj,
+                    entry->value);
+                return -1;
+            }
+
+            child = entry->value;
+            entry = _Py_hashtable_get_entry(tree_state->hierarchy, child);
+        }
+    } else {
+        // We could use this branch to enforce that only a single owning
+        // exists for each bride. For now we allow these as long as they
+        // come from the same region
+    }
+
+    // The child region is open, we need to traverse it first and then
+    // retry closing this.
+    if (PyList_Append(tree_state->pending, obj) < 0) {
+        return -1;
+    }
+    region_trace_state_set_restart(state);
 
     return 0;
 }
@@ -1316,18 +1384,7 @@ static int _trace_visit(PyObject* obj, region_trace_state_t* state) {
     // References external regions turns them into sub-regions. These
     // need to be traversed and closed separately
     if (Region_Check(obj)) {
-        if (_PyTracingRegion_IsClosed(obj)) {
-            // If the child region is closed we can move it directly
-            return _move_obj(obj, state);
-        } else {
-            // The child region is open, we need to traverse it first and then
-            // retry closing this.
-            if (PyList_Append(state->tree_trace_state->pending, obj) < 0) {
-                return -1;
-            }
-            region_trace_state_set_restart(state);
-        }
-        return 0;
+        return _trace_visit_bridge_ref(obj, state);
     }
 
     return _move_obj(obj, state);
@@ -1460,7 +1517,10 @@ static int try_close_region_tree(PyObject *root) {
         // would grant `PER_REGION_TRACE_LIMIT + 1` attempts.
         _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(state.tracing_counts, (void*)region);
         if (entry == NULL) {
-            SUCCEEDS(_Py_hashtable_set(state.tracing_counts, (void*)region, (void*)1));
+            if (_Py_hashtable_set(state.tracing_counts, (void*)region, (void*)1) < 0) {
+                PyErr_NoMemory();
+                goto error;
+            }
         } else if ((Py_uintptr_t)entry->value < PER_REGION_TRACE_LIMIT) {
             entry->value = (void*)(((Py_uintptr_t)entry->value) + 1);
         } else {

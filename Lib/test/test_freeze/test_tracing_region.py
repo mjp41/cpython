@@ -83,6 +83,51 @@ class TestTraceRefs(unittest.TestCase):
                 "- 1 incoming reference to list '[1]'",
             ])
 
+    def test_failed_multi_parent_region_close(self):
+        r1 = Region()
+        r2 = Region()
+        r3 = Region()
+        r2.sub = r3
+        r1.lst = [r3, r2, r3]
+        del r2
+        del r3
+
+        c = Cown(r1)
+        del r1
+
+        with self.assertRaises(RuntimeError) as cm:
+            c.release()
+
+        self.assertEqual(
+            sort_region_error(str(cm.exception)),
+            [
+                "The region could not be closed due to:",
+                "- 3 incoming references to TracingRegion '<TracingRegion closed>'",
+            ])
+
+
+    def test_failed_cyclic_region_close(self):
+        r1 = Region()
+        r2 = Region()
+        r3 = Region()
+
+        r1.r2 = r2
+        r2.r3 = r3
+        r3.r1 = r1
+        c = Cown(r1)
+
+        del r1
+        del r2
+        del r3
+
+        with self.assertRaises(RuntimeError) as cm:
+            c.release()
+ 
+        self.assertEqual(
+            sort_region_error(str(cm.exception)),
+            [
+                "the region 0x... can not be closed as it attempts to reference one of its parent regions 0x...",
+            ])
 
 class TestRegionOpening(unittest.TestCase):
     def test_open_after_acquire(self):
