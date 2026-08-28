@@ -266,6 +266,7 @@ class ReferencesTestCase(TestBase):
         self.assertIsNone(ref(),
                      "ref2 should be dead after deleting object reference")
 
+    @unittest.skip("FIXME: Optimization is disabled to support weakrefs in regions")
     def test_ref_reuse(self):
         o = C()
         ref1 = weakref.ref(o)
@@ -289,6 +290,7 @@ class ReferencesTestCase(TestBase):
         self.assertEqual(weakref.getweakrefcount(o), 1,
                      "wrong weak ref count for object after deleting proxy")
 
+    @unittest.skip("FIXME: Optimization is disabled to support weakrefs in regions")
     def test_proxy_reuse(self):
         o = C()
         proxy1 = weakref.proxy(o)
@@ -379,9 +381,11 @@ class ReferencesTestCase(TestBase):
     # was not honored, and was broken in different ways for
     # PyWeakref_NewRef() and PyWeakref_NewProxy().  (Two tests.)
 
+    @unittest.skip("FIXME: Optimization is disabled to support weakrefs in regions")
     def test_shared_ref_without_callback(self):
         self.check_shared_without_callback(weakref.ref)
 
+    @unittest.skip("FIXME: Optimization is disabled to support weakrefs in regions")
     def test_shared_proxy_without_callback(self):
         self.check_shared_without_callback(weakref.proxy)
 

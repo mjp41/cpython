@@ -7,6 +7,12 @@
 #include "pycore_pystate.h"
 #include "pycore_weakref.h"       // _PyWeakref_GET_REF()
 
+// FIXME(region): Reusing the same weakref easily breaks region isolation
+// without a simple way out for programmers. For now we disable the optimization.
+// in the future, we may create a new object every time, but make sure that
+// the internal metadata is shared until this is no longer possible due to regions.
+#define WEAKREF_REUSE_BASIC_REFS 0
+
 #ifdef Py_GIL_DISABLED
 /*
  * Thread-safety for free-threaded builds
@@ -381,7 +387,7 @@ static PyWeakReference *
 try_reuse_basic_ref(PyWeakReference *list, PyTypeObject *type,
                     PyObject *callback)
 {
-    if (callback != NULL) {
+    if (!WEAKREF_REUSE_BASIC_REFS || callback != NULL) {
         return NULL;
     }
 
@@ -606,6 +612,9 @@ _PyWeakref_RefType = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC |
                 Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_BASETYPE,
     .tp_traverse = gc_traverse,
+    // tp_reachable explicitly doesn't visit the weak reference to reflect the
+    // actual RC of referenced objects. Changes to this will require adjustments
+    // in freezing and region traversal code.
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_clear = gc_clear,
     .tp_richcompare = weakref_richcompare,
@@ -1252,6 +1261,12 @@ _PyStaticType_ClearWeakRefs(PyInterpreterState *interp, PyTypeObject *type)
 void
 _PyWeakref_ClearWeakRefsNoCallbacks(PyObject *obj)
 {
+    _PyWeakref_ClearWeakRefsExcept(obj, NULL);
+}
+
+void
+_PyWeakref_ClearWeakRefsExcept(PyObject *obj, _Py_hashtable_t *keep)
+{
     /* Modeled after GET_WEAKREFS_LISTPTR().
 
        This is never triggered for static types so we can avoid the
@@ -1259,7 +1274,11 @@ _PyWeakref_ClearWeakRefsNoCallbacks(PyObject *obj)
     PyWeakReference **list = _PyObject_GET_WEAKREFS_LISTPTR_FROM_OFFSET(obj);
     LOCK_WEAKREFS(obj);
     while (*list) {
-        _PyWeakref_ClearRef(*list);
+        if (keep != NULL && _Py_hashtable_get_entry(keep, *list)) {
+            list = &((*list)->wr_next);
+        } else {
+            _PyWeakref_ClearRef(*list);
+        }
     }
     UNLOCK_WEAKREFS(obj);
 }

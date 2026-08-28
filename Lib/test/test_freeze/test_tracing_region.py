@@ -2,6 +2,7 @@ import gc
 import re
 import sys
 import unittest
+import weakref
 from immutable import freeze, is_frozen, freezable
 from immutable import TracingRegion as Region
 from immutable import Cown, InterpreterLocal
@@ -14,7 +15,7 @@ def sort_region_error(msg):
     header, *lines = re.sub(r"0x[0-9a-fA-F]+", "0x...", msg).splitlines()
     return [header, *sorted(lines)]
 
-class TestTraceRefs(unittest.TestCase):
+class TestTracing(unittest.TestCase):
     def test_release_error(self):
         x = [1]
         y = [2]
@@ -128,6 +129,41 @@ class TestTraceRefs(unittest.TestCase):
             [
                 "the region 0x... can not be closed as it attempts to reference one of its parent regions 0x...",
             ])
+
+    def test_weak_ref_in_region(self):
+        @freezable
+        class A:
+            pass
+
+        r1 = Region()
+        r1.obj = A()
+        r1.wref1 = weakref.ref(r1.obj)
+        wref2 = weakref.ref(r1.obj)
+
+        c = Cown(r1)
+        del r1
+
+        # Releasing should clear all external weak references
+        c.release()
+        self.assertIsNone(wref2());
+
+        # All internal weak references should remain valid
+        c.acquire()
+        self.assertEqual(c.value.wref1(), c.value.obj);
+
+    def test_weak_ref_to_bridge(self):
+        """
+        The closing code and cowns currently assume that bridges can't have weak references.
+        This tests asserts this. We can add support for weak refs, but that would require some
+        engineering and the question is if this is even needed.
+        """
+
+        r1 = Region()
+        with self.assertRaises(TypeError) as err:
+            weakref.ref(r1)
+
+        self.assertEqual(str(err.exception), "cannot create weak reference to 'TracingRegion' object")
+
 
 class TestRegionOpening(unittest.TestCase):
     def test_open_after_acquire(self):

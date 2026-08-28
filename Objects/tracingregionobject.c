@@ -16,7 +16,7 @@
  * graph to. The graph is not written when the variable is unset or empty. */
 #define REGION_GRAPH_ENV_VAR "PYTHON_REGION_GRAPH"
 
-// #define REGION_TRACING
+#define REGION_TRACING
 
 #ifdef REGION_TRACING
 #define dbg(msg, ...) \
@@ -382,7 +382,7 @@ detach_weak_refs_visit(_Py_hashtable_t *ht, const void *key, const void *value, 
         dbg("- Clearing %zd weak references to %p", weak_ctn, item);
     }
 #endif
-    _PyWeakref_ClearWeakRefsNoCallbacks(item);
+    _PyWeakref_ClearWeakRefsExcept(item, (_Py_hashtable_t*)user_data);
     return 0;
 }
 
@@ -393,9 +393,13 @@ detach_weak_refs_visit(_Py_hashtable_t *ht, const void *key, const void *value, 
  * would leave a live weak reference pointing into the closed region, which is
  * enough for external code to read and mutate its contents.
  */
-static void detach_weak_refs(_Py_hashtable_t *visited) {
+static void detach_weak_refs(_Py_hashtable_t *visited, bool has_weak_refs) {
+    void* user_data = NULL;
+    if (has_weak_refs) {
+        user_data = (void*)visited;
+    }
     // `detach_weak_refs_visit()` never fails, so the result can be ignored.
-    (void)_Py_hashtable_foreach(visited, detach_weak_refs_visit, NULL);
+    (void)_Py_hashtable_foreach(visited, detach_weak_refs_visit, user_data);
 }
 
 typedef struct {
@@ -405,19 +409,25 @@ typedef struct {
     // object is not in this GC list but in the list of the owning region or in no
     // list if it's owned by a released cown.
     PyGC_Head gc_list;
+    // All objects that belong to a closed region are in the `gc_list` above. This
+    // removes them from the local GC and allows this region to be moved between
+    // sub-interpreters, but it would prevent the collection of closed regions with
+    // internal references to the bridge. On closed regions, we therefore manually
+    // subtract internal references from the RC. We basically hide the cycles, until
+    // the region is open. This is the number of references subtracted from the rc.
+    // These are readded in the constructor or when opening the region.
+    Py_ssize_t internal_bridge_refs;
     // FIXME(regions): This can be inferred from the status of the gc_list
     // or stored in the lower bits of the GC list. For now we keep it separate
     // for the prototype
     bool open;
-    // This is the number of references from inside the region that reference
-    // this bridge object.
-    Py_ssize_t internal_bridge_refs;
 } TracingRegionObject;
 
 static void _region_close(
     TracingRegionObject *self,
     Py_ssize_t bridge_rc,
-    _Py_hashtable_t *visited
+    _Py_hashtable_t *visited,
+    bool has_weak_refs
 ) {
     if (!self->open) {
         return;
@@ -425,9 +435,9 @@ static void _region_close(
 
     dbg("Closing region %p", self);
 
-    detach_weak_refs(visited);
+    detach_weak_refs(visited, has_weak_refs);
 
-    // TODO(regions): explain RC magic
+    // See comment on `self->internal_bridge_refs`
     if (bridge_rc != 0) {
         assert(bridge_rc >= 0);
         dbg("- subtracting %zd internal references from the bridge object %p", bridge_rc, self);
@@ -607,6 +617,11 @@ typedef struct {
     // This is set if an object was frozen and the trace needs
     // to restart to be valid
     bool restart;
+
+    // Indicates if the given reference is a strong reference or a weak one.
+    bool strong_ref;
+
+    bool has_weak_refs;
 } region_trace_state_t;
 
 static void region_trace_state_destroy(region_trace_state_t* state) {
@@ -650,6 +665,9 @@ static int region_trace_state_init(
     state->bridge_rc = 0;
     state->gc_list = gc_list;
     state->restart = false;
+    // References are strong unless the trace explicitly follows a weak one.
+    state->strong_ref = true;
+    state->has_weak_refs = false;
 
     return 0;
 error:
@@ -1277,8 +1295,12 @@ static int _move_obj(PyObject* obj, region_trace_state_t* state) {
     // bridge must never end up in `visited` or in the LRC below.
     assert(obj != state->bridge);
 
-    // Update the LRC, -1 for the reference we just followed
-    Py_ssize_t lrc_change = Py_REFCNT(obj) - 1;
+    // Update the LRC
+    Py_ssize_t lrc_change = Py_REFCNT(obj);
+    if (state->strong_ref) {
+        // -1 for the reference we just followed
+        lrc_change -= 1;
+    }
     dbg("    - moving %p; LRC += %zd", obj, lrc_change);
     state->external_rc += lrc_change;
 
@@ -1366,6 +1388,9 @@ static int _trace_visit(PyObject* obj, region_trace_state_t* state) {
 
     // References to the bridge are tracked separately
     if (obj == state->bridge) {
+        // Region objects can't have weak references
+        assert(state->strong_ref);
+        assert(get_movable_status(obj) == Py_MOVABLE_YES);
         // This branch also accounts for references from the bridge object to itself.
         dbg("    - Internal reference to bridge from %p; bridge_rc += 1", state->src);
         state->bridge_rc += 1;
@@ -1375,9 +1400,13 @@ static int _trace_visit(PyObject* obj, region_trace_state_t* state) {
     // Check if the object is already part of the region
     _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(state->visited, (void*)obj);
     if (entry != NULL) {
-        entry->value = (void*)(((Py_ssize_t)entry->value) - 1);
-        dbg("    - Internal reference to %p; LRC -= 1", obj);
-        state->external_rc -= 1;
+        assert(get_movable_status(obj) == Py_MOVABLE_YES);
+        // state->external_rc only counts strong references
+        if (state->strong_ref) {
+            entry->value = (void*)(((Py_ssize_t)entry->value) - 1);
+            dbg("    - Internal reference to %p; LRC -= 1", obj);
+            state->external_rc -= 1;
+        }
         return 0;
     }
 
@@ -1429,8 +1458,13 @@ static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trac
         traverseproc proc = get_reachable_proc(Py_TYPE(item), tree_trace_state->missing_reachable);
         SUCCEEDS(proc(item, (visitproc)_trace_visit, (void*)&state));
 
-        // TODO(regions): Handle weakrefs
-        assert(!PyWeakref_Check(item));
+        if (PyWeakref_Check(item)) {
+            PyWeakReference *wref = (PyWeakReference*)item;
+            state.strong_ref = false;
+            SUCCEEDS(_trace_visit(wref->wr_object, &state));
+            state.strong_ref = true;
+            state.has_weak_refs = true;
+        }
     }
     Py_CLEAR(item);
 
@@ -1441,7 +1475,7 @@ static int _try_close_region(PyObject *region_obj, tree_trace_state_t *tree_trac
     }
 
     if (state.external_rc == 0) {
-        _region_close(region, state.bridge_rc, state.visited);
+        _region_close(region, state.bridge_rc, state.visited, state.has_weak_refs);
     } else {
         gc_list_dissolve(&region->gc_list);
 
@@ -1820,4 +1854,4 @@ PyTypeObject _PyTracingRegion_Type = {
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
-// TODO: Weak-references part of the trace are not handled
+// TODO: RegionReferences
