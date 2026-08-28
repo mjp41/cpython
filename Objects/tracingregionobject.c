@@ -7,6 +7,7 @@
 #include "pycore_modsupport.h"    // _PyArg_NoPositional()
 #include "pycore_weakref.h"
 #include "pycore_cown.h"
+#include "pycore_regionref.h"
 
 #define ERROR_OBJECT_REPORT_COUNT 5
 #define ERROR_MERMAID_REPORT_LIMIT 50
@@ -368,6 +369,13 @@ gc_list_dissolve(PyGC_Head *list) {
     gc_list_merge(list, &(gc_state->old[0].head));
 }
 
+typedef struct {
+    // The weak references that live inside the region and therefore survive the
+    // close. NULL when the trace did not find any.
+    _Py_hashtable_t *keep;
+    PyObject *region;
+} detach_weak_refs_state_t;
+
 static int
 detach_weak_refs_visit(_Py_hashtable_t *ht, const void *key, const void *value, void *user_data)
 {
@@ -375,6 +383,7 @@ detach_weak_refs_visit(_Py_hashtable_t *ht, const void *key, const void *value, 
     if (!_PyType_SUPPORTS_WEAKREFS(Py_TYPE(item))) {
         return 0;
     }
+    detach_weak_refs_state_t *state = (detach_weak_refs_state_t *)user_data;
 
 #ifdef Py_DEBUG
     Py_ssize_t weak_ctn = _PyWeakref_GetWeakrefCount(item);
@@ -382,24 +391,31 @@ detach_weak_refs_visit(_Py_hashtable_t *ht, const void *key, const void *value, 
         dbg("- Clearing %zd weak references to %p", weak_ctn, item);
     }
 #endif
-    _PyWeakref_ClearWeakRefsExcept(item, (_Py_hashtable_t*)user_data);
+    _PyRegionRef_CloseWeakRefs(item, state->keep, state->region);
     return 0;
 }
 
-/* Detaches all weak references pointing to objects inside the region.
+/* Detaches all weak references pointing to objects inside the region, and
+ * re-homes the region references, which are meant to survive the close.
  *
  * This walks the set of traced objects instead of the region's GC list, since
  * objects that are not tracked by the GC never enter that list. Missing one
  * would leave a live weak reference pointing into the closed region, which is
  * enough for external code to read and mutate its contents.
+ *
+ * Re-homing rides along on this walk on purpose. Finding the references into a
+ * region means looking at every member's weakref list, which is exactly what
+ * this already does.
  */
-static void detach_weak_refs(_Py_hashtable_t *visited, bool has_weak_refs) {
-    void* user_data = NULL;
-    if (has_weak_refs) {
-        user_data = (void*)visited;
-    }
+static void detach_weak_refs(
+    PyObject *region, _Py_hashtable_t *visited, bool has_weak_refs)
+{
+    detach_weak_refs_state_t state = {
+        .keep = has_weak_refs ? visited : NULL,
+        .region = region,
+    };
     // `detach_weak_refs_visit()` never fails, so the result can be ignored.
-    (void)_Py_hashtable_foreach(visited, detach_weak_refs_visit, user_data);
+    (void)_Py_hashtable_foreach(visited, detach_weak_refs_visit, &state);
 }
 
 typedef struct {
@@ -417,11 +433,40 @@ typedef struct {
     // the region is open. This is the number of references subtracted from the rc.
     // These are readded in the constructor or when opening the region.
     Py_ssize_t internal_bridge_refs;
+    // The node every region reference into this region resolves through, or
+    // NULL when nothing points into it. Only closed regions can have a meta,
+    // opening restamps it
+    _PyRegionRefMetadata *meta;
     // FIXME(regions): This can be inferred from the status of the gc_list
     // or stored in the lower bits of the GC list. For now we keep it separate
     // for the prototype
     bool open;
 } TracingRegionObject;
+
+/* Returns this region's node, allocating it if this is the first reference the
+ * current close has found. Borrowed. The caller must hold `_PyWeakref_Lock`. */
+static _PyRegionRefMetadata *
+region_meta_lock_held(TracingRegionObject *self)
+{
+    if (self->meta == NULL) {
+        self->meta = _PyRegionRef_NewRegionMetaLockHeld(_PyObject_CAST(self));
+    }
+    return self->meta;
+}
+
+/* Hands the node over to the references still holding it: it becomes local to
+ * this interpreter with nothing left to open. Used whenever a region stops
+ * being closed, including when its contents are being deleted. */
+static void
+region_meta_release(TracingRegionObject *self)
+{
+    if (self->meta == NULL) {
+        return;
+    }
+    _PyRegionRef_MetaRegionOpened(self->meta);
+    _PyRegionRef_MetaDecref(self->meta);
+    self->meta = NULL;
+}
 
 static void _region_close(
     TracingRegionObject *self,
@@ -435,7 +480,7 @@ static void _region_close(
 
     dbg("Closing region %p", self);
 
-    detach_weak_refs(visited, has_weak_refs);
+    detach_weak_refs(_PyObject_CAST(self), visited, has_weak_refs);
 
     // See comment on `self->internal_bridge_refs`
     if (bridge_rc != 0) {
@@ -470,6 +515,7 @@ static void _open_region(TracingRegionObject *self) {
 
     dbg("Opening region %p", self);
 
+    region_meta_release(self);
     _restore_internal_bridge_refs(self);
 
     // This only dissolves this region, all sub-regions remain closed.
@@ -521,7 +567,7 @@ static void tree_trace_state_destroy(tree_trace_state_t* state) {
     if (state->hierarchy) {
         _Py_hashtable_destroy(state->hierarchy);
         state->hierarchy = NULL;
-    } 
+    }
     if (state->pending) {
         Py_CLEAR(state->pending);
     }
@@ -1338,7 +1384,29 @@ static int _trace_visit_bridge_ref(PyObject* obj, region_trace_state_t* state) {
 
     // If the child region is closed we can move it directly
     if (_PyTracingRegion_IsClosed(obj)) {
-        return _move_obj(obj, state);
+        int res = _move_obj(obj, state);
+        // Update the region reference meta of the child, if it has one
+        if (res == 0) {
+            TracingRegionObject *child = (TracingRegionObject *)obj;
+            bool no_memory = false;
+            LOCK_REGION_REF_META();
+            if (child->meta != NULL) {
+                _PyRegionRefMetadata *parent =
+                    region_meta_lock_held((TracingRegionObject *)state->bridge);
+                if (parent == NULL) {
+                    no_memory = true;
+                }
+                else {
+                    _PyRegionRef_MetaSetParentLockHeld(child->meta, parent);
+                }
+            }
+            UNLOCK_REGION_REF_META();
+            if (no_memory) {
+                PyErr_NoMemory();
+                return TRACE_RES_ERR;
+            }
+        }
+        return res;
     }
 
     _Py_hashtable_entry_t *entry = _Py_hashtable_get_entry(tree_state->hierarchy, (void*)obj);
@@ -1517,6 +1585,27 @@ finally:
     return region_trace_res;
 }
 
+/* Resolves the region reference meta of every region this trace touched.
+ */
+static int
+resolve_region_meta(_Py_hashtable_t *ht, const void *key, const void *value,
+                    void *user_data)
+{
+    TracingRegionObject *region = (TracingRegionObject *)key;
+    if (region->meta == NULL) {
+        return 0;
+    }
+    // The region remains open, therefore we mark it as being local to the IP
+    if (region->open) {
+        region_meta_release(region);
+        return 0;
+    }
+
+    // The region was closed, we resolve the WIP state
+    _PyRegionRef_MetaResolveWip(region->meta);
+    return 0;
+}
+
 static int try_close_region_tree(PyObject *root) {
     dbg("Starting region tree trace from %p", root);
 
@@ -1586,6 +1675,8 @@ static int try_close_region_tree(PyObject *root) {
 error:
     tree_trace_res = TRACE_RES_ERR;
 finally:
+    // `resolve_region_meta()` never fails, so the result can be ignored.
+    (void)_Py_hashtable_foreach(state.tracing_counts, resolve_region_meta, NULL);
     report_missing_reachable(&state);
     tree_trace_state_destroy(&state);
 
@@ -1606,6 +1697,7 @@ TracingRegion_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
     // The region is set up here rather than in `tp_init()`, so that a region
     // can never be observed in an uninitialized state.
     gc_list_init(&self->gc_list);
+    self->meta = NULL;
     // We make the region open by default, this ensures that the first close
     // will handle the region type correctly. Alternatively, we could make them
     // closed in the beginning, but then handle the cases specifically.
@@ -1650,18 +1742,15 @@ static void _region_delete_contents(TracingRegionObject *self) {
     gc_list_init(&members);
     gc_list_init(&survivors);
 
-    // Steal the members and open the region first. A finalizer reaching the
-    // bridge calls `_open_region()`, which would otherwise dissolve the very
-    // list being disposed of here.
+    // Steal the members first. `_open_region()` will then set internal values
+    // but keep not invalidate `members`.
     gc_list_merge(&self->gc_list, &members);
     assert(gc_list_is_empty(&self->gc_list));
-    // Has to happen before anything is released, the members still hold these.
-    _restore_internal_bridge_refs(self);
-    self->open = true;
+    _open_region(self);
 
     // The disposal needs a clean error state; a dealloc can happen mid-raise.
     PyObject *exc = PyErr_GetRaisedException();
-    
+
     // Finalize everything before anything is released, so that no `__del__`
     // observes a member that is already gone.
     _PyGC_FinalizeGarbage(&members);
@@ -1826,6 +1915,35 @@ int _PyTracingRegion_IsClosed(PyObject* region) {
     return !self->open;
 }
 
+/* Opens the region, so that a region reference can hand out a strong reference
+ * into it. Only the sub-regions of this region stay closed.
+ *
+ * This function requires the GIL to be held, and the caller to have established
+ * that this interpreter owns the region.
+ */
+void _PyTracingRegion_Open(PyObject* region) {
+    _open_region((TracingRegionObject*)region);
+}
+
+_PyRegionRefMetadata *_PyTracingRegion_MetaLockHeld(PyObject* region) {
+    return region_meta_lock_held((TracingRegionObject*)region);
+}
+
+void _PyTracingRegion_SetMetaCown(PyObject* region, PyObject* cown) {
+    TracingRegionObject *self = (TracingRegionObject*)region;
+    // Meta is only set if the region is closed and has region references
+    if (self->meta != NULL) {
+        _PyRegionRef_MetaSetCown(self->meta, cown);
+    }
+}
+
+void _PyTracingRegion_SetMetaOwner(PyObject* region, _PyCown_ipid_t owner) {
+    TracingRegionObject *self = (TracingRegionObject*)region;
+    if (self->meta != NULL) {
+        _PyRegionRef_MetaSetIpid(self->meta, owner);
+    }
+}
+
 static PyMethodDef TracingRegion_methods[] = {
     {NULL,              NULL}           /* sentinel */
 };
@@ -1853,5 +1971,3 @@ PyTypeObject _PyTracingRegion_Type = {
     .tp_finalize = TracingRegion_finalize,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
-
-// TODO: RegionReferences

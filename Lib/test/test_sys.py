@@ -1842,10 +1842,11 @@ class SizeofTest(unittest.TestCase):
         # TODO: add check that forces layout of unicodefields
         # weakref
         import weakref
+        # The trailing pointer is `region_ref`, see `Include/cpython/weakrefobject.h`.
         if support.Py_GIL_DISABLED:
-            expected = size('2Pln4P')
+            expected = size('2Pln5P')
         else:
-            expected = size('2Pln3P')
+            expected = size('2Pln4P')
         check(weakref.ref(int), expected)
         # weakproxy
         # XXX

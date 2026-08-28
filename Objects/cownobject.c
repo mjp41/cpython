@@ -1,8 +1,10 @@
 #include "Python.h"
 #include "pymacro.h"
 
+#include "pycore_ceval.h"         // _PyEval_AddPendingCall()
 #include "pycore_cown.h"
 #include "pycore_immutability.h"
+#include "pycore_interp.h"        // _PyInterpreterState_LookUpID()
 #include "pycore_lock.h"
 #include "pycore_time.h"          // _PyTime_FromSeconds()
 
@@ -62,8 +64,24 @@ struct _PyCownObject {
     PyMutex lock;
 };
 
+_PyCown_ipid_t _PyCown_ReleasedIpid(void) {
+    return RELEASED_IPID;
+}
+
+_PyCown_thread_id_t _PyCown_UnsetThreadId(void) {
+    return UNSET_THREAD_ID;
+}
+
 static _PyCown_ipid_t cown_get_owner(_PyCownObject *obj) {
     return _Py_atomic_load_uint64(&obj->owning_ip);
+}
+
+_PyCown_ipid_t _PyCown_Owner(PyObject *cown) {
+    return cown_get_owner(_PyCownObject_CAST(cown));
+}
+
+_PyCown_thread_id_t _PyCown_LockingThread(PyObject *cown) {
+    return _Py_atomic_load_uint64(&_PyCownObject_CAST(cown)->locking_thread);
 }
 
 #define BAIL_UNLESS_OWNED_BY(o, owned_by, result) \
@@ -81,8 +99,25 @@ static _PyCown_ipid_t cown_get_owner(_PyCownObject *obj) {
 #define BAIL_UNLESS_OWNED_NULL(o) BAIL_UNLESS_OWNED(o, NULL)
 
 static int cown_set_value_unchecked(_PyCownObject* self, PyObject* value) {
+    // Storing a value requires ownership. The exception is the teardown of a
+    // released cown, which nobody owns and only its last reference can reach.
+    assert(cown_get_owner(self) == RELEASED_IPID
+           || cown_get_owner(self) == _PyCown_ThisInterpreterId());
+
+    // The region is moving out of the cown, so its region references answer to
+    // the cown's owner from now on.
+    if (self->value != value && Region_Check(self->value)) {
+        _PyTracingRegion_SetMetaOwner(self->value, cown_get_owner(self));
+    }
+
     // Update the value
     Py_XSETREF(self->value, Py_NewRef(value));
+
+    // The region is now owned by this cown, so its region references resolve
+    // through it and follow whoever holds it.
+    if (Region_Check(value)) {
+        _PyTracingRegion_SetMetaCown(value, _PyObject_CAST(self));
+    }
 
     return 0;
 }
@@ -171,12 +206,11 @@ static int cown_lock(_PyCownObject* self, PyTime_t timeout, _PyCown_ipid_t locki
         return COWN_ACQUIRE_ERROR;
     }
 
-    // Set the locking thread.
-    if (has_gil) {
-        self->locking_thread = _PyCown_ThisThreadId();
-    } else {
-        self->locking_thread = UNSET_THREAD_ID;
-    }
+    // Set the locking thread. Stored atomically because `_PyCown_LockingThread()`
+    // reads it from interpreters that do not own the cown.
+    _Py_atomic_store_uint64(
+        &self->locking_thread,
+        has_gil ? _PyCown_ThisThreadId() : UNSET_THREAD_ID);
 
     if (self->value && Region_Check(self->value)) {
         assert(!PyObject_GC_IsTracked(self->value));
@@ -213,6 +247,7 @@ static int PyCown_init(_PyCownObject *self, PyObject *args, PyObject *kwds) {
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist, &value)) {
         return -1;
     }
+    self->value = Py_None;
 
     // Init the cown as being acquired by the current interpreter
     _PyCown_ipid_t this_ip = _PyCown_ThisInterpreterId();
@@ -258,15 +293,85 @@ static int PyCown_reachable(_PyCownObject *self, visitproc visit, void *arg) {
 }
 
 static int PyCown_clear(_PyCownObject *self) {
+    if (_Py_IsImmutable(self->value)) {
+        Py_CLEAR(self->value);
+        return 0;
+    }
+
+    // A mutable value is a region, which may only be dropped by the interpreter
+    // owning this cown. `PyCown_dealloc` makes sure that this runs there.
     cown_set_value_unchecked(self, Py_None);
-    Py_CLEAR(self->value);
     return 0;
 }
 
-static void PyCown_dealloc(_PyCownObject *self) {
-    PyObject_GC_UnTrack(self);
+/* Tears the cown down. Only the interpreter owning the cown may run this, see
+ * `cown_handoff_dealloc`. */
+static void cown_dealloc_owned(_PyCownObject *self) {
+    // Clearing hands the region off, so no region reference points here any more.
     PyCown_clear(self);
     PyObject_GC_Del(self);
+}
+
+static int cown_pending_dealloc(void *arg) {
+    cown_dealloc_owned((_PyCownObject *)arg);
+    return 0;
+}
+
+/* Hands the teardown to the interpreter owning the cown and returns true, or
+ * returns false when the caller should tear the cown down itself.
+ *
+ * A cown is immutable, so the last reference to it can be dropped by an
+ * interpreter that never owned it. Its region can not be dropped there: while
+ * the cown is acquired, the region is reference counted non-atomically and
+ * tracked in the owner's GC list, so touching it would race with the owner.
+ *
+ * The cown itself is handed over as well, instead of only its region, because a
+ * region reference resolving through this cown borrows the pointer. Freeing the
+ * cown here would leave that pointer dangling until the scheduled call runs.
+ *
+ * A cown waiting for its owner is unreachable: its reference count is zero, it
+ * supports no weak references, and `_Py_TryIncref_Immutable` refuses to
+ * resurrect it. It must never be revived either, since a revived cown could be
+ * released a second time, with its region already gone.
+ */
+static bool cown_handoff_dealloc(_PyCownObject *self) {
+    _PyCown_ipid_t owner = cown_get_owner(self);
+    // Nobody owns a released cown, which makes the caller the only one that can
+    // reach the region.
+    if (owner == RELEASED_IPID || owner == _PyCown_ThisInterpreterId()) {
+        return false;
+    }
+
+    // The lookup raises when the interpreter is gone, and a deallocation can
+    // happen mid-raise.
+    PyObject *exc = PyErr_GetRaisedException();
+    // FIXME(regions): Can the interpreter go away in the middle of scheduling?
+    // `weakref_schedule_callbacks` in `Python/immutability.c` asks the same.
+    PyInterpreterState *target = _PyInterpreterState_LookUpID((int64_t)owner);
+    bool scheduled = target != NULL
+        && _PyEval_AddPendingCall(target, cown_pending_dealloc, self, 0)
+               == _Py_ADD_PENDING_SUCCESS;
+    PyErr_SetRaisedException(exc);
+    if (scheduled) {
+        return true;
+    }
+
+    // The owner is gone, or its call queue is full. Tearing the cown down here
+    // is all that is left to do, so the region ends up owned by nobody. An
+    // interpreter that is already gone can at least not race with us.
+    _Py_atomic_store_uint64(&self->owning_ip, RELEASED_IPID);
+    return false;
+}
+
+static void PyCown_dealloc(_PyCownObject *self) {
+    // Reaching zero returned the cown to this interpreter's GC list. Nothing may
+    // traverse it, `PyCown_traverse` asserts as much.
+    PyObject_GC_UnTrack(self);
+
+    if (cown_handoff_dealloc(self)) {
+        return;
+    }
+    cown_dealloc_owned(self);
 }
 
 static int
@@ -406,8 +511,6 @@ static int cown_close_region(_PyCownObject *self) {
         return -1;
     }
 
-    // TODO(regions): Test that we can't create weak refs to the bridge object. Otherwise, we also need to clear them.
-
     // The region is closed and this is the only owner of the bridge. We untrack
     // from the current GC list.
     PyObject_GC_UnTrack(self->value);
@@ -430,6 +533,11 @@ static int cown_release(_PyCownObject *self, _PyCown_ipid_t unlocking_ip) {
     if (cown_close_region(self)) {
         return -1;
     }
+
+    // The close leaves the region local to this interpreter. Rooting it here,
+    // after every check has passed, is what lets the next owner of the cown
+    // dereference the region references pointing into it.
+    _PyTracingRegion_SetMetaCown(self->value, _PyObject_CAST(self));
 
     // Region is closed, safe to release
     return cown_release_unchecked(self, unlocking_ip);
