@@ -484,13 +484,18 @@ _interp_call_pack(PyThreadState *tstate, struct interp_call *call,
                       "expected a callable, got %R", func);
         return -1;
     }
-    if (_PyFunction_GetXIData(tstate, func, &call->_preallocated.func) < 0) {
-        PyObject *exc = _PyErr_GetRaisedException(tstate);
-        if (_PyPickle_GetXIData(tstate, func, &call->_preallocated.func) < 0) {
-            _PyErr_SetRaisedException(tstate, exc);
-            return -1;
+    // If func is immutable (e.g. frozen), share it directly instead of
+    // marshaling its code.
+    if (_PyObject_GetXIDataNoFallback(tstate, func, &call->_preallocated.func) < 0) {
+        _PyErr_Clear(tstate);
+        if (_PyFunction_GetXIData(tstate, func, &call->_preallocated.func) < 0) {
+            PyObject *exc = _PyErr_GetRaisedException(tstate);
+            if (_PyPickle_GetXIData(tstate, func, &call->_preallocated.func) < 0) {
+                _PyErr_SetRaisedException(tstate, exc);
+                return -1;
+            }
+            Py_DECREF(exc);
         }
-        Py_DECREF(exc);
     }
     call->func = &call->_preallocated.func;
     // Handle the args.
