@@ -1590,8 +1590,10 @@ clear_weakrefs(struct collection_state *state)
 {
     PyObject *op;
     WORKSTACK_FOR_EACH(&state->unreachable, op) {
-        if (PyWeakref_Check(op)) {
-            // Clear weakrefs that are themselves unreachable.
+        if (_PyWeakrefOrRegionRef_Check(op)) {
+            // Clear weakrefs that are themselves unreachable. Region
+            // references reuse the same struct without being a weakref
+            // subtype, and need clearing just as much.
             _PyWeakref_ClearRef((PyWeakReference *)op);
         }
 

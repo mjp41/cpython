@@ -5,7 +5,8 @@ import unittest
 import weakref
 from immutable import freeze, is_frozen, freezable
 from immutable import TracingRegion as Region
-from immutable import Cown, InterpreterLocal
+from immutable import Cown, InterpreterLocal, RegionRef
+from test.support import import_helper, os_helper
 
 def sort_region_error(msg):
     """Normalize a 'region could not be closed' message by masking the object
@@ -123,7 +124,7 @@ class TestTracing(unittest.TestCase):
 
         with self.assertRaises(RuntimeError) as cm:
             c.release()
- 
+
         self.assertEqual(
             sort_region_error(str(cm.exception)),
             [
@@ -446,3 +447,541 @@ class TestClosedRegionTeardown(unittest.TestCase):
         # Check that the revived medic object is valid
         self.assertIn("Medic object at 0x", str(local_medic.get()))
 
+
+class TestRegionRef(unittest.TestCase):
+    """A region reference does not keep a region open. It checks on every
+    dereference whether this interpreter may reach the target, and opens the
+    region tree on the way."""
+
+    def _obj(self, tag=0):
+        @freezable
+        class A:
+            pass
+        obj = A()
+        obj.tag = tag
+        return obj
+
+    def test_deref_while_open(self):
+        r = Region()
+        r.obj = self._obj(1)
+        rr = RegionRef(r.obj)
+        self.assertIs(rr(), r.obj)
+
+    def test_survives_close_unlike_weakref(self):
+        """A close clears the plain weak references pointing into the region
+        but re-homes the region references instead."""
+        r = Region()
+        r.obj = self._obj(2)
+        wref = weakref.ref(r.obj)
+        rr = RegionRef(r.obj)
+
+        c = Cown(r)
+        del r
+        c.release()
+
+        self.assertIsNone(wref())
+        c.acquire()
+        self.assertEqual(rr().tag, 2)
+
+    def test_denied_while_released(self):
+        r = Region()
+        r.obj = self._obj(3)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+        c.release()
+
+        with self.assertRaises(RuntimeError) as cm:
+            rr()
+        self.assertIn("released cown", str(cm.exception))
+
+    def test_deref_opens_the_region(self):
+        r = Region()
+        r.obj = self._obj(4)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+        c.release()
+        c.acquire()
+
+        self.assertTrue(c._is_closed())
+        obj = rr()
+        self.assertFalse(c._is_closed())
+        self.assertIs(obj, c.value.obj)
+
+    def test_deref_opens_the_whole_chain(self):
+        """A reference into a nested region has to open every region above it,
+        not just the one holding the target."""
+        child = Region()
+        child.obj = self._obj(5)
+        rr = RegionRef(child.obj)
+        r = Region()
+        r.child = child
+        del child
+
+        c = Cown(r)
+        del r
+        c.release()
+        c.acquire()
+
+        self.assertTrue(c._is_closed())
+        self.assertEqual(rr().tag, 5)
+        self.assertFalse(c._is_closed())
+        self.assertEqual(c.value.child.obj.tag, 5)
+
+    def test_release_after_acquire_without_opening(self):
+        """A release does not re-trace an already closed region, so nothing
+        re-stamps its node. The cown node is what keeps the next owner able to
+        dereference."""
+        r = Region()
+        r.obj = self._obj(6)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+
+        c.release()
+        c.acquire()
+        c.release()
+
+        with self.assertRaises(RuntimeError):
+            rr()
+
+        c.acquire()
+        self.assertEqual(rr().tag, 6)
+
+    def test_region_outliving_its_cown(self):
+        r = Region()
+        r.obj = self._obj(7)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+        c.release()
+        c.acquire()
+
+        escaped = c.value
+        del c
+        gc.collect()
+
+        self.assertEqual(rr().tag, 7)
+        self.assertIsNotNone(escaped)
+
+    def test_target_moving_between_regions(self):
+        """A close re-homes every reference to the objects it traced, so an
+        object that changed regions resolves through the one it lives in."""
+        c1 = Cown(Region())
+        c1.value.obj = self._obj(8)
+        rr = RegionRef(c1.value.obj)
+        c1.release()
+        c1.acquire()
+
+        c2 = Cown(Region())
+        c2.value.obj = c1.value.obj
+        c1.value.obj = None
+
+        # Closing the old region should not restrict the region reference
+        c1.release()
+        self.assertEqual(rr().tag, 8)
+
+        # Closing the owning reference should restrict the region reference
+        c2.release()
+        with self.assertRaises(RuntimeError):
+            rr()
+
+        # Opening the owning cown allows the region reference again
+        c2.acquire()
+        self.assertEqual(rr().tag, 8)
+
+    def test_dead_target(self):
+        r = Region()
+        r.obj = self._obj(9)
+        rr = RegionRef(r.obj)
+        r.obj = None
+        gc.collect()
+
+        self.assertIsNone(rr())
+        self.assertIn("dead", repr(rr))
+
+    def test_frozen_target_drops_the_check(self):
+        """A frozen object is reachable from everywhere, so its references stop
+        carrying an ownership check."""
+        obj = self._obj(10)
+        rr = RegionRef(obj)
+        freeze(obj)
+        self.assertEqual(rr().tag, 10)
+
+    def test_repr_does_not_open_the_region(self):
+        r = Region()
+        r.obj = self._obj(11)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+        c.release()
+
+        self.assertIn("unavailable", repr(rr))
+
+        c.acquire()
+        self.assertTrue(c._is_closed())
+        self.assertIn("to '", repr(rr))
+        self.assertTrue(c._is_closed())
+
+    def test_no_callback_argument(self):
+        # FIXME(regions): Callbacks are not supported yet.
+        obj = self._obj(12)
+        with self.assertRaises(TypeError):
+            RegionRef(obj, lambda ref: None)
+
+    def test_equality(self):
+        obj = self._obj(13)
+        other = self._obj(13)
+        self.assertEqual(RegionRef(obj), RegionRef(obj))
+        self.assertNotEqual(RegionRef(obj), RegionRef(other))
+
+    def test_failed_close_leaves_the_reference_local(self):
+        """A close that fails leaves its node unresolved. It has to end up
+        local to this interpreter, or the reference would be stuck."""
+        child = Region()
+        child.obj = self._obj(15)
+        rr = RegionRef(child.obj)
+        r = Region()
+        r.child = child
+        del child
+
+        leak = self._obj(16)
+        r.leak = leak
+        c = Cown(r)
+        del r
+
+        with self.assertRaises(RuntimeError):
+            c.release()
+        self.assertEqual(rr().tag, 15)
+
+    def test_closed_but_not_released_leaves_the_reference_local(self):
+        """The tree can close and the cown still refuse to release. Nothing
+        roots the region in that case, so it stays ours."""
+        r = Region()
+        r.obj = self._obj(17)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+
+        held = c.value
+        with self.assertRaises(RuntimeError) as cm:
+            c.release()
+        self.assertIn("incoming references", str(cm.exception))
+        self.assertEqual(rr().tag, 17)
+
+        del held
+        gc.collect()
+        c.release()
+        with self.assertRaises(RuntimeError):
+            rr()
+
+    def test_deeply_nested_region(self):
+        inner = Region()
+        inner.obj = self._obj(18)
+        rr = RegionRef(inner.obj)
+        node = inner
+        for _ in range(30):
+            outer = Region()
+            outer.child = node
+            node = outer
+        c = Cown(node)
+        del node, inner, outer
+
+        c.release()
+        c.acquire()
+        self.assertEqual(rr().tag, 18)
+
+    def test_repeated_close_open_cycles(self):
+        """Each close allocates a fresh node and re-homes the reference onto
+        it. The old ones have to go away with it."""
+        r = Region()
+        r.obj = self._obj(19)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+
+        for _ in range(100):
+            c.release()
+            c.acquire()
+            self.assertEqual(rr().tag, 19)
+
+    def test_target_collected_as_cyclic_garbage(self):
+        """The collector clears weak references itself, without going through
+        the type. A RegionRef is not a weakref subtype, so every one of those
+        paths has to know about it."""
+        obj = self._obj(20)
+        obj.self = obj
+        rr = RegionRef(obj)
+        del obj
+        gc.collect()
+        self.assertIsNone(rr())
+
+    def test_reference_itself_is_cyclic_garbage(self):
+        """A RegionRef that is itself unreachable has to be cleared before the
+        garbage is deleted, or a __del__ could still dereference it."""
+        obj = self._obj(21)
+        cell = [RegionRef(obj)]
+        cell.append(cell)
+        del cell
+        gc.collect()
+        self.assertIsNotNone(obj)
+
+    def test_not_freezable(self):
+        """Freezing would have to either drag the target into the frozen set or
+        let an immutable object reach a mutable one. Neither is acceptable, so
+        a reference is simply not freezable -- while its type still is, since
+        closing a region freezes the type of everything it moves."""
+        obj = self._obj(22)
+        rr = RegionRef(obj)
+        with self.assertRaises(TypeError):
+            freeze(rr)
+        # The type itself stays freezable: closing a region freezes the type of
+        # everything it moves, so a reference could not live in one otherwise.
+        freeze(RegionRef)
+        self.assertTrue(is_frozen(RegionRef))
+        # The target must still be able to die cleanly afterwards.
+        del obj
+        gc.collect()
+        self.assertIsNone(rr())
+
+    def test_already_frozen_target_is_unrestricted(self):
+        """Freezing before or after the reference is created has to give the
+        same answer, otherwise the semantics depend on ordering."""
+        early = self._obj(23)
+        freeze(early)
+        rr_early = RegionRef(early)
+
+        late = self._obj(24)
+        rr_late = RegionRef(late)
+        freeze(late)
+
+        self.assertEqual(rr_early().tag, 23)
+        self.assertEqual(rr_late().tag, 24)
+
+    def test_hash_is_checked_even_when_cached(self):
+        """A cached hash would otherwise stand as an answer about an object
+        this interpreter may no longer touch."""
+        r = Region()
+        r.obj = self._obj(26)
+        rr = RegionRef(r.obj)
+        hash(rr)
+
+        c = Cown(r)
+        del r
+        c.release()
+        with self.assertRaises(RuntimeError):
+            hash(rr)
+
+        c.acquire()
+        self.assertIsInstance(hash(rr), int)
+
+    def test_repr_preserves_a_pending_exception(self):
+        """repr() runs from error reporting paths, so a denied check must not
+        wipe the error state the caller is carrying."""
+        r = Region()
+        r.obj = self._obj(25)
+        rr = RegionRef(r.obj)
+        c = Cown(r)
+        del r
+        c.release()
+
+        try:
+            raise ValueError("caller's error")
+        except ValueError:
+            self.assertIn("unavailable", repr(rr))
+            self.assertIsInstance(sys.exception(), ValueError)
+
+    def test_reference_inside_a_region(self):
+        """A region reference is not followed by the close trace, so storing
+        one in a region does not drag its target in."""
+        outside = self._obj(14)
+        r = Region()
+        r.rr = RegionRef(outside)
+        c = Cown(r)
+        del r
+
+        c.release()
+        self.assertFalse(is_frozen(outside))
+        c.acquire()
+        self.assertIs(c.value.rr(), outside)
+
+
+class TestRegionRefSubinterpreters(unittest.TestCase):
+    """The point of the ownership check: another interpreter may only
+    dereference what it actually owns."""
+
+    def setUp(self):
+        self._interpreters = import_helper.import_module('_interpreters')
+
+    def _run_in_subinterp(self, code, shared=None):
+        interp = self._interpreters.create()
+        try:
+            self._interpreters.run_string(interp, code, shared=shared or {})
+        finally:
+            self._interpreters.destroy(interp)
+
+    def test_frozen_target_reachable_from_everywhere(self):
+        """A frozen target is shareable, so its references carry no ownership
+        check at all -- whichever order the freeze and the reference happened
+        in."""
+        @freezable
+        class A:
+            pass
+
+        early = A(); early.tag = "early"
+        freeze(early)
+        late = A(); late.tag = "late"
+
+        r = Region()
+        r.early_ref = RegionRef(early)
+        r.late_ref = RegionRef(late)
+        freeze(late)
+        c = Cown(r)
+        del r
+        c.release()
+
+        self._run_in_subinterp("""
+c.acquire()
+assert c.value.early_ref().tag == "early", "frozen before the ref was created"
+assert c.value.late_ref().tag == "late", "frozen after the ref was created"
+c.release()
+""", shared={"c": c})
+
+    def test_foreign_deallocation_does_not_transfer_ownership(self):
+        """A cown is immutable and may live inside a region, so the last
+        reference to it can be dropped by an interpreter that never owned it.
+        Its region must go to the cown's owner, not to whoever runs the
+        deallocator."""
+        @freezable
+        class A:
+            pass
+
+        inner_region = Region()
+        inner_region.obj = A()
+        inner_region.obj.tag = "owned by the creator"
+        mine = RegionRef(inner_region.obj)
+        travelling = RegionRef(inner_region.obj)
+
+        inner = Cown(inner_region)
+        del inner_region
+        inner.release()
+        inner.acquire()
+        # Keep the region alive past the cown, so the cown can die alone.
+        escaped = inner.value
+
+        outer_region = Region()
+        outer_region.inner = inner
+        outer_region.ref = travelling
+        del travelling
+        outer = Cown(outer_region)
+        del outer_region
+        outer.release()
+        del inner
+        gc.collect()
+
+        self._run_in_subinterp("""
+import gc
+c.acquire()
+c.value.inner = None      # drops the last reference to a cown we never owned
+gc.collect()
+try:
+    c.value.ref()
+    raise AssertionError("reached a region owned by another interpreter")
+except RuntimeError:
+    pass
+c.release()
+""", shared={"c": outer})
+
+        # The creator still owns it, and is not locked out of its own region.
+        self.assertEqual(escaped.obj.tag, "owned by the creator")
+        self.assertEqual(mine().tag, "owned by the creator")
+
+    def test_foreign_deallocation_defers_the_teardown_to_the_owner(self):
+        """The last reference to a cown owned by this interpreter may be
+        dropped by another one. The region inside is reference counted
+        non-atomically and tracked in this interpreter's GC list, so the
+        teardown has to be handed back here instead of running there."""
+        log = os_helper.TESTFN
+        self.addCleanup(os_helper.unlink, log)
+
+        @freezable
+        class Marker:
+            def __del__(self):
+                with open(self.log, "a") as f:
+                    f.write("region\n")
+
+        inner_region = Region()
+        inner_region.marker = Marker()
+        inner_region.marker.log = log
+        ref = RegionRef(inner_region.marker)
+
+        inner = Cown(inner_region)
+        del inner_region
+        inner.release()
+        inner.acquire()          # owned by this interpreter from here on
+
+        outer_region = Region()
+        outer_region.inner = inner
+        outer = Cown(outer_region)
+        del outer_region
+        outer.release()
+        del inner
+        gc.collect()
+
+        with open(log, "w"):
+            pass
+
+        self._run_in_subinterp("""
+import gc
+c.acquire()
+c.value.inner = None      # drops the last reference to a cown we never owned
+gc.collect()
+with open(log, "a") as f:
+    f.write("subinterpreter ")
+c.release()
+""", shared={"c": outer, "log": log})
+
+        # The teardown was scheduled here and runs at the next eval breaker.
+        recorded = []
+        for _ in range(10000):
+            with open(log) as f:
+                recorded = f.read().split()
+            if len(recorded) == 2:
+                break
+        self.assertEqual(recorded, ["subinterpreter", "region"])
+        self.assertIsNone(ref())
+
+    def test_owner_may_deref_and_others_may_not(self):
+        """`local` was never in a region, so nothing ever re-homes the
+        reference to it and it stays local to this interpreter. `owned` travels
+        with the region and becomes reachable by whoever holds the cown."""
+        @freezable
+        class A:
+            pass
+
+        local = A()
+        local.tag = "local"
+
+        r = Region()
+        r.local_ref = RegionRef(local)
+        r.owned = A()
+        r.owned.tag = "owned"
+        r.owned_ref = RegionRef(r.owned)
+        c = Cown(r)
+        del r
+        c.release()
+
+        self._run_in_subinterp("""
+c.acquire()
+try:
+    c.value.local_ref()
+    raise AssertionError("reached a foreign local object")
+except RuntimeError:
+    pass
+assert c.value.owned_ref().tag == "owned"
+c.release()
+""", shared={"c": c})
+
+        c.acquire()
+        self.assertEqual(c.value.local_ref().tag, "local")

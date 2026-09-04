@@ -13,6 +13,15 @@ extern "C" {
 #include "pycore_object.h"           // _Py_REF_IS_MERGED()
 #include "pycore_pyatomic_ft_wrappers.h"
 
+/* Guards weakrefs to immutable objects, and all region reference metadata.
+ * Declared for both builds because `_PyRegionRefMetadata` uses it either way,
+ * while the weakref lists themselves are striped in free-threaded builds. */
+extern PyMutex _PyWeakref_Lock;
+
+#define LOCK_REGION_REF_META() \
+    PyMutex_LockFlags(&_PyWeakref_Lock, _Py_LOCK_DONT_DETACH)
+#define UNLOCK_REGION_REF_META() PyMutex_Unlock(&_PyWeakref_Lock)
+
 #ifdef Py_GIL_DISABLED
 
 #define WEAKREF_LIST_LOCK(obj) \
@@ -36,9 +45,6 @@ extern "C" {
     } while (0)
 
 #else
-
-// Lock used for weakrefs to immutable objects
-extern PyMutex _PyWeakref_Lock;
 
 #define LOCK_WEAKREFS(obj) PyMutex_LockFlags(&_PyWeakref_Lock, _Py_LOCK_DONT_DETACH)
 #define UNLOCK_WEAKREFS(obj) PyMutex_Unlock(&_PyWeakref_Lock)
@@ -108,7 +114,7 @@ static inline PyObject* get_ref_lock_held(PyWeakReference *ref, PyObject *obj)
 
 static inline PyObject* _PyWeakref_GET_REF(PyObject *ref_obj)
 {
-    assert(PyWeakref_Check(ref_obj));
+    assert(_PyWeakrefOrRegionRef_Check(ref_obj));
     PyWeakReference *ref = _Py_CAST(PyWeakReference*, ref_obj);
 
     PyObject *obj = _Py_atomic_load_ptr(&ref->wr_object);
@@ -125,7 +131,7 @@ static inline PyObject* _PyWeakref_GET_REF(PyObject *ref_obj)
 
 static inline int _PyWeakref_IS_DEAD(PyObject *ref_obj)
 {
-    assert(PyWeakref_Check(ref_obj));
+    assert(_PyWeakrefOrRegionRef_Check(ref_obj));
     int ret = 0;
     PyWeakReference *ref = _Py_CAST(PyWeakReference*, ref_obj);
     PyObject *obj = FT_ATOMIC_LOAD_PTR(ref->wr_object);

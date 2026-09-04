@@ -666,6 +666,17 @@ immutable_exec(PyObject *module) {
         return -1;
     }
 
+    if (PyModule_AddType(module, &_PyRegionref_RefType) != 0) {
+        return -1;
+    }
+    // The type object itself has to be freezable: the close trace freezes the
+    // type of every object it moves into a region. Individual references are
+    // marked unfreezable in `regionref___new__()` instead.
+    if (_PyImmutability_SetFreezable(
+            (PyObject*)&_PyRegionref_RefType, _Py_FREEZABLE_YES) < 0) {
+        return -1;
+    }
+
     if (PyModule_AddIntConstant(module, "FREEZABLE_YES",
                                 _Py_FREEZABLE_YES) != 0) {
         return -1;

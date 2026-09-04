@@ -6,6 +6,10 @@
 #include "pycore_pyerrors.h"      // _PyErr_ChainExceptions1()
 #include "pycore_pystate.h"
 #include "pycore_weakref.h"       // _PyWeakref_GET_REF()
+#include "pycore_cown.h"          // _PyCown_ThisInterpreterId()
+#include "pycore_immutability.h"  // _PyTracingRegion_Open()
+#include "pycore_interp.h"        // PyInterpreterState.immutability
+#include "pycore_regionref.h"
 
 // FIXME(region): Reusing the same weakref easily breaks region isolation
 // without a simple way out for programmers. For now we disable the optimization.
@@ -113,7 +117,476 @@ _PyWeakref_GetWeakrefCount(PyObject *obj)
     return count;
 }
 
+// ###################################################################
+// Region reference metadata
+// ###################################################################
+
+/* See `pycore_regionref.h` for the design.
+ *
+ * Every field of a `_PyRegionRefMetadata` is guarded by `_PyWeakref_Lock`. The
+ * `_lock_held` helpers below expect the caller to hold it.
+ */
+
+/* In the default build the weakref list lock and the metadata lock are the same
+ * global mutex, so code holding the former must not take the latter again. In
+ * free-threaded builds they differ. */
+#ifdef Py_GIL_DISABLED
+#  define LOCK_META_UNDER_WEAKREFS()   LOCK_REGION_REF_META()
+#  define UNLOCK_META_UNDER_WEAKREFS() UNLOCK_REGION_REF_META()
+#else
+#  define LOCK_META_UNDER_WEAKREFS()   ((void)0)
+#  define UNLOCK_META_UNDER_WEAKREFS() ((void)0)
+#endif
+
+static void clear_weakref_lock_held(PyWeakReference *self, PyObject **callback);
+
+static _PyRegionRefMetadata *
+meta_new_lock_held(uint8_t kind)
+{
+    // Raw allocation on purpose: a node can outlive the interpreter that
+    // created it, when a chain reaching it is still held elsewhere.
+    _PyRegionRefMetadata *meta = PyMem_RawMalloc(sizeof(_PyRegionRefMetadata));
+    if (meta == NULL) {
+        return NULL;
+    }
+    meta->rc = 1;
+    meta->kind = kind;
+    meta->region = NULL;
+    memset(&meta->value, 0, sizeof(meta->value));
+    return meta;
+}
+
+static void
+meta_incref_lock_held(_PyRegionRefMetadata *meta)
+{
+    if (meta != NULL) {
+        assert(meta->rc > 0);
+        meta->rc += 1;
+    }
+}
+
+static void
+meta_decref_lock_held(_PyRegionRefMetadata *meta)
+{
+    // Releasing a node releases its parent, and a chain is as deep as the
+    // region tree. Walk it instead of recursing.
+    while (meta != NULL) {
+        assert(meta->rc > 0);
+        if (--meta->rc > 0) {
+            return;
+        }
+        _PyRegionRefMetadata *parent = NULL;
+        if (meta->kind == _Py_REGION_REF_META) {
+            parent = meta->value.parent;
+        }
+        PyMem_RawFree(meta);
+        meta = parent;
+    }
+}
+
+/* Returns a terminal node owned by this interpreter, for a reference to an
+ * object that is in no region. New reference, NULL when out of memory. */
+static _PyRegionRefMetadata *
+meta_new_local_lock_held(void)
+{
+    _PyRegionRefMetadata *meta = meta_new_lock_held(_Py_REGION_REF_IPID);
+    if (meta != NULL) {
+        meta->value.ipid = _PyCown_ThisInterpreterId();
+    }
+    return meta;
+}
+
+/* Releases whatever the node delegated to. The callers below all assign the new
+ * kind and value right after, so the stale union is never observed. */
+static void
+meta_clear_parent_lock_held(_PyRegionRefMetadata *meta)
+{
+    if (meta->kind == _Py_REGION_REF_META) {
+        _PyRegionRefMetadata *parent = meta->value.parent;
+        meta->kind = _Py_REGION_REF_WIP;
+        meta_decref_lock_held(parent);
+    }
+}
+
+static void
+meta_set_parent_lock_held(_PyRegionRefMetadata *meta, _PyRegionRefMetadata *parent)
+{
+    assert(meta != NULL && parent != NULL);
+    assert(meta != parent);
+
+    // Increfing first keeps a self-assignment from freeing the parent.
+    meta_incref_lock_held(parent);
+    meta_clear_parent_lock_held(meta);
+    meta->kind = _Py_REGION_REF_META;
+    meta->value.parent = parent;
+}
+
+static void
+meta_set_cown_lock_held(_PyRegionRefMetadata *meta, PyObject *cown)
+{
+    meta_clear_parent_lock_held(meta);
+    meta->kind = _Py_REGION_REF_COWN;
+    meta->value.cown = cown;
+}
+
+static void
+meta_set_ipid_lock_held(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
+{
+    meta_clear_parent_lock_held(meta);
+    meta->kind = _Py_REGION_REF_IPID;
+    meta->value.ipid = ipid;
+}
+
+static void
+set_region_ref_lock_held(PyWeakReference *self, _PyRegionRefMetadata *meta)
+{
+    // FIXME(regions): Why does this fail? assert(_PyRegionRef_CheckExact(self));
+    if (self->region_ref == meta) {
+        return;
+    }
+    meta_incref_lock_held(meta);
+    meta_decref_lock_held(self->region_ref);
+    self->region_ref = meta;
+}
+
+/* Drops a reference's metadata while its weakref list lock is held. */
+static void
+clear_region_ref_lock_held(PyWeakReference *self)
+{
+    // FIXME(regions): Why does this fail? assert(_PyRegionRef_CheckExact(self));
+    LOCK_META_UNDER_WEAKREFS();
+    set_region_ref_lock_held(self, NULL);
+    UNLOCK_META_UNDER_WEAKREFS();
+}
+
+_PyRegionRefMetadata *
+_PyRegionRef_NewRegionMetaLockHeld(PyObject *region)
+{
+    _PyRegionRefMetadata *meta = meta_new_lock_held(_Py_REGION_REF_WIP);
+    if (meta != NULL) {
+        meta->region = region;
+    }
+    return meta;
+}
+
+void
+_PyRegionRef_MetaDecref(_PyRegionRefMetadata *meta)
+{
+    LOCK_REGION_REF_META();
+    meta_decref_lock_held(meta);
+    UNLOCK_REGION_REF_META();
+}
+
+void
+_PyRegionRef_MetaSetParentLockHeld(_PyRegionRefMetadata *meta,
+                                   _PyRegionRefMetadata *parent)
+{
+    meta_set_parent_lock_held(meta, parent);
+}
+
+void
+_PyRegionRef_MetaSetCown(_PyRegionRefMetadata *meta, PyObject *cown)
+{
+    LOCK_REGION_REF_META();
+    meta_set_cown_lock_held(meta, cown);
+    UNLOCK_REGION_REF_META();
+}
+
+void
+_PyRegionRef_MetaSetIpid(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
+{
+    // FIXME(regions): `ipid` should always be the current interpreter. It isn't
+    // for a released cown, or when `PyCown_clear` runs on an interpreter that
+    // doesn't own the cown; once that is refactored this can assert it.
+    LOCK_REGION_REF_META();
+    meta_set_ipid_lock_held(meta, ipid);
+    UNLOCK_REGION_REF_META();
+}
+
+void
+_PyRegionRef_MetaRegionOpened(_PyRegionRefMetadata *meta)
+{
+    LOCK_REGION_REF_META();
+    meta->region = NULL;
+    meta_set_ipid_lock_held(meta, _PyCown_ThisInterpreterId());
+    UNLOCK_REGION_REF_META();
+}
+
+void
+_PyRegionRef_MetaResolveWip(_PyRegionRefMetadata *meta)
+{
+    LOCK_REGION_REF_META();
+    if (meta->kind == _Py_REGION_REF_WIP) {
+        meta_set_ipid_lock_held(meta, _PyCown_ThisInterpreterId());
+    }
+    UNLOCK_REGION_REF_META();
+}
+
+void
+_PyRegionRef_CloseWeakRefs(PyObject *obj, _Py_hashtable_t *keep, PyObject *region)
+{
+    PyWeakReference **list = _PyObject_GET_WEAKREFS_LISTPTR_FROM_OFFSET(obj);
+    LOCK_WEAKREFS(obj);
+    LOCK_META_UNDER_WEAKREFS();
+    while (*list) {
+        PyWeakReference *ref = *list;
+
+        // Region references remain in the list, but their region reference meta
+        // is repointed.
+        if (_PyRegionRef_CheckExact((PyObject *)ref)) {
+            _PyRegionRefMetadata *meta = _PyTracingRegion_MetaLockHeld(region);
+            if (meta == NULL) {
+                // Out of memory, we clear the reference and continue
+                clear_weakref_lock_held(ref, NULL);
+                continue;
+            }
+            set_region_ref_lock_held(ref, meta);
+            list = &ref->wr_next;
+        }
+        else if (keep != NULL && _Py_hashtable_get_entry(keep, ref)) {
+            list = &ref->wr_next;
+        }
+        else {
+            clear_weakref_lock_held(ref, NULL);
+        }
+    }
+    UNLOCK_META_UNDER_WEAKREFS();
+    UNLOCK_WEAKREFS(obj);
+}
+
+// ###################################################################
+// Region reference access
+// ###################################################################
+
+/* The regions a dereference has to open, innermost first. Most chains are
+ * shallow, so the common case stays on the stack. */
+#define REGIONREF_OPEN_STACK 8
+
+typedef struct {
+    PyObject **items;
+    Py_ssize_t count;
+    Py_ssize_t capacity;
+    PyObject *stack[REGIONREF_OPEN_STACK];
+} regionref_open_list_t;
+
+static void
+open_list_init(regionref_open_list_t *list)
+{
+    list->items = list->stack;
+    list->count = 0;
+    list->capacity = REGIONREF_OPEN_STACK;
+}
+
+static void
+open_list_clear(regionref_open_list_t *list)
+{
+    if (list->items != list->stack) {
+        PyMem_RawFree(list->items);
+    }
+    open_list_init(list);
+}
+
+/* Grows with the raw allocator so this stays safe to call under the metadata
+ * lock, which must not run Python code. */
+static int
+open_list_push(regionref_open_list_t *list, PyObject *region)
+{
+    if (list->count == list->capacity) {
+        Py_ssize_t capacity = list->capacity * 2;
+        PyObject **items;
+        if (list->items == list->stack) {
+            items = PyMem_RawMalloc(capacity * sizeof(PyObject *));
+            if (items != NULL) {
+                memcpy(items, list->stack, list->count * sizeof(PyObject *));
+            }
+        }
+        else {
+            items = PyMem_RawRealloc(list->items, capacity * sizeof(PyObject *));
+        }
+        if (items == NULL) {
+            return -1;
+        }
+        list->items = items;
+        list->capacity = capacity;
+    }
+    list->items[list->count++] = region;
+    return 0;
+}
+
+typedef enum {
+    REGIONREF_ALLOWED,
+    REGIONREF_DENIED_WIP,
+    REGIONREF_DENIED_IPID,
+    REGIONREF_DENIED_COWN,
+    REGIONREF_DENIED_MEMORY,
+} regionref_verdict_t;
+
+/* Resolves the reference's metadata chain and decides whether this interpreter
+ * may reach the target. On success `regions` lists the regions that still have
+ * to be opened, innermost first; pass NULL to only ask the question.
+ *
+ * Returns 0 when access is allowed, -1 with an exception set otherwise.
+ */
+static int
+regionref_check_access(PyWeakReference *self, regionref_open_list_t *regions,
+                       bool quiet)
+{
+    const _PyCown_ipid_t this_ip = _PyCown_ThisInterpreterId();
+    regionref_verdict_t verdict = REGIONREF_ALLOWED;
+    _PyCown_ipid_t owner = 0;
+    _PyCown_thread_id_t locking_thread = 0;
+    bool wrong_thread = false;
+
+    // Nothing inside this section may raise or allocate through Python.
+    LOCK_REGION_REF_META();
+    _PyRegionRefMetadata *meta = self->region_ref;
+    while (meta != NULL) {
+        if (meta->region != NULL && regions != NULL) {
+            if (open_list_push(regions, meta->region) < 0) {
+                verdict = REGIONREF_DENIED_MEMORY;
+                break;
+            }
+        }
+        if (meta->kind != _Py_REGION_REF_META) {
+            break;
+        }
+        meta = meta->value.parent;
+    }
+    if (verdict == REGIONREF_ALLOWED && meta != NULL) {
+        switch (meta->kind) {
+        case _Py_REGION_REF_WIP:
+            verdict = REGIONREF_DENIED_WIP;
+            break;
+        case _Py_REGION_REF_IPID:
+            owner = meta->value.ipid;
+            if (owner != this_ip) {
+                verdict = REGIONREF_DENIED_IPID;
+            }
+            break;
+        case _Py_REGION_REF_COWN:
+            owner = _PyCown_Owner(meta->value.cown);
+            if (owner != this_ip) {
+                verdict = REGIONREF_DENIED_COWN;
+            }
+            else {
+                locking_thread = _PyCown_LockingThread(meta->value.cown);
+                wrong_thread = locking_thread != _PyCown_UnsetThreadId()
+                               && locking_thread != _PyCown_ThisThreadId();
+            }
+            break;
+        default:
+            Py_UNREACHABLE();
+        }
+    }
+    // A NULL node means the target was frozen, which makes it reachable from
+    // everywhere. Every live region reference has a node from birth.
+    UNLOCK_REGION_REF_META();
+
+    if (wrong_thread) {
+        // FIXME(regions): Thread ownership is not enforced, any thread of the
+        // owning interpreter may reach the data. Whether that should change is
+        // a question for once this has seen some use.
+        fprintf(stderr,
+                "RegionRef dereferenced from thread %llu, but the cown was "
+                "acquired by thread %llu\n",
+                (unsigned long long)_PyCown_ThisThreadId(),
+                (unsigned long long)locking_thread);
+    }
+
+    if (verdict == REGIONREF_ALLOWED) {
+        return 0;
+    }
+    if (quiet) {
+        // Callers that only want the answer. Raising here and having them
+        // clear it would destroy whatever the caller already had pending;
+        // `repr()` in particular runs from error reporting paths.
+        return -1;
+    }
+
+    switch (verdict) {
+    case REGIONREF_ALLOWED:
+        return 0;
+    case REGIONREF_DENIED_MEMORY:
+        PyErr_NoMemory();
+        return -1;
+    case REGIONREF_DENIED_WIP:
+        PyErr_SetString(
+            PyExc_RuntimeError,
+            "the region holding this reference is currently being closed");
+        return -1;
+    case REGIONREF_DENIED_COWN:
+        if (owner == _PyCown_ReleasedIpid()) {
+            PyErr_Format(
+                PyExc_RuntimeError,
+                "interpreter %llu attempted to dereference a region reference "
+                "into a released cown",
+                (unsigned long long)this_ip);
+            return -1;
+        }
+        _Py_FALLTHROUGH;
+    case REGIONREF_DENIED_IPID:
+        if (owner == _PyCown_ReleasedIpid()) {
+            PyErr_Format(
+                PyExc_RuntimeError,
+                "interpreter %llu attempted to dereference a region reference "
+                "into a region that no interpreter owns",
+                (unsigned long long)this_ip);
+            return -1;
+        }
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "interpreter %llu attempted to dereference a region reference "
+            "into a region owned by %llu",
+            (unsigned long long)this_ip, (unsigned long long)owner);
+        return -1;
+    }
+    Py_UNREACHABLE();
+}
+
+/* Returns a new strong reference to the target.
+ *
+ * Returns NULL without an exception when the target simply died, and NULL with
+ * one set when this interpreter may not reach it.
+ */
+static PyObject *
+regionref_get_ref(PyObject *op)
+{
+    PyWeakReference *self = _PyWeakref_CAST(op);
+
+    // A dead target needs no ownership check; it is not in any region any more.
+    if (_Py_atomic_load_ptr(&self->wr_object) == Py_None) {
+        return NULL;
+    }
+
+    regionref_open_list_t regions;
+    open_list_init(&regions);
+    if (regionref_check_access(self, &regions, false) < 0) {
+        open_list_clear(&regions);
+        return NULL;
+    }
+
+    // Opening runs no Python code but does move GC lists, so it happens with
+    // the metadata lock dropped. Parent regions first, so an open region never has a
+    // closed ancestor. The borrowed region pointers stay valid because the
+    // check above established that this interpreter owns them, and only an
+    // owner can deallocate a region.
+    for (Py_ssize_t i = regions.count - 1; i >= 0; i--) {
+        _PyTracingRegion_Open(regions.items[i]);
+    }
+    open_list_clear(&regions);
+
+    PyObject *obj = _Py_atomic_load_ptr(&self->wr_object);
+    if (obj == Py_None) {
+        return NULL;
+    }
+    LOCK_WEAKREFS(obj);
+    PyObject *result = get_ref_lock_held(self, obj);
+    UNLOCK_WEAKREFS(obj);
+    return result;
+}
+
 static PyObject *weakref_vectorcall(PyObject *self, PyObject *const *args, size_t nargsf, PyObject *kwnames);
+static PyObject *regionref_vectorcall(PyObject *self, PyObject *const *args, size_t nargsf, PyObject *kwnames);
 
 static void
 init_weakref(PyWeakReference *self, PyObject *ob, PyObject *callback)
@@ -129,12 +602,16 @@ init_weakref(PyWeakReference *self, PyObject *ob, PyObject *callback)
     else {
         self->callback_ipid = PyInterpreterState_GetID(PyInterpreterState_Get());
     }
-    self->vectorcall = weakref_vectorcall;
+    // A region reference has to run its ownership check before handing out the
+    // target, so it cannot share the plain weakref fast path.
+    self->vectorcall = _PyRegionRef_CheckExact((PyObject *)self)
+                       ? regionref_vectorcall : weakref_vectorcall;
 #ifdef Py_GIL_DISABLED
     self->weakrefs_lock = &WEAKREF_LIST_LOCK(ob);
     _PyObject_SetMaybeWeakref(ob);
     _PyObject_SetMaybeWeakref((PyObject *)self);
 #endif
+    self->region_ref = NULL;
 }
 
 // Clear the weakref and steal its callback into `callback`, if provided.
@@ -163,6 +640,7 @@ clear_weakref_lock_held(PyWeakReference *self, PyObject **callback)
         *callback = self->wr_callback;
         self->wr_callback = NULL;
     }
+    clear_region_ref_lock_held(self);
 }
 
 // Clear the weakref and its callback
@@ -196,8 +674,13 @@ void
 _PyWeakref_ClearRef(PyWeakReference *self)
 {
     assert(self != NULL);
-    assert(PyWeakref_Check(self));
+    // Region references reuse this struct without being a weakref subtype.
+    assert(_PyWeakrefOrRegionRef_Check(self));
+    // Callers here hold no lock, but `region_ref` needs one. Callers that
+    // already hold it use `clear_weakref_lock_held()` directly.
+    LOCK_REGION_REF_META();
     clear_weakref_lock_held(self, NULL);
+    UNLOCK_REGION_REF_META();
 }
 
 static void
@@ -224,8 +707,12 @@ gc_clear(PyObject *op)
     PyWeakReference *self = _PyWeakref_CAST(op);
     PyObject *callback;
     // The world is stopped during GC in free-threaded builds. It's safe to
-    // call this without holding the lock.
+    // call this without holding the list lock. `region_ref` still needs the
+    // metadata lock in the default build, where each interpreter has its own
+    // GIL and the collector is not alone.
+    LOCK_REGION_REF_META();
     clear_weakref_lock_held(self, &callback);
+    UNLOCK_REGION_REF_META();
     Py_XDECREF(callback);
     return 0;
 }
@@ -489,11 +976,16 @@ _PyWeakref_OnObjectFreeze(PyObject *object)
         return;
     }
     LOCK_WEAKREFS(object);
+    LOCK_META_UNDER_WEAKREFS();
     PyWeakReference *current = *list;
     while (current != NULL) {
+        // A frozen object is reachable from every interpreter, so a region
+        // reference to it no longer needs an ownership check.
+        set_region_ref_lock_held(current, NULL);
         immutable_make_weakref_safe(current);
         current = current->wr_next;
     }
+    UNLOCK_META_UNDER_WEAKREFS();
     UNLOCK_WEAKREFS(object);
 }
 
@@ -623,6 +1115,235 @@ _PyWeakref_RefType = {
     .tp_init = weakref___init__,
     .tp_alloc = PyType_GenericAlloc,
     .tp_new = weakref___new__,
+    .tp_free = PyObject_GC_Del,
+};
+
+// ###################################################################
+// Region reference type
+// ###################################################################
+
+/* A region reference is a weak reference that survives its target's region
+ * being closed. Instead of keeping the region open, every dereference asks
+ * whether the target may be reached and opens the region tree if it
+ * may.
+ *
+ * This type is deliberately not a subtype of `_PyWeakref_RefType`, which is
+ * what keeps `PyWeakref_Check()` false for it.
+ */
+
+static PyObject *
+regionref_vectorcall(PyObject *self, PyObject *const *args,
+                     size_t nargsf, PyObject *kwnames)
+{
+    if (!_PyArg_NoKwnames("RegionRef", kwnames)) {
+        return NULL;
+    }
+    if (!_PyArg_CheckPositional("RegionRef", PyVectorcall_NARGS(nargsf), 0, 0)) {
+        return NULL;
+    }
+    PyObject *obj = regionref_get_ref(self);
+    if (obj == NULL) {
+        if (PyErr_Occurred()) {
+            return NULL;
+        }
+        Py_RETURN_NONE;
+    }
+    return obj;
+}
+
+static Py_hash_t
+regionref_hash(PyObject *op)
+{
+    PyWeakReference *self = _PyWeakref_CAST(op);
+    // Checked before the cache is consulted: a cached hash would otherwise be
+    // a standing answer about an object this interpreter may no longer touch.
+    if (regionref_check_access(self, NULL, false) < 0) {
+        return -1;
+    }
+    Py_hash_t hash = _Py_atomic_load_ssize_relaxed(&self->hash);
+    if (hash != -1) {
+        return hash;
+    }
+    PyObject *obj = regionref_get_ref(op);
+    if (obj == NULL) {
+        if (!PyErr_Occurred()) {
+            PyErr_SetString(PyExc_TypeError, "weak object has gone away");
+        }
+        return -1;
+    }
+    hash = PyObject_Hash(obj);
+    Py_DECREF(obj);
+    _Py_atomic_store_ssize_relaxed(&self->hash, hash);
+    return hash;
+}
+
+static PyObject *
+regionref_repr(PyObject *self)
+{
+    PyWeakReference *ref = _PyWeakref_CAST(self);
+    PyObject *obj = _Py_atomic_load_ptr(&ref->wr_object);
+    if (obj == Py_None) {
+        return PyUnicode_FromFormat("<RegionRef; dead>");
+    }
+
+    // Deliberately only asks the question instead of going through
+    // `regionref_get_ref()`, so that printing a reference never opens a
+    // region, matching `TracingRegion`'s repr.
+    if (regionref_check_access(ref, NULL, true) < 0) {
+        return PyUnicode_FromFormat("<RegionRef; unavailable>");
+    }
+
+    // This needs a lock, since the object may be in the middle of finalizing when this
+    // is being called.
+    LOCK_WEAKREFS(obj);
+    PyObject *target = get_ref_lock_held(ref, obj);
+    UNLOCK_WEAKREFS(obj);
+    if (target == NULL) {
+        return PyUnicode_FromFormat("<RegionRef; dead>");
+    }
+    PyObject *repr = PyUnicode_FromFormat(
+        "<RegionRef; to '%T' at %p>", self, target, target);
+    Py_DECREF(target);
+    return repr;
+}
+
+/* Region references only support equality, and compare by target like weak
+ * references do. A reference whose target is gone or out of reach falls back to
+ * identity, since there is nothing to compare. */
+static PyObject *
+regionref_richcompare(PyObject *self, PyObject *other, int op)
+{
+    if ((op != Py_EQ && op != Py_NE)
+        || !_PyRegionRef_CheckExact(self)
+        || !_PyRegionRef_CheckExact(other))
+    {
+        Py_RETURN_NOTIMPLEMENTED;
+    }
+
+    // An unreachable target compares by identity, like a dead one. The check
+    // runs quietly so that a denial never disturbs the caller's error state.
+    PyObject *obj = NULL;
+    PyObject *other_obj = NULL;
+    if (regionref_check_access(_PyWeakref_CAST(self), NULL, true) == 0) {
+        obj = regionref_get_ref(self);
+    }
+    if (regionref_check_access(_PyWeakref_CAST(other), NULL, true) == 0) {
+        other_obj = regionref_get_ref(other);
+    }
+    if (PyErr_Occurred()) {
+        Py_XDECREF(obj);
+        Py_XDECREF(other_obj);
+        return NULL;
+    }
+
+    if (obj == NULL || other_obj == NULL) {
+        Py_XDECREF(obj);
+        Py_XDECREF(other_obj);
+        int res = (self == other);
+        if (op == Py_NE) {
+            res = !res;
+        }
+        return PyBool_FromLong(res);
+    }
+
+    PyObject *res = PyObject_RichCompare(obj, other_obj, op);
+    Py_DECREF(obj);
+    Py_DECREF(other_obj);
+    return res;
+}
+
+static PyObject *
+regionref___new__(PyTypeObject *type, PyObject *args, PyObject *kwargs)
+{
+    // FIXME(regions): Region references do not support callbacks yet. Adding
+    // them means deciding which interpreter runs the callback and how.
+    if (!_PyArg_NoKeywords("RegionRef", kwargs)) {
+        return NULL;
+    }
+    PyObject *ob;
+    if (!PyArg_UnpackTuple(args, "__new__", 1, 1, &ob)) {
+        return NULL;
+    }
+
+    PyWeakReference *ref = get_or_create_weakref(type, ob, NULL);
+    if (ref == NULL) {
+        return NULL;
+    }
+
+    // FIXME(region): Freezing a region reference needs special handling like weak
+    // references. We also need to handle a case, where a freeze would propagate into
+    // a closed region. The solution is probably a pre-freeze hook that calls freeze
+    // on the target object.
+    if (_PyImmutability_SetFreezable(
+            (PyObject *)ref, _Py_FREEZABLE_NO) < 0) {
+        Py_DECREF(ref);
+        return NULL;
+    }
+
+    // An immutable target is reachable from everywhere, no meta is set.
+    if (_Py_IsImmutable(ob)) {
+        return (PyObject *)ref;
+    }
+
+    // Until a close re-homes it, the target is local to this interpreter.
+    LOCK_REGION_REF_META();
+    _PyRegionRefMetadata *meta = meta_new_local_lock_held();
+    if (meta != NULL) {
+        set_region_ref_lock_held(ref, meta);
+        meta_decref_lock_held(meta);
+    }
+    UNLOCK_REGION_REF_META();
+    if (meta == NULL) {
+        Py_DECREF(ref);
+        return PyErr_NoMemory();
+    }
+
+    return (PyObject *)ref;
+}
+
+static int
+regionref___init__(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    if (!_PyArg_NoKeywords("RegionRef", kwargs)) {
+        return -1;
+    }
+    PyObject *tmp;
+    return PyArg_UnpackTuple(args, "__init__", 1, 1, &tmp) ? 0 : -1;
+}
+
+PyDoc_STRVAR(regionref_doc,
+"RegionRef(object)\n\
+--\n\
+\n\
+A weak reference into a region that does not keep the region open.\n\
+Calling it returns the referenced object if th object may be reached,\n\
+or raises a RuntimeError otherwise. Returns None once the referenced \n\
+object is gone.");
+
+PyTypeObject
+_PyRegionref_RefType = {
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    .tp_name = "immutable.RegionRef",
+    .tp_basicsize = sizeof(PyWeakReference),
+    .tp_dealloc = weakref_dealloc,
+    .tp_vectorcall_offset = offsetof(PyWeakReference, vectorcall),
+    .tp_call = PyVectorcall_Call,
+    .tp_repr = regionref_repr,
+    .tp_hash = regionref_hash,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC |
+                Py_TPFLAGS_HAVE_VECTORCALL,
+    .tp_doc = regionref_doc,
+    .tp_traverse = gc_traverse,
+    // tp_reachable explicitly doesn't visit the weak reference to reflect the
+    // actual RC of referenced objects. Changes to this will require adjustments
+    // in freezing and region traversal code.
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_clear = gc_clear,
+    .tp_richcompare = regionref_richcompare,
+    .tp_methods = weakref_methods,
+    .tp_init = regionref___init__,
+    .tp_alloc = PyType_GenericAlloc,
+    .tp_new = regionref___new__,
     .tp_free = PyObject_GC_Del,
 };
 
@@ -1277,7 +1998,7 @@ _PyWeakref_ClearWeakRefsExcept(PyObject *obj, _Py_hashtable_t *keep)
         if (keep != NULL && _Py_hashtable_get_entry(keep, *list)) {
             list = &((*list)->wr_next);
         } else {
-            _PyWeakref_ClearRef(*list);
+            clear_weakref_lock_held(*list, NULL);
         }
     }
     UNLOCK_WEAKREFS(obj);

@@ -2,6 +2,18 @@
 #  error "this header file must not be included directly"
 #endif
 
+/* A region reference is a weak reference that survives its target's region
+ * being closed. Instead of keeping the region open it checks on every
+ * dereference whether this interpreter may reach the target, and opens the
+ * region tree if it may. The metadata carrying that information lives in
+ * `pycore_regionref.h`; it is opaque here.
+ */
+PyAPI_DATA(PyTypeObject) _PyRegionref_RefType;
+
+#define _PyRegionRef_CheckExact(op) Py_IS_TYPE((op), &_PyRegionref_RefType)
+
+struct _PyRegionRefMetadata;
+
 /* PyWeakReference is the base struct for the Python ReferenceType, ProxyType,
  * and CallableProxyType.
  */
@@ -43,12 +55,23 @@ struct _PyWeakReference {
      */
     PyMutex *weakrefs_lock;
 #endif
+
+    /* The ownership domain of `wr_object`, or NULL if this object doesn't have an ownership
+     * domain. This can happen if this is a normal weakref or if the object is immutable.
+     */
+    struct _PyRegionRefMetadata *region_ref;
 };
 
 PyAPI_FUNC(void) _PyWeakref_ClearRef(PyWeakReference *self);
 
+/* Region references reuse this struct but are deliberately not a subtype of
+ * `_PyWeakref_RefType`, so that `PyWeakref_Check()` stays false for them and
+ * the region close trace does not follow them. */
+#define _PyWeakrefOrRegionRef_Check(op) \
+    (PyWeakref_Check(op) || _PyRegionRef_CheckExact(op))
+
 #define _PyWeakref_CAST(op) \
-    (assert(PyWeakref_Check(op)), _Py_CAST(PyWeakReference*, (op)))
+    (assert(_PyWeakrefOrRegionRef_Check(op)), _Py_CAST(PyWeakReference*, (op)))
 
 // Test if a weak reference is dead.
 PyAPI_FUNC(int) PyWeakref_IsDead(PyObject *ref);
