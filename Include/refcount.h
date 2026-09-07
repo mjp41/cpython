@@ -142,11 +142,24 @@ static inline Py_ALWAYS_INLINE int _Py_IsImmutable(PyObject *op)
 }
 #define _Py_IsImmutable(op) _Py_IsImmutable(_PyObject_CAST(op))
 
-// Artifact[Implementation]: The definition of the `Py_CHECKWRITE` macro
+#ifndef Py_LIMITED_API
+// Cold path for Py_CHECKWRITE: called when the object is immutable.
+// Returns 1 if the object is still writable (ImmModule or finalizing).
+PyAPI_FUNC(int) _Py_CheckWriteImmutable(PyObject *op);
+
 // Check whether an object is writeable.
-// This check will always succeed during runtime finalization.
-#define Py_CHECKWRITE(op) ((op) && (!_Py_IsImmutable(op) || _PyImmModule_Check(op) || Py_IsFinalizing()))
+// The fast path just checks the immutable flag; the ImmModule and
+// finalizing checks are pushed into a cold out-of-line function.
+static inline int Py_CHECKWRITE(PyObject *op)
+{
+    if (_Py_IsImmutable(op)) {
+        return _Py_CheckWriteImmutable(op);
+    }
+    return 1;
+}
+#define Py_CHECKWRITE(op) Py_CHECKWRITE(_PyObject_CAST(op))
 #define Py_REQUIREWRITE(op, msg) {if (Py_CHECKWRITE(op)) { _PyObject_ASSERT_FAILED_MSG(op, msg); }}
+#endif  // !Py_LIMITED_API
 
 static inline Py_ALWAYS_INLINE void _Py_CLEAR_IMMUTABLE(PyObject *op)
 {

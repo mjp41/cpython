@@ -1916,6 +1916,15 @@ int _PyImmutability_CanViewAsImmutable(PyObject *obj)
     return 1;
 }
 
+// Cold path for Py_CHECKWRITE: the object is known to be immutable.
+// Returns 1 (writable) if the object's type is _PyImmModule_Type or
+// the runtime is finalizing.
+int
+_Py_CheckWriteImmutable(PyObject *op)
+{
+    return _PyImmModule_Check(op) || Py_IsFinalizing();
+}
+
 // Perform a decref on an immutable object
 // returns true if the object should be deallocated.
 int _Py_DecRef_Immutable(PyObject *op)
