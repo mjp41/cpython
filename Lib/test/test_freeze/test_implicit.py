@@ -1,3 +1,4 @@
+import sys
 import unittest
 from immutable import freeze, is_frozen
 
@@ -138,6 +139,26 @@ class TestImplicitImmutability(unittest.TestCase):
         for _ in range(10000):
             obj = (obj,)
         self.assertTrue(is_frozen(obj))
+
+    def test_abandoned_walk_keeps_references(self):
+        """An aborted walk must not drop references it never took.
+
+        The walk pushes objects onto a worklist without increfing them, so
+        anything still on the worklist when a mutable object aborts the walk
+        used to be decrefed when the worklist was released. That freed the
+        object while its real owners were still pointing at it, which showed
+        up much later as a negative refcount.
+        """
+        # Built at runtime so it is neither interned nor immortal, which makes
+        # its reference count fully accounted for by this test.
+        item = "".join(["abandoned", "-", "worklist", "-", "entry"])
+        # Tuples are traversed back to front, so `item` reaches the worklist
+        # before the dict aborts the walk.
+        obj = ({"mutable": 1}, item)
+
+        before = sys.getrefcount(item)
+        self.assertFalse(is_frozen(obj))
+        self.assertEqual(sys.getrefcount(item), before)
 
 
 if __name__ == '__main__':
