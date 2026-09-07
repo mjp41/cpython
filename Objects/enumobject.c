@@ -350,6 +350,7 @@ PyTypeObject PyEnum_Type = {
     PyType_GenericAlloc,            /* tp_alloc */
     enum_new,                       /* tp_new */
     PyObject_GC_Del,                /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_vectorcall = enumerate_vectorcall
 };
 
@@ -582,4 +583,5 @@ PyTypeObject PyReversed_Type = {
     reversed_new,                   /* tp_new */
     PyObject_GC_Del,                /* tp_free */
     .tp_vectorcall = reversed_vectorcall,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };

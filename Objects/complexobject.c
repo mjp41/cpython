@@ -1436,4 +1436,5 @@ PyTypeObject PyComplex_Type = {
     actual_complex_new,                         /* tp_new */
     PyObject_Free,                              /* tp_free */
     .tp_version_tag = _Py_TYPE_VERSION_COMPLEX,
+    .tp_reachable = _PyObject_ReachableVisitType,
 };

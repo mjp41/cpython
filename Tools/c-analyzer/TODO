@@ -806,6 +806,7 @@ Objects/longobject.c:PyLong_Type                                 PyTypeObject Py
 Objects/memoryobject.c:PyMemoryView_Type                         PyTypeObject PyMemoryView_Type
 Objects/memoryobject.c:_PyManagedBuffer_Type                     PyTypeObject _PyManagedBuffer_Type
 Objects/methodobject.c:PyCFunction_Type                          PyTypeObject PyCFunction_Type
+Objects/moduleobject.c:_PyImmModule_Type                         PyTypeObject _PyImmModule_Type
 Objects/moduleobject.c:PyModuleDef_Type                          PyTypeObject PyModuleDef_Type
 Objects/moduleobject.c:PyModule_Type                             PyTypeObject PyModule_Type
 Objects/namespaceobject.c:_PyNamespace_Type                      PyTypeObject _PyNamespace_Type

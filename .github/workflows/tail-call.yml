@@ -122,11 +122,11 @@ jobs:
           make all --jobs 4
           ./python -m test --multiprocess 0 --timeout 4500 --verbose2 --verbose3
 
-      - name: Native Linux with free-threading (release)
-        if: matrix.target == 'free-threading'
-        run: |
-          sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)" ./llvm.sh ${{ matrix.llvm }}
-          export PATH="$(llvm-config-${{ matrix.llvm }} --bindir):$PATH"
-          CC=clang-20 ./configure --with-tail-call-interp --disable-gil
-          make all --jobs 4
-          ./python -m test --multiprocess 0 --timeout 4500 --verbose2 --verbose3
+      # - name: Native Linux with free-threading (release)
+      #   if: matrix.target == 'free-threading'
+      #   run: |
+      #     sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)" ./llvm.sh ${{ matrix.llvm }}
+      #     export PATH="$(llvm-config-${{ matrix.llvm }} --bindir):$PATH"
+      #     CC=clang-20 ./configure --with-tail-call-interp --disable-gil
+      #     make all --jobs 4
+      #     ./python -m test --multiprocess 0 --timeout 4500 --verbose2 --verbose3

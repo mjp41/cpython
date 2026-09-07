@@ -241,6 +241,7 @@ static PyType_Slot md5_type_slots[] = {
     {Py_tp_methods, MD5_methods},
     {Py_tp_getset, MD5_getseters},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0,0}
 };
 

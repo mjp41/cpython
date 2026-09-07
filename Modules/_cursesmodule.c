@@ -3022,6 +3022,7 @@ static PyType_Slot PyCursesWindow_Type_slots[] = {
     {Py_tp_getset, PyCursesWindow_getsets},
     {Py_tp_dealloc, PyCursesWindow_dealloc},
     {Py_tp_traverse, PyCursesWindow_traverse},
+    {Py_tp_reachable, PyCursesWindow_traverse},
     {0, NULL}
 };
 

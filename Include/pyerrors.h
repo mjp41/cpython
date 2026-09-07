@@ -166,6 +166,10 @@ PyAPI_DATA(PyObject *) PyExc_ResourceWarning;
 PyAPI_FUNC(int) PyErr_BadArgument(void);
 PyAPI_FUNC(PyObject *) PyErr_NoMemory(void);
 PyAPI_FUNC(PyObject *) PyErr_SetFromErrno(PyObject *);
+#ifndef Py_LIMITED_API
+PyAPI_FUNC(PyObject *) _PyErr_WriteToImmutable(PyObject *);
+#define PyErr_WriteToImmutable(op) _PyErr_WriteToImmutable(_PyObject_CAST(op))
+#endif
 PyAPI_FUNC(PyObject *) PyErr_SetFromErrnoWithFilenameObject(
     PyObject *, PyObject *);
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 >= 0x03040000

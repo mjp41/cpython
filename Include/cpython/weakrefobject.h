@@ -16,6 +16,11 @@ struct _PyWeakReference {
 
     /* A callable to invoke when wr_object dies, or NULL if none. */
     PyObject *wr_callback;
+    /* ID of the interpreter where the callback resides.
+     * Used for immutable objects to know which interpreter to call back into.
+     * This is -1 if the callback is NULL.
+     */
+    int64_t callback_ipid;
 
     /* A cache for wr_object's hash code.  As usual for hashes, this is -1
      * if the hash code isn't known yet.

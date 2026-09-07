@@ -242,6 +242,7 @@ static PyType_Slot sha1_type_slots[] = {
     {Py_tp_methods, SHA1_methods},
     {Py_tp_getset, SHA1_getseters},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0,0}
 };
 

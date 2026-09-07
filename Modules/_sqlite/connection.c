@@ -2693,6 +2693,7 @@ static PyType_Slot connection_slots[] = {
     {Py_tp_init, pysqlite_connection_init},
     {Py_tp_call, pysqlite_connection_call},
     {Py_tp_traverse, connection_traverse},
+    {Py_tp_reachable, connection_traverse},
     {Py_tp_clear, connection_clear},
     {0, NULL},
 };

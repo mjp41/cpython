@@ -69,8 +69,8 @@ PyCell_Set(PyObject *op, PyObject *value)
         PyErr_BadInternalCall();
         return -1;
     }
-    PyCell_SetTakeRef((PyCellObject *)op, Py_XNewRef(value));
-    return 0;
+
+    return PyCell_SetTakeRef((PyCellObject *)op, Py_XNewRef(value));
 }
 
 static void
@@ -139,6 +139,16 @@ static int
 cell_clear(PyObject *self)
 {
     PyCellObject *op = _PyCell_CAST(self);
+
+    // Note(Immutable): This does not need to be locked with regard to the Py_CLEAR.
+    // This is only called during destruction, and hence there should be no races.
+    // Probably could remove this check, as the cell should have been made mutable
+    // before this is called.
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     Py_CLEAR(op->ob_ref);
     return 0;
 }
@@ -160,8 +170,7 @@ cell_set_contents(PyObject *self, PyObject *obj, void *Py_UNUSED(ignored))
 {
     PyCellObject *cell = _PyCell_CAST(self);
     Py_XINCREF(obj);
-    PyCell_SetTakeRef((PyCellObject *)cell, obj);
-    return 0;
+    return PyCell_SetTakeRef((PyCellObject *)cell, obj);
 }
 
 static PyGetSetDef cell_getsetlist[] = {
@@ -209,4 +218,5 @@ PyTypeObject PyCell_Type = {
     0,                                          /* tp_alloc */
     cell_new,                                   /* tp_new */
     0,                                          /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };

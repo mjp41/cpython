@@ -639,6 +639,13 @@ _random_exec(PyObject *module)
     if (state->Long___abs__ == NULL) {
         return -1;
     }
+
+    if (_PyImmutability_SetFreezable(module, _Py_FREEZABLE_NO) < 0
+        || _PyImmutability_SetFreezable(state->Random_Type, _Py_FREEZABLE_NO) < 0
+    ) {
+        return -1;
+    }
+
     return 0;
 }
 

@@ -148,6 +148,7 @@ new_module_notrack(PyTypeObject *mt)
         return NULL;
     m->md_def = NULL;
     m->md_state = NULL;
+    m->md_frozen = false;
     m->md_weaklist = NULL;
     m->md_name = NULL;
     m->md_dict = PyDict_New();
@@ -455,6 +456,7 @@ PyModule_FromDefAndSpec2(PyModuleDef* def, PyObject *spec, int module_api_versio
     }
 
     if (PyModule_Check(m)) {
+        assert(!_Py_IsImmutable(m));
         ((PyModuleObject*)m)->md_state = NULL;
         ((PyModuleObject*)m)->md_def = def;
 #ifdef Py_GIL_DISABLED
@@ -511,7 +513,7 @@ PyUnstable_Module_SetGIL(PyObject *module, void *gil)
         PyErr_BadInternalCall();
         return -1;
     }
-    ((PyModuleObject *)module)->md_gil = gil;
+    _PyInterpreterState_GetModuleState(module)->md_gil = gil;
     return 0;
 }
 #endif
@@ -589,6 +591,12 @@ PyModule_ExecDef(PyObject *module, PyModuleDef *def)
 int
 PyModule_AddFunctions(PyObject *m, PyMethodDef *functions)
 {
+    if (!Py_CHECKWRITE(m))
+    {
+        PyErr_WriteToImmutable(m);
+        return -1;
+    }
+
     int res;
     PyObject *name = PyModule_GetNameObject(m);
     if (name == NULL) {
@@ -603,6 +611,12 @@ PyModule_AddFunctions(PyObject *m, PyMethodDef *functions)
 int
 PyModule_SetDocString(PyObject *m, const char *doc)
 {
+    if (!Py_CHECKWRITE(m))
+    {
+        PyErr_WriteToImmutable(m);
+        return -1;
+    }
+
     PyObject *v;
 
     v = PyUnicode_FromString(doc);
@@ -631,7 +645,7 @@ PyModule_GetNameObject(PyObject *mod)
         PyErr_BadArgument();
         return NULL;
     }
-    PyObject *dict = ((PyModuleObject *)mod)->md_dict;  // borrowed reference
+    PyObject *dict = _PyInterpreterState_GetModuleState(mod)->md_dict;  // borrowed reference
     if (dict == NULL || !PyDict_Check(dict)) {
         goto error;
     }
@@ -673,7 +687,7 @@ _PyModule_GetFilenameObject(PyObject *mod)
         PyErr_BadArgument();
         return NULL;
     }
-    PyObject *dict = ((PyModuleObject *)mod)->md_dict;  // borrowed reference
+    PyObject *dict = _PyInterpreterState_GetModuleState(mod)->md_dict;  // borrowed reference
     if (dict == NULL) {
         // The module has been tampered with.
         Py_RETURN_NONE;
@@ -780,6 +794,7 @@ PyModule_GetState(PyObject* m)
 void
 _PyModule_Clear(PyObject *m)
 {
+    // Use cast, since we want this exact object
     PyObject *d = ((PyModuleObject *)m)->md_dict;
     if (d != NULL)
         _PyModule_ClearDict(d);
@@ -878,6 +893,8 @@ module___init___impl(PyModuleObject *self, PyObject *name, PyObject *doc)
 static void
 module_dealloc(PyObject *self)
 {
+    // This uses casts, since we want this exact object and not the local
+    // mutable one
     PyModuleObject *m = _PyModule_CAST(self);
 
     PyObject_GC_UnTrack(m);
@@ -905,7 +922,7 @@ module_dealloc(PyObject *self)
 static PyObject *
 module_repr(PyObject *self)
 {
-    PyModuleObject *m = _PyModule_CAST(self);
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(self);
     PyInterpreterState *interp = _PyInterpreterState_GET();
     return _PyImport_ImportlibModuleRepr(interp, (PyObject *)m);
 }
@@ -1044,6 +1061,8 @@ _PyModule_IsPossiblyShadowing(PyObject *origin)
 PyObject*
 _Py_module_getattro_impl(PyModuleObject *m, PyObject *name, int suppress)
 {
+    m = _PyInterpreterState_GetModuleState(_PyObject_CAST(m));
+
     // When suppress=1, this function suppresses AttributeError.
     PyObject *attr, *mod_name, *getattr;
     attr = _PyObject_GenericGetAttrWithDict((PyObject *)m, name, NULL, suppress);
@@ -1197,13 +1216,22 @@ done:
 PyObject*
 _Py_module_getattro(PyObject *self, PyObject *name)
 {
-    PyModuleObject *m = _PyModule_CAST(self);
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(self);
     return _Py_module_getattro_impl(m, name, 0);
+}
+
+static int
+immmodule_setattro(PyObject *self, PyObject *name, PyObject *value)
+{
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(self);
+    return PyObject_GenericSetAttr(_PyObject_CAST(m), name, value);
 }
 
 static int
 module_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    // This uses a cast, since it should report what is actually reachable and
+    // not work on the local mutable copy
     PyModuleObject *m = _PyModule_CAST(self);
 
     /* bpo-39824: Don't call m_traverse() if m_size > 0 and md_state=NULL */
@@ -1216,12 +1244,14 @@ module_traverse(PyObject *self, visitproc visit, void *arg)
     }
 
     Py_VISIT(m->md_dict);
+    Py_VISIT(m->md_name);
     return 0;
 }
 
 static int
 module_clear(PyObject *self)
 {
+    // Uses a cast, since we actually want to clear this exact module
     PyModuleObject *m = _PyModule_CAST(self);
 
     /* bpo-39824: Don't call m_clear() if m_size > 0 and md_state=NULL */
@@ -1290,7 +1320,7 @@ module_get_dict(PyModuleObject *m)
 static PyObject *
 module_get_annotate(PyObject *self, void *Py_UNUSED(ignored))
 {
-    PyModuleObject *m = _PyModule_CAST(self);
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(self);
 
     PyObject *dict = module_get_dict(m);
     if (dict == NULL) {
@@ -1311,7 +1341,14 @@ module_get_annotate(PyObject *self, void *Py_UNUSED(ignored))
 static int
 module_set_annotate(PyObject *self, PyObject *value, void *Py_UNUSED(ignored))
 {
-    PyModuleObject *m = _PyModule_CAST(self);
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(self);
+
+    if (!Py_CHECKWRITE(m))
+    {
+        PyErr_WriteToImmutable(m);
+        return -1;
+    }
+
     if (value == NULL) {
         PyErr_SetString(PyExc_TypeError, "cannot delete __annotate__ attribute");
         return -1;
@@ -1345,7 +1382,7 @@ module_set_annotate(PyObject *self, PyObject *value, void *Py_UNUSED(ignored))
 static PyObject *
 module_get_annotations(PyObject *self, void *Py_UNUSED(ignored))
 {
-    PyModuleObject *m = _PyModule_CAST(self);
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(self);
 
     PyObject *dict = module_get_dict(m);
     if (dict == NULL) {
@@ -1419,6 +1456,12 @@ module_set_annotations(PyObject *self, PyObject *value, void *Py_UNUSED(ignored)
 {
     PyModuleObject *m = _PyModule_CAST(self);
 
+    if (!Py_CHECKWRITE(m))
+    {
+        PyErr_WriteToImmutable(m);
+        return -1;
+    }
+
     PyObject *dict = module_get_dict(m);
     if (dict == NULL) {
         return -1;
@@ -1454,6 +1497,81 @@ static PyGetSetDef module_getsets[] = {
     {"__annotate__", module_get_annotate, module_set_annotate},
     {NULL}
 };
+
+static int
+module_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    // FIXME(immutability): Allow modules to define their own custom
+    // `md_reachable` function. Currently, we're falling back on
+    // `md_traverse`
+    Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
+    return module_traverse(self, visit, arg);
+}
+
+// Artifact[Implementation]: This turns an existing ModuleObject into a proxy object:
+static int
+module_make_immutable_proxy(PyObject *self) {
+    // Use cast, since we want this exact object
+    PyModuleObject *m = _PyModule_CAST(self);
+
+    if (m->md_frozen) {
+        return 0;
+    }
+
+    // Get the interpreter state early to make error handling easy
+    PyInterpreterState* ip = PyInterpreterState_Get();
+    if (ip == NULL) {
+        PyErr_Format(PyExc_RuntimeError, "Well, this is a problem", Py_None);
+        return -1;
+    }
+
+    // Create a new module module
+    PyModuleObject *mut_state = new_module_notrack(&PyModule_Type);
+    if (mut_state == NULL) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    track_module(mut_state);
+
+    // Insert our mutable module into `sys.mut_modules`
+    if (PyDict_SetItem(ip->mutable_modules, m->md_name, _PyObject_CAST(mut_state))) {
+        // Make sure failure keeps self intact
+        Py_DECREF(mut_state);
+        return -1;
+    }
+
+    // Copy mutable state
+    mut_state->md_name = Py_NewRef(m->md_name);
+    mut_state->md_dict = m->md_dict;
+    mut_state->md_def = m->md_def;
+    mut_state->md_state = m->md_state;
+    mut_state->md_weaklist = m->md_weaklist;
+
+    // Clear the state to freeze the module
+    m->md_dict = NULL;
+    m->md_def = NULL;
+    m->md_state = NULL;
+    m->md_weaklist = NULL;
+    m->md_frozen = true;
+    m->ob_base.ob_type = &_PyImmModule_Type;
+
+    return 0;
+}
+
+static int
+module_prefreeze(PyObject *self) {
+    // FIXME(immutability): Modules can define their own pre-freeze hook
+    // and then delegate to this function to turn themself into a
+    // proxy object. While this works, it's a bit cumbersome. There should
+    // be an easier and more direct way
+
+    _Py_freezable_status status = _PyImmutability_GetFreezable(self);
+    if (status == _Py_FREEZABLE_PROXY) {
+        return module_make_immutable_proxy(self);
+    }
+
+    return 0;
+}
 
 PyTypeObject PyModule_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
@@ -1496,4 +1614,50 @@ PyTypeObject PyModule_Type = {
     0,                                          /* tp_alloc */
     new_module,                                 /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
+    .tp_reachable = module_reachable,
+    .tp_prefreeze = module_prefreeze,
+};
+
+PyTypeObject _PyImmModule_Type = {
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    "ImmutableModule",                          /* tp_name */
+    sizeof(PyModuleObject),                     /* tp_basicsize */
+    0,                                          /* tp_itemsize */
+    module_dealloc,                             /* tp_dealloc */
+    0,                                          /* tp_vectorcall_offset */
+    0,                                          /* tp_getattr */
+    0,                                          /* tp_setattr */
+    0,                                          /* tp_as_async */
+    module_repr,                                /* tp_repr */
+    0,                                          /* tp_as_number */
+    0,                                          /* tp_as_sequence */
+    0,                                          /* tp_as_mapping */
+    0,                                          /* tp_hash */
+    0,                                          /* tp_call */
+    0,                                          /* tp_str */
+    _Py_module_getattro,                        /* tp_getattro */
+    immmodule_setattro,                         /* tp_setattro */
+    0,                                          /* tp_as_buffer */
+    (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC |
+        Py_TPFLAGS_BASETYPE) & (~Py_TPFLAGS_MANAGED_DICT),                    /* tp_flags */
+    module___init____doc__,                     /* tp_doc */
+    module_traverse,                            /* tp_traverse */
+    module_clear,                               /* tp_clear */
+    0,                                          /* tp_richcompare */
+    offsetof(PyModuleObject, md_weaklist),      /* tp_weaklistoffset */
+    0,                                          /* tp_iter */
+    0,                                          /* tp_iternext */
+    module_methods,                             /* tp_methods */
+    module_members,                             /* tp_members */
+    module_getsets,                             /* tp_getset */
+    0,                                          /* tp_base */
+    0,                                          /* tp_dict */
+    0,                                          /* tp_descr_get */
+    0,                                          /* tp_descr_set */
+    0,                                          /* tp_dictoffset */
+    module___init__,                            /* tp_init */
+    0,                                          /* tp_alloc */
+    .tp_new = NULL, /* Intentionally NULL since it should not be instantiated. */
+    .tp_free = PyObject_GC_Del,                            /* tp_free */
+    .tp_reachable = module_reachable,
 };

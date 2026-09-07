@@ -51,6 +51,7 @@ static PyType_Slot type_slots[] = {
     {Py_tp_dealloc, pysqlite_prepare_protocol_dealloc},
     {Py_tp_init, pysqlite_prepare_protocol_init},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {Py_tp_doc, (void *)doc},
     {0, NULL},
 };

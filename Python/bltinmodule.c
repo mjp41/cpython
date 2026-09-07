@@ -232,6 +232,10 @@ builtin___build_class__(PyObject *self, PyObject *const *args, Py_ssize_t nargs,
                 Py_DECREF(cell_cls);
             }
         }
+        if (cls != NULL && PyType_Check(cls)) {
+            PyTypeObject *tp = _PyType_CAST(cls);
+            tp->tp_reachable = tp->tp_traverse;
+        }
     }
 error:
     Py_XDECREF(cell);

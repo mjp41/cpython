@@ -1366,6 +1366,7 @@ static PyType_Slot cursor_slots[] = {
     {Py_tp_getset, cursor_getsets},
     {Py_tp_init, pysqlite_cursor_init},
     {Py_tp_traverse, cursor_traverse},
+    {Py_tp_reachable, cursor_traverse},
     {Py_tp_clear, cursor_clear},
     {0, NULL},
 };

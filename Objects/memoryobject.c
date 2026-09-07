@@ -100,6 +100,14 @@ _PyManagedBuffer_FromObject(PyObject *base, int flags)
         return NULL;
     }
 
+    if(_Py_IsImmutable(base)){
+        if(_PyImmutability_Freeze(_PyObject_CAST(mbuf)) < 0){
+            PyBuffer_Release(&mbuf->master);
+            Py_DECREF(mbuf);
+            return NULL;
+        }
+    }
+
     return (PyObject *)mbuf;
 }
 
@@ -167,7 +175,8 @@ PyTypeObject _PyManagedBuffer_Type = {
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC, /* tp_flags */
     0,                                       /* tp_doc */
     mbuf_traverse,                           /* tp_traverse */
-    mbuf_clear                               /* tp_clear */
+    mbuf_clear,                              /* tp_clear */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 
@@ -3557,6 +3566,7 @@ PyTypeObject _PyMemoryIter_Type = {
     .tp_traverse = memoryiter_traverse,
     .tp_iter = PyObject_SelfIter,
     .tp_iternext = memoryiter_next,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 PyTypeObject PyMemoryView_Type = {
@@ -3599,4 +3609,5 @@ PyTypeObject PyMemoryView_Type = {
     0,                                        /* tp_init */
     0,                                        /* tp_alloc */
     memoryview,                               /* tp_new */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };

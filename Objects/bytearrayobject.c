@@ -2784,6 +2784,7 @@ PyTypeObject PyByteArray_Type = {
     PyType_GenericAlloc,                /* tp_alloc */
     PyType_GenericNew,                  /* tp_new */
     PyObject_Free,                      /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitType,
     .tp_version_tag = _Py_TYPE_VERSION_BYTEARRAY,
 };
 
@@ -2949,6 +2950,7 @@ PyTypeObject PyByteArrayIter_Type = {
     bytearrayiter_next,                /* tp_iternext */
     bytearrayiter_methods,             /* tp_methods */
     0,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 static PyObject *

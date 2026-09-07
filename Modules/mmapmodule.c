@@ -1748,6 +1748,7 @@ static PyType_Slot mmap_object_slots[] = {
     {Py_tp_getset, mmap_object_getset},
     {Py_tp_getattro, PyObject_GenericGetAttr},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
 
     /* as sequence */
     {Py_sq_length, mmap_length},

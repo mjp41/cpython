@@ -204,6 +204,7 @@ MACROS = format_tsv_lines([
     ('Modules/gcmodule.c', 'Py_BUILD_CORE', '1'),
     ('Modules/getpath.c', 'Py_BUILD_CORE', '1'),
     ('Modules/getpath_noop.c', 'Py_BUILD_CORE', '1'),
+    ('Modules/_immutablemodule.c', 'Py_BUILD_CORE', '1'),
     ('Modules/itertoolsmodule.c', 'Py_BUILD_CORE', '1'),
     ('Modules/main.c', 'Py_BUILD_CORE', '1'),
     ('Modules/mathmodule.c', 'Py_BUILD_CORE', '1'),

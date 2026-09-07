@@ -163,6 +163,7 @@
     <ClInclude Include="..\Include\cpython\funcobject.h" />
     <ClInclude Include="..\Include\cpython\genobject.h" />
     <ClInclude Include="..\Include\cpython\import.h" />
+    <ClInclude Include="..\Include\cpython\immutability.h" />
     <ClInclude Include="..\Include\cpython\initconfig.h" />
     <ClInclude Include="..\Include\cpython\listobject.h" />
     <ClInclude Include="..\Include\cpython\pylock.h" />
@@ -211,6 +212,7 @@
     <ClInclude Include="..\Include\floatobject.h" />
     <ClInclude Include="..\Include\frameobject.h" />
     <ClInclude Include="..\Include\import.h" />
+    <CLInclude Include="..\Include\immutability.h" />
     <ClInclude Include="..\Include\internal\pycore_abstract.h" />
     <ClInclude Include="..\Include\internal\pycore_asdl.h" />
     <ClInclude Include="..\Include\internal\pycore_ast.h" />
@@ -263,6 +265,7 @@
     <ClInclude Include="..\Include\internal\pycore_import.h" />
     <ClInclude Include="..\Include\internal\pycore_importdl.h" />
     <ClInclude Include="..\Include\internal\pycore_index_pool.h" />
+    <ClInclude Include="..\Include\internal\pycore_immutability.h" />
     <ClInclude Include="..\Include\internal\pycore_initconfig.h" />
     <ClInclude Include="..\Include\internal\pycore_instruction_sequence.h" />
     <ClInclude Include="..\Include\internal\pycore_interp.h" />
@@ -452,6 +455,7 @@
     </ClCompile>
     <ClCompile Include="..\Modules\_heapqmodule.c" />
     <ClCompile Include="..\Modules\_json.c" />
+    <ClCompile Include="..\Modules\_immutablemodule.c" />
     <ClCompile Include="..\Modules\_localemodule.c" />
     <ClCompile Include="..\Modules\_lsprof.c" />
     <ClCompile Include="..\Modules\_pickle.c" />
@@ -627,6 +631,7 @@
     <ClCompile Include="..\Python\import.c" />
     <ClCompile Include="..\Python\importdl.c" />
     <ClCompile Include="..\Python\index_pool.c" />
+    <ClCompile Include="..\Python\immutability.c" />
     <ClCompile Include="..\Python\initconfig.c" />
     <ClCompile Include="..\Python\interpconfig.c" />
     <ClCompile Include="..\Python\intrinsics.c" />

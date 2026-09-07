@@ -518,6 +518,7 @@ PyTypeObject _PyUnion_Type = {
     .tp_free = PyObject_GC_Del,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_traverse = union_traverse,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_hash = union_hash,
     .tp_getattro = union_getattro,
     .tp_members = union_members,

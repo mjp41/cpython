@@ -2083,3 +2083,40 @@ PyErr_ProgramTextObject(PyObject *filename, int lineno)
 {
     return _PyErr_ProgramDecodedTextObject(filename, lineno, NULL);
 }
+
+PyObject *
+_PyErr_WriteToImmutable(PyObject* obj)
+{
+    PyObject* string = NULL;
+    PyThreadState *tstate = _PyThreadState_GET();
+    if (_PyErr_Occurred(tstate)) {
+        return NULL;
+    }
+
+#ifdef Py_DEBUG
+    // Check if object has _freeeze_location attribute
+    if (PyObject_HasAttrString(obj, "__freeze_location__")) {
+        PyObject* freeze_location = PyObject_GetAttrString(obj, "__freeze_location__");
+        if (freeze_location != NULL)
+        {
+            // Load traceback module to convert to a format string
+            string = PyUnicode_FromFormat(
+                "object of type %s is immutable and cannot be modified frozen at %S",
+                obj->ob_type->tp_name, freeze_location);
+            Py_DECREF(freeze_location);
+        }
+    }
+#endif
+
+    if (string == NULL) {
+        // Otherwise, use a generic message
+        string = PyUnicode_FromFormat("object of type %s is immutable",
+                                        obj->ob_type->tp_name);
+    }
+
+    if (string != NULL) {
+        _PyErr_SetObject(tstate, PyExc_TypeError, string);
+        Py_DECREF(string);
+    }
+    return NULL;
+}

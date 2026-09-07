@@ -208,6 +208,7 @@ PyTypeObject PyBool_Type = {
     0,                                          /* tp_alloc */
     bool_new,                                   /* tp_new */
     .tp_vectorcall = bool_vectorcall,
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 /* The objects representing bool values False and True */

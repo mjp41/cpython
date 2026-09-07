@@ -3345,6 +3345,7 @@ static PyType_Slot PySSLSocket_slots[] = {
     {Py_tp_getset, ssl_getsetlist},
     {Py_tp_dealloc, PySSL_dealloc},
     {Py_tp_traverse, PySSL_traverse},
+    {Py_tp_reachable, PySSL_traverse},
     {Py_tp_clear, PySSL_clear},
     {0, 0},
 };
@@ -5733,6 +5734,7 @@ static PyType_Slot PySSLContext_slots[] = {
     {Py_tp_new, _ssl__SSLContext},
     {Py_tp_dealloc, context_dealloc},
     {Py_tp_traverse, context_traverse},
+    {Py_tp_reachable, context_traverse},
     {Py_tp_clear, context_clear},
     {0, 0},
 };
@@ -6161,6 +6163,7 @@ static PyType_Slot PySSLSession_slots[] = {
     {Py_tp_richcompare, PySSLSession_richcompare},
     {Py_tp_dealloc, PySSLSession_dealloc},
     {Py_tp_traverse, PySSLSession_traverse},
+    {Py_tp_reachable, PySSLSession_traverse},
     {Py_tp_clear, PySSLSession_clear},
     {0, 0},
 };

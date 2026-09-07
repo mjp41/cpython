@@ -650,6 +650,11 @@ class Set(Collection):
 
     __rxor__ = __xor__
 
+    # TODO(Immutable):
+    # Moved MAX outside of _hash to avoid capturing the whole of `sys` if `_hash` is frozen.
+    # This does not seem ideal.
+    MAX = sys.maxsize
+
     def _hash(self):
         """Compute the hash value of a set.
 
@@ -665,8 +670,7 @@ class Set(Collection):
         freedom for __eq__ or __hash__.  We match the algorithm used
         by the built-in frozenset type.
         """
-        MAX = sys.maxsize
-        MASK = 2 * MAX + 1
+        MASK = 2 * Set.MAX + 1
         n = len(self)
         h = 1927868237 * (n + 1)
         h &= MASK
@@ -677,7 +681,7 @@ class Set(Collection):
         h ^= (h >> 11) ^ (h >> 25)
         h = h * 69069 + 907133923
         h &= MASK
-        if h > MAX:
+        if h > Set.MAX:
             h -= MASK + 1
         if h == -1:
             h = 590923713

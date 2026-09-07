@@ -513,6 +513,7 @@ static PyType_Slot sha256_types_slots[] = {
     {Py_tp_methods, SHA256_methods},
     {Py_tp_getset, SHA256_getseters},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0,0}
 };
 
@@ -521,6 +522,7 @@ static PyType_Slot sha512_type_slots[] = {
     {Py_tp_methods, SHA512_methods},
     {Py_tp_getset, SHA512_getseters},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0,0}
 };
 

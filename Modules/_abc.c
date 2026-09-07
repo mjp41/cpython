@@ -150,6 +150,7 @@ static PyType_Slot _abc_data_type_spec_slots[] = {
     {Py_tp_new, abc_data_new},
     {Py_tp_dealloc, abc_data_dealloc},
     {Py_tp_traverse, abc_data_traverse},
+    {Py_tp_reachable, abc_data_traverse},
     {Py_tp_clear, abc_data_clear},
     {0, 0}
 };
@@ -580,6 +581,11 @@ _abc__abc_register_impl(PyObject *module, PyObject *self, PyObject *subclass)
     if (result < 0) {
         return NULL;
     }
+
+    if(!Py_CHECKWRITE(self)){
+        return PyErr_WriteToImmutable(self);
+    }
+
     _abc_data *impl = _get_impl(module, self);
     if (impl == NULL) {
         return NULL;
@@ -738,6 +744,10 @@ _abc__abc_subclasscheck_impl(PyObject *module, PyObject *self,
     /* 2. Check negative cache; may have to invalidate. */
     uint64_t invalidation_counter = get_invalidation_counter(state);
     if (get_cache_version(impl) < invalidation_counter) {
+        if(!Py_CHECKWRITE(self)){
+            PyErr_WriteToImmutable(self);
+            goto end;
+        }
         /* Invalidate the negative cache. */
         PyObject *negative_cache;
         Py_BEGIN_CRITICAL_SECTION(impl);

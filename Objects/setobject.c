@@ -409,6 +409,12 @@ set_discard_entry(PySetObject *so, PyObject *key, Py_hash_t hash)
 static int
 set_add_key(PySetObject *so, PyObject *key)
 {
+    if(!Py_CHECKWRITE(so)){
+        // TODO(Immutable): Should this be inside the critical section?
+        PyErr_WriteToImmutable(so);
+        return -1;
+    }
+
     Py_hash_t hash = _PyObject_HashFast(key);
     if (hash == -1) {
         set_unhashable_type(key);
@@ -721,6 +727,10 @@ set_pop_impl(PySetObject *so)
     setentry *entry = so->table + (so->finger & so->mask);
     setentry *limit = so->table + so->mask;
     PyObject *key;
+
+    if(!Py_CHECKWRITE(so)){
+        return PyErr_WriteToImmutable(so);
+    }
 
     if (so->used == 0) {
         PyErr_SetString(PyExc_KeyError, "pop from an empty set");
@@ -1120,6 +1130,9 @@ set_update_impl(PySetObject *so, PyObject * const *others,
 {
     Py_ssize_t i;
 
+    if(!Py_CHECKWRITE(so)){
+        return PyErr_WriteToImmutable(so);
+    }
     for (i = 0; i < others_length; i++) {
         PyObject *other = others[i];
         if (set_update_internal(so, other))
@@ -1333,6 +1346,10 @@ static PyObject *
 set_clear_impl(PySetObject *so)
 /*[clinic end generated code: output=4e71d5a83904161a input=c6f831b366111950]*/
 {
+    if(!Py_CHECKWRITE((PyObject*)so)){
+        return PyErr_WriteToImmutable((PyObject*)so);
+    }
+
     set_clear_internal((PyObject*)so);
     Py_RETURN_NONE;
 }
@@ -2217,6 +2234,10 @@ static PyObject *
 set_add_impl(PySetObject *so, PyObject *key)
 /*[clinic end generated code: output=4cc4a937f1425c96 input=03baf62cb0e66514]*/
 {
+    if(!Py_CHECKWRITE(so)){
+        return PyErr_WriteToImmutable(so);
+    }
+
     if (set_add_key(so, key))
         return NULL;
     Py_RETURN_NONE;
@@ -2327,6 +2348,10 @@ set_remove_impl(PySetObject *so, PyObject *key)
 {
     int rv;
 
+    if(!Py_CHECKWRITE(so)){
+        return PyErr_WriteToImmutable(so);
+    }
+
     rv = set_discard_key(so, key);
     if (rv < 0) {
         if (!PySet_Check(key) || !PyErr_ExceptionMatches(PyExc_TypeError))
@@ -2366,6 +2391,10 @@ set_discard_impl(PySetObject *so, PyObject *key)
 /*[clinic end generated code: output=eec3b687bf32759e input=861cb7fb69b4def0]*/
 {
     int rv;
+
+    if(!Py_CHECKWRITE(so)){
+        return PyErr_WriteToImmutable(so);
+    }
 
     rv = set_discard_key(so, key);
     if (rv < 0) {
@@ -2604,6 +2633,7 @@ PyTypeObject PySet_Type = {
     set_new,                            /* tp_new */
     PyObject_GC_Del,                    /* tp_free */
     .tp_vectorcall = set_vectorcall,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_version_tag = _Py_TYPE_VERSION_SET,
 };
 
@@ -2695,6 +2725,7 @@ PyTypeObject PyFrozenSet_Type = {
     frozenset_new,                      /* tp_new */
     PyObject_GC_Del,                    /* tp_free */
     .tp_vectorcall = frozenset_vectorcall,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_version_tag = _Py_TYPE_VERSION_FROZEN_SET,
 };
 
@@ -2730,6 +2761,11 @@ PySet_Clear(PyObject *set)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if(!Py_CHECKWRITE(set)){
+        PyErr_WriteToImmutable(set);
+        return -1;
+    }
     (void)set_clear(set, NULL);
     return 0;
 }
@@ -2737,6 +2773,13 @@ PySet_Clear(PyObject *set)
 void
 _PySet_ClearInternal(PySetObject *so)
 {
+    // TODO(Immutable): Should this be inside the critical section?
+    if(!Py_CHECKWRITE(so)){
+        PyErr_WriteToImmutable(so);
+        // TODO(Immutable): Is this returning the error correctly?
+        return;
+    }
+
     (void)set_clear_internal((PyObject*)so);
 }
 
@@ -2764,8 +2807,18 @@ PySet_Discard(PyObject *set, PyObject *key)
     }
 
     int rv;
+
     Py_BEGIN_CRITICAL_SECTION(set);
+    // Need to check inside the critical section incase of
+    // concurrent freezing.
+    if(!Py_CHECKWRITE(set)){
+        PyErr_WriteToImmutable(set);
+        rv = -1;
+        goto end;
+    }
+
     rv = set_discard_key((PySetObject *)set, key);
+end:;
     Py_END_CRITICAL_SECTION();
     return rv;
 }
@@ -2877,6 +2930,7 @@ static PyTypeObject _PySetDummy_Type = {
     0,                  /*tp_setattro */
     0,                  /*tp_as_buffer */
     Py_TPFLAGS_DEFAULT, /*tp_flags */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 static PyObject _dummy_struct = _PyObject_HEAD_INIT(&_PySetDummy_Type);

@@ -619,6 +619,7 @@ static PyType_Slot Dialect_Type_slots[] = {
     {Py_tp_dealloc, Dialect_dealloc},
     {Py_tp_clear, Dialect_clear},
     {Py_tp_traverse, Dialect_traverse},
+    {Py_tp_reachable, Dialect_traverse},
     {0, NULL}
 };
 
@@ -1045,6 +1046,7 @@ static struct PyMemberDef Reader_memberlist[] = {
 static PyType_Slot Reader_Type_slots[] = {
     {Py_tp_doc, (char*)Reader_Type_doc},
     {Py_tp_traverse, Reader_traverse},
+    {Py_tp_reachable, Reader_traverse},
     {Py_tp_iter, PyObject_SelfIter},
     {Py_tp_iternext, Reader_iternext},
     {Py_tp_methods, Reader_methods},
@@ -1506,6 +1508,7 @@ PyDoc_STRVAR(Writer_Type_doc,
 static PyType_Slot Writer_Type_slots[] = {
     {Py_tp_doc, (char*)Writer_Type_doc},
     {Py_tp_traverse, Writer_traverse},
+    {Py_tp_reachable, Writer_traverse},
     {Py_tp_clear, Writer_clear},
     {Py_tp_dealloc, Writer_dealloc},
     {Py_tp_methods, Writer_methods},

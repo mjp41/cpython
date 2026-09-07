@@ -44,9 +44,30 @@ def _wrap(new, old):
             setattr(new, replace, getattr(old, replace))
     new.__dict__.update(old.__dict__)
 
+def _module_type():
+    sys_type = type(sys)
+    if sys_type.__name__ == "module":
+        return sys_type
+
+    # The `sys` module is immutable, we need to get the module type
+    # another way...
+    mods = [_bootstrap_external, _thread, _warnings, _weakref]
+    for m in mods:
+        if type(m).__name__ == "module":
+            return type(m)
+
+    for m in sys.mut_modules.values():
+        if type(m).__name__ == "module":
+            return type(m)
+
+    # There are other ways to make this work, we can for example
+    # pass in the module type into a global variable in this script
+    # or store the module in a global. This is a bridge we can cross,
+    # when we get there.
+    raise Exception("sys and all other modules currently accessible are immutable, this is bad")
 
 def _new_module(name):
-    return type(sys)(name)
+    return _module_type()(name)
 
 
 # Module-level locking ########################################################
@@ -1527,7 +1548,7 @@ def _setup(sys_module, _imp_module):
     sys = sys_module
 
     # Set up the spec for existing builtin/frozen modules.
-    module_type = type(sys)
+    module_type = _module_type()
     for name, module in sys.modules.items():
         if isinstance(module, module_type):
             if name in sys.builtin_module_names:

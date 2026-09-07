@@ -1196,6 +1196,8 @@ delete_garbage(PyThreadState *tstate, GCState *gcstate,
             inquiry clear;
             if ((clear = Py_TYPE(op)->tp_clear) != NULL) {
                 Py_INCREF(op);
+                // TODO(Immutable): This is only required until we have the SCC support working.
+                _Py_CLEAR_IMMUTABLE(op);
                 (void) clear(op);
                 if (_PyErr_Occurred(tstate)) {
                     PyErr_FormatUnraisable("Exception ignored in tp_clear of %s",
@@ -1414,7 +1416,7 @@ visit_add_to_container(PyObject *op, void *arg)
     struct container_and_flag *cf = (struct container_and_flag *)arg;
     int visited = cf->visited_space;
     assert(visited == get_gc_state()->visited_space);
-    if (!_Py_IsImmortal(op) && _PyObject_IS_GC(op)) {
+    if (!_Py_IsImmortal(op) && !(_Py_IsImmutable(op)) && _PyObject_IS_GC(op)) {
         PyGC_Head *gc = AS_GC(op);
         if (_PyObject_GC_IS_TRACKED(op) &&
             gc_old_space(gc) != visited) {
@@ -1488,7 +1490,7 @@ completed_scavenge(GCState *gcstate)
 static intptr_t
 move_to_reachable(PyObject *op, PyGC_Head *reachable, int visited_space)
 {
-    if (op != NULL && !_Py_IsImmortal(op) && _PyObject_IS_GC(op)) {
+    if (op != NULL && !_Py_IsImmortal(op) && !_Py_IsImmutable(op) && _PyObject_IS_GC(op)) {
         PyGC_Head *gc = AS_GC(op);
         if (_PyObject_GC_IS_TRACKED(op) &&
             gc_old_space(gc) != visited_space) {
@@ -1552,7 +1554,7 @@ mark_stacks(PyInterpreterState *interp, PyGC_Head *visited, int visited_space, b
                     continue;
                 }
                 PyObject *op = PyStackRef_AsPyObjectBorrow(*sp);
-                if (_Py_IsImmortal(op)) {
+                if (_Py_IsImmortal(op) || _Py_IsImmutable(op)) {
                     continue;
                 }
                 if (_PyObject_IS_GC(op)) {
@@ -1589,6 +1591,7 @@ mark_global_roots(PyInterpreterState *interp, PyGC_Head *visited, int visited_sp
     gc_list_init(&reachable);
     Py_ssize_t objects_marked = 0;
     objects_marked += move_to_reachable(interp->sysdict, &reachable, visited_space);
+    objects_marked += move_to_reachable(interp->mutable_modules, &reachable, visited_space);
     objects_marked += move_to_reachable(interp->builtins, &reachable, visited_space);
     objects_marked += move_to_reachable(interp->dict, &reachable, visited_space);
     struct types_state *types = &interp->types;
@@ -1684,7 +1687,7 @@ gc_collect_increment(PyThreadState *tstate, struct gc_collection_stats *stats)
         PyGC_Head *gc = _PyGCHead_NEXT(not_visited);
         gc_list_move(gc, &increment);
         increment_size++;
-        assert(!_Py_IsImmortal(FROM_GC(gc)));
+        assert(!_Py_IsImmortal(FROM_GC(gc)) && !_Py_IsImmutable(FROM_GC(gc)));
         gc_set_old_space(gc, gcstate->visited_space);
         increment_size += expand_region_transitively_reachable(&increment, gc, gcstate);
     }

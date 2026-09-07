@@ -766,6 +766,7 @@ static int
 ZstdCompressor_traverse(PyObject *ob, visitproc visit, void *arg)
 {
     ZstdCompressor *self = ZstdCompressor_CAST(ob);
+    Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->dict);
     return 0;
 }
@@ -784,7 +785,8 @@ static PyType_Slot zstdcompressor_slots[] = {
     {Py_tp_methods, ZstdCompressor_methods},
     {Py_tp_members, ZstdCompressor_members},
     {Py_tp_doc, (void *)_zstd_ZstdCompressor_new__doc__},
-    {Py_tp_traverse,  ZstdCompressor_traverse},
+    {Py_tp_traverse, ZstdCompressor_traverse},
+    {Py_tp_reachable, ZstdCompressor_traverse},
     {Py_tp_clear, ZstdCompressor_clear},
     {0, 0}
 };

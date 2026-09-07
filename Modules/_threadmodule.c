@@ -749,6 +749,7 @@ static PyType_Slot ThreadHandle_Type_slots[] = {
     {Py_tp_repr, PyThreadHandleObject_repr},
     {Py_tp_getset, ThreadHandle_getsetlist},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {Py_tp_methods, ThreadHandle_methods},
     {Py_tp_new, PyThreadHandleObject_tp_new},
     {0, 0}
@@ -1036,6 +1037,7 @@ static PyType_Slot lock_type_slots[] = {
     {Py_tp_doc, (void *)lock_doc},
     {Py_tp_methods, lock_methods},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {Py_tp_new, lock_new},
     {0, 0}
 };
@@ -1343,6 +1345,7 @@ static PyType_Slot rlock_type_slots[] = {
     {Py_tp_alloc, PyType_GenericAlloc},
     {Py_tp_new, rlock_new},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0, 0},
 };
 
@@ -1786,6 +1789,7 @@ static PyType_Slot local_type_slots[] = {
     {Py_tp_setattro, local_setattro},
     {Py_tp_doc, "_local()\n--\n\nThread-local data"},
     {Py_tp_traverse, local_traverse},
+    {Py_tp_reachable, local_traverse},
     {Py_tp_clear, local_clear},
     {Py_tp_new, local_new},
     {Py_tp_members, local_type_members},

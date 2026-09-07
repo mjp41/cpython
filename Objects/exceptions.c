@@ -649,6 +649,7 @@ static PyTypeObject _PyExc_BaseException = {
     0,                          /* tp_alloc */
     BaseException_new,          /* tp_new */
     .tp_vectorcall = BaseException_vectorcall,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 /* the CPython API expects exceptions to be (PyObject *) - both a hold-over
 from the previous implementation and also allowing Python objects to be used
@@ -1949,6 +1950,7 @@ static PyTypeObject _PyExc_ImportError = {
         "or can't find name in module."),
     .tp_traverse = ImportError_traverse,
     .tp_clear = ImportError_clear,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_methods = ImportError_methods,
     .tp_members = ImportError_members,
     .tp_base = &_PyExc_Exception,

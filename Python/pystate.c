@@ -792,6 +792,18 @@ interpreter_clear(PyInterpreterState *interp, PyThreadState *tstate)
     assert(interp->imports.importlib == NULL);
     assert(interp->imports.import_func == NULL);
 
+    if (interp->immutability.warned_types != NULL) {
+        _Py_hashtable_destroy(interp->immutability.warned_types);
+        interp->immutability.warned_types = NULL;
+    }
+    if (interp->immutability.shallow_immutable_types != NULL) {
+        _Py_hashtable_destroy(interp->immutability.shallow_immutable_types);
+        interp->immutability.shallow_immutable_types = NULL;
+    }
+#ifdef Py_DEBUG
+    Py_CLEAR(interp->immutability.traceback_func);
+#endif
+
     Py_CLEAR(interp->sysdict_copy);
     Py_CLEAR(interp->builtins_copy);
     Py_CLEAR(interp->dict);
@@ -834,8 +846,10 @@ interpreter_clear(PyInterpreterState *interp, PyThreadState *tstate)
        Because clearing other attributes can execute arbitrary Python code
        which requires sysdict and builtins. */
     PyDict_Clear(interp->sysdict);
+    PyDict_Clear(interp->mutable_modules);
     PyDict_Clear(interp->builtins);
     Py_CLEAR(interp->sysdict);
+    Py_CLEAR(interp->mutable_modules);
     Py_CLEAR(interp->builtins);
 
 #if !defined(Py_GIL_DISABLED) && defined(Py_STACKREF_DEBUG)
@@ -1345,6 +1359,90 @@ _PyInterpreterState_LookUpIDObject(PyObject *requested_id)
     return _PyInterpreterState_LookUpID(id);
 }
 
+/* Returns a borrowed reference to the mutable module state of
+   this interpreter.
+*/
+PyModuleObject* _PyInterpreterState_GetModuleState(PyObject *mod) {
+    assert(PyModule_Check(mod));
+    // This has to use the `md_frozen` field, in case the module was already
+    // prepared for freezing but the bit was never set because freezing failed
+    if (((PyModuleObject*)mod)->md_frozen) {
+        PyInterpreterState *is = PyInterpreterState_Get();
+        assert(is);
+
+        PyModuleObject *self = (PyModuleObject*) mod;
+
+        if (!PyDict_Contains(is->mutable_modules, self->md_name)) {
+            // Get the `sys.modules` reference
+            PyObject* modules = _PyImport_GetModulesRef(is);
+            if (modules == Py_None) {
+                return NULL;
+            }
+
+            PyObject *modules_mod = NULL;
+            if (PyDict_GetItemRef(modules, self->md_name, &modules_mod) < 0) {
+                return 0;
+            }
+            if (modules_mod == mod) {
+                // The modules in `sys.modules` is this frozen mod but there is
+                // no mutable state in `sys.mut_modules`, probably because it was
+                // unimported? Either way:
+                // Remove `mod` from `sys.modules` and trigger a reimport.
+                if (PyDict_DelItem(modules, self->md_name) < 0) {
+                    Py_DECREF(modules_mod);
+                    return NULL;
+                }
+            }
+            Py_XDECREF(modules_mod);
+
+            // Importing the module will import the module or return the already
+            // imported instance in `sys.modules`.
+            PyObject *local_mod = PyImport_Import(self->md_name);
+            if (local_mod == NULL) {
+                return NULL;
+            }
+
+            // The returned mod should always be mutable and different
+            assert(!_Py_IsImmutable(local_mod));
+            assert(local_mod != mod);
+
+            // Store mutable state
+            int res = PyDict_SetItem(is->mutable_modules, self->md_name, (PyObject*) local_mod);
+            Py_DECREF(local_mod);
+            if (res != 0) {
+                return NULL;
+            }
+
+            // Place immutable proxy in `sys.modules[dict]`
+            res = PyDict_SetItem(modules, self->md_name, _PyObject_CAST(self));
+            if (res != 0) {
+                return NULL;
+            }
+            Py_DECREF(modules);
+        }
+
+        PyObject *mut_mod = NULL;
+        int res = PyDict_GetItemRef(is->mutable_modules, self->md_name, &mut_mod);
+
+        // Return in success
+        if (res == 1) {
+            assert(Py_REFCNT(mut_mod) >= 2);
+            // Dec ref, to make the reference borrowed and make usage easier.
+            // the reference will be kept live by `is->mutable_modules`
+            Py_DECREF(mut_mod);
+            return (PyModuleObject*)mut_mod;
+        }
+
+        // Module is missing, throw a new exception
+        if (res == 0) {
+            _PyErr_SetModuleNotFoundError(self->md_name);
+        }
+
+        return NULL;
+    }
+
+    return (PyModuleObject*)mod;
+}
 
 /********************************/
 /* the per-thread runtime state */

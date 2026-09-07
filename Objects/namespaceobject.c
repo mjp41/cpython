@@ -3,6 +3,7 @@
 #include "Python.h"
 #include "pycore_modsupport.h"    // _PyArg_NoPositional()
 #include "pycore_namespace.h"     // _PyNamespace_Type
+#include "pycore_object.h"        // _PyObject_ReachableVisitTypeAndTraverse()
 
 #include <stddef.h>               // offsetof()
 
@@ -306,6 +307,7 @@ PyTypeObject _PyNamespace_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     namespace_new,                              /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 

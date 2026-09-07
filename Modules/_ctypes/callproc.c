@@ -587,6 +587,7 @@ static PyMemberDef PyCArgType_members[] = {
 static PyType_Slot carg_slots[] = {
     {Py_tp_dealloc, PyCArg_dealloc},
     {Py_tp_traverse, PyCArg_traverse},
+    {Py_tp_reachable, PyCArg_traverse},
     {Py_tp_clear, PyCArg_clear},
     {Py_tp_repr, PyCArg_repr},
     {Py_tp_members, PyCArgType_members},

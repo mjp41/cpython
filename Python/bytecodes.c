@@ -1916,7 +1916,12 @@ dummy_func(
             PyObject *cell = PyStackRef_AsPyObjectBorrow(GETLOCAL(oparg));
             // Can't use ERROR_IF here.
             // Fortunately we don't need its superpower.
-            PyObject *oldobj = PyCell_SwapTakeRef((PyCellObject *)cell, NULL);
+            int result = 0;
+            PyObject *oldobj = PyCell_SwapTakeRef((PyCellObject *)cell, NULL, &result);
+            if (result == -1) {
+                _PyEval_FormatExcNotWriteable(tstate, _PyFrame_GetCode(frame), oparg);
+                ERROR_NO_POP();
+            }
             if (oldobj == NULL) {
                 _PyEval_FormatExcUnbound(tstate, _PyFrame_GetCode(frame), oparg);
                 ERROR_NO_POP();
@@ -1959,7 +1964,12 @@ dummy_func(
 
         inst(STORE_DEREF, (v --)) {
             PyCellObject *cell = (PyCellObject *)PyStackRef_AsPyObjectBorrow(GETLOCAL(oparg));
-            PyCell_SetTakeRef(cell, PyStackRef_AsPyObjectSteal(v));
+            int result = PyCell_SetTakeRef(cell, PyStackRef_AsPyObjectSteal(v));
+            if (result == -1)
+            {
+                _PyEval_FormatExcNotWriteable(tstate, _PyFrame_GetCode(frame), oparg);
+                ERROR_IF(true);
+            }
         }
 
         inst(COPY_FREE_VARS, (--)) {
@@ -2425,7 +2435,8 @@ dummy_func(
         op(_LOAD_ATTR_MODULE, (dict_version/2, index/1, owner -- attr)) {
             PyObject *owner_o = PyStackRef_AsPyObjectBorrow(owner);
             DEOPT_IF(Py_TYPE(owner_o)->tp_getattro != PyModule_Type.tp_getattro);
-            PyDictObject *dict = (PyDictObject *)((PyModuleObject *)owner_o)->md_dict;
+            PyModuleObject* mod = _PyInterpreterState_GetModuleState(owner_o);
+            PyDictObject *dict = (PyDictObject *)mod->md_dict;
             assert(dict != NULL);
             PyDictKeysObject *keys = FT_ATOMIC_LOAD_PTR_ACQUIRE(dict->ma_keys);
             DEOPT_IF(FT_ATOMIC_LOAD_UINT32_RELAXED(keys->dk_version) != dict_version);
@@ -2620,6 +2631,14 @@ dummy_func(
             PyObject *owner_o = PyStackRef_AsPyObjectBorrow(owner);
 
             STAT_INC(STORE_ATTR, hit);
+            if (!Py_CHECKWRITE(owner_o))
+            {
+                UNLOCK_OBJECT(owner_o);
+                // TODO(Immutable) This might need more merge
+                _PyEval_FormatExcNotWriteable(tstate, _PyFrame_GetCode(frame), oparg);
+                DECREF_INPUTS();
+                ERROR_IF(true);
+            }
             assert(_PyObject_GetManagedDict(owner_o) == NULL);
             PyObject **value_ptr = (PyObject**)(((char *)owner_o) + offset);
             PyObject *old_value = *value_ptr;
@@ -2646,6 +2665,14 @@ dummy_func(
             PyDictObject *dict = _PyObject_GetManagedDict(owner_o);
             DEOPT_IF(dict == NULL);
             DEOPT_IF(!LOCK_OBJECT(dict));
+            if (!Py_CHECKWRITE(owner_o))
+            {
+                UNLOCK_OBJECT(dict);
+                // TODO(Immutable) This might need more merge
+                _PyEval_FormatExcNotWriteable(tstate, _PyFrame_GetCode(frame), oparg);
+                DECREF_INPUTS();
+                ERROR_IF(true);
+            }
             assert(PyDict_CheckExact((PyObject *)dict));
             PyObject *name = GETITEM(FRAME_CO_NAMES, oparg);
             if (hint >= (size_t)dict->ma_keys->dk_nentries ||
@@ -2683,6 +2710,17 @@ dummy_func(
             PyObject *owner_o = PyStackRef_AsPyObjectBorrow(owner);
 
             DEOPT_IF(!LOCK_OBJECT(owner_o));
+            // TODO(Immutable) If the dictionary object has been made and is immutable, then this should fail,
+            // but we aren't finding the dictionary object here?  Can we do this efficiently enough?
+
+            if (!Py_CHECKWRITE(owner_o))
+            {
+                // TODO(Immutable) This might need more merge
+                _PyEval_FormatExcNotWriteable(tstate, _PyFrame_GetCode(frame), oparg);
+                DECREF_INPUTS();
+                ERROR_IF(true);
+            }
+
             char *addr = (char *)owner_o + index;
             STAT_INC(STORE_ATTR, hit);
             PyObject *old_value = *(PyObject **)addr;

@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #include "pycore_ast_state.h"     // struct ast_state
+#include "pycore_immutability.h"  // struct _immutability_runtime_state
 #include "pycore_llist.h"         // struct llist_node
 #include "pycore_opcode_utils.h"  // NUM_COMMON_CONSTANTS
 #include "pycore_pymath.h"        // _PY_SHORT_FLOAT_REPR
@@ -839,6 +840,7 @@ struct _is {
 
     // Dictionary of the sys module
     PyObject *sysdict;
+    PyObject *mutable_modules;
 
     // Dictionary of the builtins module
     PyObject *builtins;
@@ -932,6 +934,7 @@ struct _is {
 
     struct _Py_dict_state dict_state;
     struct _Py_exc_state exc_state;
+    struct _Py_immutability_state immutability;
     struct _Py_mem_interp_free_queue mem_free_queue;
 
     struct ast_state ast;

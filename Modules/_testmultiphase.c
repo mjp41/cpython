@@ -44,6 +44,7 @@ static int
 Example_traverse(PyObject *op, visitproc visit, void *arg)
 {
     ExampleObject *self = ExampleObject_CAST(op);
+    Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->x_attr);
     return 0;
 }
@@ -115,6 +116,7 @@ static PyType_Slot Example_Type_slots[] = {
     {Py_tp_doc, "The Example type"},
     {Py_tp_finalize, Example_finalize},
     {Py_tp_traverse, Example_traverse},
+    {Py_tp_reachable, Example_traverse},
     {Py_tp_getattro, Example_getattro},
     {Py_tp_setattr, Example_setattr},
     {Py_tp_methods, Example_methods},

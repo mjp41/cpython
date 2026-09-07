@@ -47,8 +47,6 @@ _Py_CheckFunctionResult(PyThreadState *tstate, PyObject *callable,
     }
     else {
         if (_PyErr_Occurred(tstate)) {
-            Py_DECREF(result);
-
             if (callable) {
                 _PyErr_FormatFromCauseTstate(
                     tstate, PyExc_SystemError,
@@ -64,6 +62,7 @@ _Py_CheckFunctionResult(PyThreadState *tstate, PyObject *callable,
                Py_FatalError() logs the SystemError exception raised above. */
             Py_FatalError("a function returned a result with an exception set");
 #endif
+            Py_DECREF(result);
             return NULL;
         }
     }
@@ -162,7 +161,7 @@ PyObject_VectorcallDict(PyObject *callable, PyObject *const *args,
 static void
 object_is_not_callable(PyThreadState *tstate, PyObject *callable)
 {
-    if (Py_IS_TYPE(callable, &PyModule_Type)) {
+    if (PyModule_Check(callable)) {
         // >>> import pprint
         // >>> pprint(thing)
         // Traceback (most recent call last):

@@ -2641,6 +2641,7 @@ static PyType_Slot zoneinfo_slots[] = {
     {Py_tp_new, zoneinfo_ZoneInfo},
     {Py_tp_dealloc, zoneinfo_dealloc},
     {Py_tp_traverse, zoneinfo_traverse},
+    {Py_tp_reachable, zoneinfo_traverse},
     {Py_tp_clear, zoneinfo_clear},
     {0, NULL},
 };

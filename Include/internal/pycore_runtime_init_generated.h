@@ -1396,6 +1396,7 @@ extern "C" {
     INIT_ID(__floor__), \
     INIT_ID(__floordiv__), \
     INIT_ID(__format__), \
+    INIT_ID(__freezable__), \
     INIT_ID(__fspath__), \
     INIT_ID(__ge__), \
     INIT_ID(__get__), \
@@ -1461,6 +1462,7 @@ extern "C" {
     INIT_ID(__path__), \
     INIT_ID(__pos__), \
     INIT_ID(__pow__), \
+    INIT_ID(__pre_freeze__), \
     INIT_ID(__prepare__), \
     INIT_ID(__qualname__), \
     INIT_ID(__radd__), \

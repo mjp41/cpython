@@ -751,6 +751,7 @@ PyTypeObject PyMethodDescr_Type = {
     0,                                          /* tp_dict */
     method_get,                                 /* tp_descr_get */
     0,                                          /* tp_descr_set */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 /* This is for METH_CLASS in C, not for "f = classmethod(f)" in Python! */
@@ -789,6 +790,7 @@ PyTypeObject PyClassMethodDescr_Type = {
     0,                                          /* tp_dict */
     classmethod_get,                            /* tp_descr_get */
     0,                                          /* tp_descr_set */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 PyTypeObject PyMemberDescr_Type = {
@@ -826,6 +828,7 @@ PyTypeObject PyMemberDescr_Type = {
     0,                                          /* tp_dict */
     member_get,                                 /* tp_descr_get */
     member_set,                                 /* tp_descr_set */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 PyTypeObject PyGetSetDescr_Type = {
@@ -863,6 +866,7 @@ PyTypeObject PyGetSetDescr_Type = {
     0,                                          /* tp_dict */
     getset_get,                                 /* tp_descr_get */
     getset_set,                                 /* tp_descr_set */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 PyTypeObject PyWrapperDescr_Type = {
@@ -901,6 +905,7 @@ PyTypeObject PyWrapperDescr_Type = {
     0,                                          /* tp_dict */
     wrapperdescr_get,                           /* tp_descr_get */
     0,                                          /* tp_descr_set */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 static PyDescrObject *
@@ -1485,6 +1490,7 @@ PyTypeObject _PyMethodWrapper_Type = {
     0,                                          /* tp_dict */
     0,                                          /* tp_descr_get */
     0,                                          /* tp_descr_set */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 PyObject *
@@ -2038,6 +2044,7 @@ PyTypeObject PyDictProxy_Type = {
     0,                                          /* tp_init */
     0,                                          /* tp_alloc */
     mappingproxy_new,                           /* tp_new */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 PyTypeObject PyProperty_Type = {
@@ -2082,4 +2089,5 @@ PyTypeObject PyProperty_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     PyType_GenericNew,                          /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };

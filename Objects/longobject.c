@@ -6678,6 +6678,7 @@ PyTypeObject PyLong_Type = {
     PyObject_Free,                              /* tp_free */
     .tp_vectorcall = long_vectorcall,
     .tp_version_tag = _Py_TYPE_VERSION_INT,
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 static PyTypeObject Int_InfoType;

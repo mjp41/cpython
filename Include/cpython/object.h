@@ -239,6 +239,12 @@ struct _typeobject {
      * Otherwise, limited to MAX_VERSIONS_PER_CLASS (defined elsewhere).
      */
     uint16_t tp_versions_used;
+
+    /* call function for all referenced objects (includes non-cyclic refs) */
+    traverseproc tp_reachable;
+
+    /* A callback called before a type is frozen. */
+    prefreezeproc tp_prefreeze;
 };
 
 #define _Py_ATTR_CACHE_UNUSED (30000)  // (see tp_versions_used)
@@ -291,6 +297,7 @@ typedef struct _heaptypeobject {
 PyAPI_FUNC(const char *) _PyType_Name(PyTypeObject *);
 PyAPI_FUNC(PyObject *) _PyType_Lookup(PyTypeObject *, PyObject *);
 PyAPI_FUNC(PyObject *) _PyType_LookupRef(PyTypeObject *, PyObject *);
+PyAPI_FUNC(int) _PyType_HasExtensionSlots(PyTypeObject *);
 PyAPI_FUNC(PyObject *) PyType_GetDict(PyTypeObject *);
 
 PyAPI_FUNC(int) PyObject_Print(PyObject *, FILE *, int);

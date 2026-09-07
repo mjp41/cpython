@@ -115,6 +115,7 @@ static PyType_Slot placeholder_type_slots[] = {
     {Py_tp_methods, placeholder_methods},
     {Py_tp_new, placeholder_new},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0, 0}
 };
 
@@ -845,6 +846,7 @@ static PyType_Slot partial_type_slots[] = {
     {Py_tp_setattro, PyObject_GenericSetAttr},
     {Py_tp_doc, (void *)partial_doc},
     {Py_tp_traverse, partial_traverse},
+    {Py_tp_reachable, partial_traverse},
     {Py_tp_clear, partial_clear},
     {Py_tp_methods, partial_methods},
     {Py_tp_members, partial_memberlist},
@@ -933,6 +935,7 @@ static PyType_Slot keyobject_type_slots[] = {
     {Py_tp_call, keyobject_call},
     {Py_tp_getattro, PyObject_GenericGetAttr},
     {Py_tp_traverse, keyobject_traverse},
+    {Py_tp_reachable, keyobject_traverse},
     {Py_tp_clear, keyobject_clear},
     {Py_tp_richcompare, keyobject_richcompare},
     {Py_tp_members, keyobject_members},
@@ -1862,6 +1865,7 @@ static PyType_Slot lru_cache_type_slots[] = {
     {Py_tp_call, lru_cache_call},
     {Py_tp_doc, (void *)lru_cache_doc},
     {Py_tp_traverse, lru_cache_tp_traverse},
+    {Py_tp_reachable, lru_cache_tp_traverse},
     {Py_tp_clear, lru_cache_tp_clear},
     {Py_tp_methods, lru_cache_methods},
     {Py_tp_members, lru_cache_memberlist},

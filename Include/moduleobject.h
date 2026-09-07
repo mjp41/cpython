@@ -8,8 +8,10 @@ extern "C" {
 #endif
 
 PyAPI_DATA(PyTypeObject) PyModule_Type;
+PyAPI_DATA(PyTypeObject) _PyImmModule_Type;
 
-#define PyModule_Check(op) PyObject_TypeCheck((op), &PyModule_Type)
+#define _PyImmModule_Check(op) (PyObject_TypeCheck((op), &_PyImmModule_Type))
+#define PyModule_Check(op) (PyObject_TypeCheck((op), &PyModule_Type) || PyObject_TypeCheck((op), &_PyImmModule_Type))
 #define PyModule_CheckExact(op) Py_IS_TYPE((op), &PyModule_Type)
 
 #if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 >= 0x03030000

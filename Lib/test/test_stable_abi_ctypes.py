@@ -929,6 +929,7 @@ SYMBOL_NAMES = (
     "_PyArg_VaParseTupleAndKeywords_SizeT",
     "_PyArg_VaParse_SizeT",
     "_PyErr_BadInternalCall",
+    "_PyImmModule_Type",
     "_PyObject_CallFunction_SizeT",
     "_PyObject_CallMethod_SizeT",
     "_PyObject_GC_New",

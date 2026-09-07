@@ -419,6 +419,7 @@ static PyGetSetDef SHA3_getseters[] = {
         {Py_tp_clear, SHA3_clear}, \
         {Py_tp_dealloc, SHA3_dealloc}, \
         {Py_tp_traverse, _PyObject_VisitType}, \
+        {Py_tp_reachable, _PyObject_VisitType}, \
         {Py_tp_doc, (char*)type_doc}, \
         {Py_tp_methods, type_methods}, \
         {Py_tp_getset, type_getseters}, \

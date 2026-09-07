@@ -1310,6 +1310,7 @@ static PyType_Slot fileio_slots[] = {
     {Py_tp_repr, fileio_repr},
     {Py_tp_doc, (void *)_io_FileIO___init____doc__},
     {Py_tp_traverse, fileio_traverse},
+    {Py_tp_reachable, fileio_traverse},
     {Py_tp_clear, fileio_clear},
     {Py_tp_methods, fileio_methods},
     {Py_tp_members, fileio_members},

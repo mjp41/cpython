@@ -920,6 +920,11 @@ static int
 function___annotations___set_impl(PyFunctionObject *self, PyObject *value)
 /*[clinic end generated code: output=a61795d4a95eede4 input=5302641f686f0463]*/
 {
+    if(!Py_CHECKWRITE(self)){
+        PyErr_WriteToImmutable(self);
+        return -1;
+    }
+
     if (value == Py_None)
         value = NULL;
     /* Legal to del f.func_annotations.
@@ -1200,6 +1205,116 @@ func_descr_get(PyObject *func, PyObject *obj, PyObject *type)
     return PyMethod_New(func, obj);
 }
 
+// Artifact[Implementation]: The pre-freeze hook of function objects
+/**
+ * Special function for replacing globals and builtins with a copy of just what they use.
+ *
+ * This is necessary because the function object has a pointer to the global
+ * dictionary, and this is problematic because freezing any function directly
+ * (as we do with other objects) would make all globals immutable.
+ *
+ * Instead, we walk the function and find any places where it references
+ * global variables or builtins, and then freeze just those objects. The globals
+ * and builtins dictionaries for the function are then replaced with
+ * copies containing just those globals and builtins we were able to determine
+ * the function uses.
+ */
+static int func_prefreeze_shadow_captures(PyObject* op)
+{
+    _PyObject_ASSERT(op, PyFunction_Check(op));
+
+    PyObject* shadow_builtins = NULL;
+    PyObject* shadow_globals = NULL;
+    PyObject* shadow_closure = NULL;
+    Py_ssize_t size;
+
+    PyFunctionObject* f = _PyFunction_CAST(op);
+    PyObject* globals = f->func_globals;
+    PyObject* builtins = f->func_builtins;
+
+    shadow_builtins = PyDict_New();
+    if(shadow_builtins == NULL){
+        goto nomemory;
+    }
+
+    shadow_globals = PyDict_New();
+    if(shadow_globals == NULL){
+        goto nomemory;
+    }
+
+    if (PyDict_SetItemString(shadow_globals, "__builtins__", Py_NewRef(shadow_builtins))) {
+        goto error;
+    }
+
+    _PyObject_ASSERT(f->func_code, PyCode_Check(f->func_code));
+    PyCodeObject* f_code = (PyCodeObject*)f->func_code;
+
+    size = 0;
+    if (f_code->co_names != NULL)
+        size = PySequence_Fast_GET_SIZE(f_code->co_names);
+    for (Py_ssize_t i = 0; i < size; i++) {
+        PyObject* name = PySequence_Fast_GET_ITEM(f_code->co_names, i);
+
+        if( PyDict_Contains(globals, name)){
+            PyObject* value = PyDict_GetItem(globals, name);
+            if (PyDict_SetItem(shadow_globals, Py_NewRef(name), Py_NewRef(value))) {
+                goto error;
+            }
+        } else if (PyDict_Contains(builtins, name)) {
+            PyObject* value = PyDict_GetItem(builtins, name);
+            if (PyDict_SetItem(shadow_builtins, Py_NewRef(name), Py_NewRef(value))) {
+                goto error;
+            }
+        }
+    }
+
+    // Shadow cells with a new frozen cell to warn on reassignments in the
+    // capturing function.
+    size = 0;
+    if(f->func_closure != NULL) {
+        size = PyTuple_Size(f->func_closure);
+        if (size == -1) {
+            goto error;
+        }
+        shadow_closure = PyTuple_New(size);
+        if (shadow_closure == NULL) {
+            goto error;
+        }
+    }
+    for(Py_ssize_t i=0; i < size; ++i){
+        PyObject* cellvar = PyTuple_GET_ITEM(f->func_closure, i);
+        PyObject* value = PyCell_GET(cellvar);
+
+        PyObject* shadow_cellvar = PyCell_New(value);
+        if(PyTuple_SetItem(shadow_closure, i, shadow_cellvar) == -1){
+            goto error;
+        }
+    }
+
+    if (f->func_annotations == NULL) {
+        PyObject* new_annotations = PyDict_New();
+        if (new_annotations == NULL) {
+            goto nomemory;
+        }
+        f->func_annotations = new_annotations;
+    }
+
+    // Only assign them at the end when everything succeeded
+    Py_XSETREF(f->func_closure, shadow_closure);
+    Py_SETREF(f->func_globals, shadow_globals);
+    Py_SETREF(f->func_builtins, shadow_builtins);
+
+    return 0;
+
+nomemory:
+    PyErr_NoMemory();
+error:
+    Py_XDECREF(shadow_builtins);
+    Py_XDECREF(shadow_globals);
+    Py_XDECREF(shadow_closure);
+    return -1;
+}
+
 PyTypeObject PyFunction_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "function",
@@ -1241,6 +1356,8 @@ PyTypeObject PyFunction_Type = {
     0,                                          /* tp_init */
     0,                                          /* tp_alloc */
     func_new,                                   /* tp_new */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
+    .tp_prefreeze = func_prefreeze_shadow_captures,
 };
 
 
@@ -1621,6 +1738,7 @@ PyTypeObject PyClassMethod_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     PyType_GenericNew,                          /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 PyObject *
@@ -1856,6 +1974,7 @@ PyTypeObject PyStaticMethod_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     PyType_GenericNew,                          /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 PyObject *

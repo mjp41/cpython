@@ -272,6 +272,7 @@ static PyGetSetDef obj_extra_data_getset[] = {
 static int
 obj_extra_data_traverse(PyObject *self, visitproc visit, void *arg)
 {
+    Py_VISIT(Py_TYPE(self));
     PyObject **extra_storage = obj_extra_data_get_extra_storage(self);
     PyObject *value = *extra_storage;
     Py_VISIT(value);
@@ -300,6 +301,7 @@ static PyType_Slot ObjExtraData_Slots[] = {
     {Py_tp_getset, obj_extra_data_getset},
     {Py_tp_dealloc, obj_extra_data_dealloc},
     {Py_tp_traverse, obj_extra_data_traverse},
+    {Py_tp_reachable, obj_extra_data_traverse},
     {Py_tp_clear, obj_extra_data_clear},
     {Py_tp_new, obj_extra_data_new},
     {Py_tp_free, PyObject_GC_Del},

@@ -936,6 +936,7 @@ PyTypeObject PyFrameLocalsProxy_Type = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_MAPPING,
     .tp_traverse = framelocalsproxy_visit,
     .tp_clear = framelocalsproxy_tp_clear,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
     .tp_richcompare = framelocalsproxy_richcompare,
     .tp_iter = framelocalsproxy_iter,
     .tp_methods = framelocalsproxy_methods,
@@ -2107,6 +2108,7 @@ PyTypeObject PyFrame_Type = {
     frame_getsetlist,                           /* tp_getset */
     0,                                          /* tp_base */
     0,                                          /* tp_dict */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 static void

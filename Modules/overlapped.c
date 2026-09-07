@@ -1668,6 +1668,7 @@ static int
 Overlapped_traverse(PyObject *op, visitproc visit, void *arg)
 {
     OverlappedObject *self = OverlappedObject_CAST(op);
+    Py_VISIT(Py_TYPE(self));
     switch (self->type) {
     case TYPE_READ:
     case TYPE_ACCEPT:
@@ -1991,6 +1992,7 @@ static PyType_Slot overlapped_type_slots[] = {
     {Py_tp_dealloc, Overlapped_dealloc},
     {Py_tp_doc, (char *)_overlapped_Overlapped__doc__},
     {Py_tp_traverse, Overlapped_traverse},
+    {Py_tp_reachable, Overlapped_traverse},
     {Py_tp_methods, Overlapped_methods},
     {Py_tp_members, Overlapped_members},
     {Py_tp_getset, Overlapped_getsets},

@@ -179,6 +179,7 @@ PyTypeObject PySeqIter_Type = {
     iter_iternext,                              /* tp_iternext */
     seqiter_methods,                            /* tp_methods */
     0,                                          /* tp_members */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 /* -------------------------------------- */
@@ -304,6 +305,7 @@ PyTypeObject PyCallIter_Type = {
     PyObject_SelfIter,                          /* tp_iter */
     calliter_iternext,                          /* tp_iternext */
     calliter_methods,                           /* tp_methods */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 
@@ -525,6 +527,7 @@ PyTypeObject _PyAnextAwaitable_Type = {
     PyObject_SelfIter,                          /* tp_iter */
     anextawaitable_iternext,                    /* tp_iternext */
     anextawaitable_methods,                     /* tp_methods */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 PyObject *

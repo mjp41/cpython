@@ -205,6 +205,16 @@ static inline void _PyGC_CLEAR_FINALIZED(PyObject *op) {
 #endif
 }
 
+static inline void _PyGC_CLEAR_COLLECTING(PyObject *op) {
+#ifdef Py_GIL_DISABLED
+    // TODO(immutable): Does NoGil have a collecting flag? If so, how do we
+    // clear it?
+#else
+    PyGC_Head *gc = _Py_AS_GC(op);
+    gc->_gc_prev &= ~_PyGC_PREV_MASK_COLLECTING;
+#endif
+}
+
 
 /* Tell the GC to track this object.
  *

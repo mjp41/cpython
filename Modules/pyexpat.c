@@ -1871,6 +1871,7 @@ static PyType_Slot _xml_parse_type_spec_slots[] = {
     {Py_tp_dealloc, xmlparse_dealloc},
     {Py_tp_doc, (void *)Xmlparsetype__doc__},
     {Py_tp_traverse, xmlparse_traverse},
+    {Py_tp_reachable, xmlparse_traverse},
     {Py_tp_clear, xmlparse_clear},
     {Py_tp_methods, xmlparse_methods},
     {Py_tp_members, xmlparse_members},

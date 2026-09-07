@@ -3157,6 +3157,7 @@ PyTypeObject PyBytes_Type = {
     bytes_alloc,                                /* tp_alloc */
     bytes_new,                                  /* tp_new */
     PyObject_Free,                              /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitType,
     .tp_version_tag = _Py_TYPE_VERSION_BYTES,
 };
 
@@ -3430,6 +3431,7 @@ PyTypeObject PyBytesIter_Type = {
     striter_next,                               /* tp_iternext */
     striter_methods,                            /* tp_methods */
     0,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 static PyObject *

@@ -64,6 +64,8 @@ _Py_memory_repeat(char* dest, Py_ssize_t len_dest, Py_ssize_t len_src)
     }
 }
 
+PyAPI_FUNC(PyObject*) _Py_ListPop(PyListObject *self, Py_ssize_t index);
+
 typedef struct {
     PyObject_HEAD
     Py_ssize_t it_index;

@@ -2607,3 +2607,6 @@
     added = '3.15'
 [const.PyABIInfo_FREETHREADING_AGNOSTIC]
     added = '3.15'
+[data._PyImmModule_Type]
+    added = '3.15'
+    abi_only = true

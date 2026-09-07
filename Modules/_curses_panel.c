@@ -674,6 +674,7 @@ static PyType_Slot PyCursesPanel_Type_slots[] = {
     {Py_tp_clear, PyCursesPanel_Clear},
     {Py_tp_dealloc, PyCursesPanel_Dealloc},
     {Py_tp_traverse, PyCursesPanel_Traverse},
+    {Py_tp_reachable, PyCursesPanel_Traverse},
     {Py_tp_methods, PyCursesPanel_Methods},
     {0, 0},
 };

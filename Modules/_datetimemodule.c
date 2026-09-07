@@ -3131,6 +3131,7 @@ static PyTypeObject PyDateTime_DeltaType = {
     0,                                                  /* tp_alloc */
     delta_new,                                          /* tp_new */
     0,                                                  /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 // XXX Can we make this const?
@@ -3790,6 +3791,7 @@ static PyType_Slot isocal_slots[] = {
     {Py_tp_new, iso_calendar_date_new},
     {Py_tp_dealloc, iso_calendar_date_dealloc},
     {Py_tp_traverse, iso_calendar_date_traverse},
+    {Py_tp_reachable, iso_calendar_date_traverse},
     {0, NULL},
 };
 
@@ -7311,6 +7313,7 @@ static PyTypeObject PyDateTime_DateTimeType = {
     datetime_alloc,                             /* tp_alloc */
     datetime_new,                               /* tp_new */
     0,                                          /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 /* ---------------------------------------------------------------------------
@@ -7492,6 +7495,11 @@ _PyDateTime_InitTypes(PyInterpreterState *interp)
         PyTypeObject *type = capi_types[i];
         if (_PyStaticType_InitForExtension(interp, type) < 0) {
             return _PyStatus_ERR("could not initialize static types");
+        }
+
+        // TODO(Immutable): Revisit after PLDI deadline.
+        if(_PyImmutability_SetFreezable((PyObject*)capi_types[i], _Py_FREEZABLE_YES) < 0) {
+            return _PyStatus_ERR("could not freeze static types");
         }
     }
 

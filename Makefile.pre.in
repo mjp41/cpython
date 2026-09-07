@@ -457,6 +457,7 @@ PYTHON_OBJS=	\
 		Python/import.o \
 		Python/importdl.o \
 		Python/index_pool.o \
+		Python/immutability.o \
 		Python/initconfig.o \
 		Python/interpconfig.o \
 		Python/instrumentation.o \
@@ -1190,6 +1191,7 @@ PYTHON_HEADERS= \
 		$(srcdir)/Include/genericaliasobject.h \
 		$(srcdir)/Include/import.h \
 		$(srcdir)/Include/intrcheck.h \
+		$(srcdir)/Include/immutability.h \
 		$(srcdir)/Include/iterobject.h \
 		$(srcdir)/Include/listobject.h \
 		$(srcdir)/Include/longobject.h \
@@ -1265,6 +1267,7 @@ PYTHON_HEADERS= \
 		$(srcdir)/Include/cpython/funcobject.h \
 		$(srcdir)/Include/cpython/genobject.h \
 		$(srcdir)/Include/cpython/import.h \
+		$(srcdir)/Include/cpython/immutability.h \
 		$(srcdir)/Include/cpython/initconfig.h \
 		$(srcdir)/Include/cpython/listobject.h \
 		$(srcdir)/Include/cpython/pylock.h \
@@ -2627,6 +2630,7 @@ TESTSUBDIRS=	idlelib/idle_test \
 		test/test_email \
 		test/test_email/data \
 		test/test_free_threading \
+		test/test_freeze \
 		test/test_future_stmt \
 		test/test_gdb \
 		test/test_import \

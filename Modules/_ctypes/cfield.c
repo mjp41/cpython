@@ -461,6 +461,7 @@ static PyType_Slot cfield_slots[] = {
     {Py_tp_repr, PyCField_repr},
     {Py_tp_doc, (void *)PyDoc_STR("Structure/Union member")},
     {Py_tp_traverse, PyCField_traverse},
+    {Py_tp_reachable, PyCField_traverse},
     {Py_tp_clear, PyCField_clear},
     {Py_tp_getset, PyCField_getset},
     {Py_tp_members, PyCField_members},

@@ -274,6 +274,7 @@ static PyType_Slot row_slots[] = {
     {Py_sq_item, pysqlite_row_item},
     {Py_tp_new, pysqlite_row_new},
     {Py_tp_traverse, row_traverse},
+    {Py_tp_reachable, row_traverse},
     {Py_tp_clear, row_clear},
     {0, NULL},
 };

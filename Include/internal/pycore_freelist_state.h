@@ -8,29 +8,33 @@ extern "C" {
 #  error "this header requires Py_BUILD_CORE define"
 #endif
 
+#define MAXFREELIST(x) x
+//#define MAXFREELIST(x) 0
+
+
 #  define PyTuple_MAXSAVESIZE 20     // Largest tuple to save on freelist
-#  define Py_tuple_MAXFREELIST 2000  // Maximum number of tuples of each size to save
-#  define Py_lists_MAXFREELIST 80
-#  define Py_list_iters_MAXFREELIST 10
-#  define Py_tuple_iters_MAXFREELIST 10
-#  define Py_dicts_MAXFREELIST 80
-#  define Py_dictkeys_MAXFREELIST 80
-#  define Py_floats_MAXFREELIST 100
-#  define Py_complexes_MAXFREELIST 100
-#  define Py_ints_MAXFREELIST 100
-#  define Py_slices_MAXFREELIST 1
-#  define Py_ranges_MAXFREELIST 6
-#  define Py_range_iters_MAXFREELIST 6
-#  define Py_contexts_MAXFREELIST 255
-#  define Py_async_gens_MAXFREELIST 80
-#  define Py_async_gen_asends_MAXFREELIST 80
-#  define Py_futureiters_MAXFREELIST 255
-#  define Py_object_stack_chunks_MAXFREELIST 4
-#  define Py_unicode_writers_MAXFREELIST 1
-#  define Py_bytes_writers_MAXFREELIST 1
-#  define Py_pycfunctionobject_MAXFREELIST 16
-#  define Py_pycmethodobject_MAXFREELIST 16
-#  define Py_pymethodobjects_MAXFREELIST 20
+#  define Py_tuple_MAXFREELIST MAXFREELIST(2000)  // Maximum number of tuples of each size to save
+#  define Py_lists_MAXFREELIST MAXFREELIST(80)
+#  define Py_list_iters_MAXFREELIST MAXFREELIST(10)
+#  define Py_tuple_iters_MAXFREELIST MAXFREELIST(10)
+#  define Py_dicts_MAXFREELIST MAXFREELIST(80)
+#  define Py_dictkeys_MAXFREELIST MAXFREELIST(80)
+#  define Py_floats_MAXFREELIST MAXFREELIST(100)
+#  define Py_complexes_MAXFREELIST MAXFREELIST(100)
+#  define Py_ints_MAXFREELIST MAXFREELIST(100)
+#  define Py_slices_MAXFREELIST MAXFREELIST(1)
+#  define Py_ranges_MAXFREELIST MAXFREELIST(6)
+#  define Py_range_iters_MAXFREELIST MAXFREELIST(6)
+#  define Py_contexts_MAXFREELIST MAXFREELIST(255)
+#  define Py_async_gens_MAXFREELIST MAXFREELIST(80)
+#  define Py_async_gen_asends_MAXFREELIST MAXFREELIST(80)
+#  define Py_futureiters_MAXFREELIST MAXFREELIST(255)
+#  define Py_object_stack_chunks_MAXFREELIST MAXFREELIST(4)
+#  define Py_unicode_writers_MAXFREELIST MAXFREELIST(1)
+#  define Py_bytes_writers_MAXFREELIST MAXFREELIST(1)
+#  define Py_pycfunctionobject_MAXFREELIST MAXFREELIST(16)
+#  define Py_pycmethodobject_MAXFREELIST MAXFREELIST(16)
+#  define Py_pymethodobjects_MAXFREELIST MAXFREELIST(20)
 
 // A generic freelist of either PyObjects or other data structures.
 struct _Py_freelist {

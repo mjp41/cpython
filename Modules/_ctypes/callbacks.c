@@ -55,6 +55,7 @@ static PyType_Slot cthunk_slots[] = {
     {Py_tp_doc, (void *)PyDoc_STR("CThunkObject")},
     {Py_tp_dealloc, CThunkObject_dealloc},
     {Py_tp_traverse, CThunkObject_traverse},
+    {Py_tp_reachable, CThunkObject_traverse},
     {Py_tp_clear, CThunkObject_clear},
     {0, NULL},
 };

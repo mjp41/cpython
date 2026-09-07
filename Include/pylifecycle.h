@@ -16,6 +16,7 @@ PyAPI_FUNC(void) Py_Finalize(void);
 PyAPI_FUNC(int) Py_FinalizeEx(void);
 #endif
 PyAPI_FUNC(int) Py_IsInitialized(void);
+PyAPI_FUNC(int) Py_IsFinalizing(void);
 
 /* Subinterpreter support */
 PyAPI_FUNC(PyThreadState *) Py_NewInterpreter(void);

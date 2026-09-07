@@ -1084,6 +1084,7 @@ static PyType_Slot stringio_slots[] = {
     {Py_tp_dealloc, stringio_dealloc},
     {Py_tp_doc, (void *)_io_StringIO___init____doc__},
     {Py_tp_traverse, stringio_traverse},
+    {Py_tp_reachable, stringio_traverse},
     {Py_tp_clear, stringio_clear},
     {Py_tp_iternext, stringio_iternext},
     {Py_tp_methods, stringio_methods},

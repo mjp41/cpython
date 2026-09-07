@@ -11,6 +11,7 @@ extern "C" {
 #include "pycore_pythonrun.h"     // _PyOS_STACK_MARGIN_SHIFT
 #include "pycore_typedefs.h"      // _PyRuntimeState
 #include "pycore_tstate.h"
+#include "pycore_moduleobject.h"
 
 
 // Values for PyThreadState.state. A thread must be in the "attached" state

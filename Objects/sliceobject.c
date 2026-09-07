@@ -705,4 +705,5 @@ PyTypeObject PySlice_Type = {
     0,                                          /* tp_init */
     0,                                          /* tp_alloc */
     slice_new,                                  /* tp_new */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };

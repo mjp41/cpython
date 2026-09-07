@@ -466,6 +466,15 @@ _check_xidata(PyThreadState *tstate, _PyXIData_t *xidata)
     return 0;
 }
 
+static PyObject* immutable_new_object(_PyXIData_t* data) {
+    assert(data->data == (void*) 0xdeadbeef);
+    assert(data->obj != NULL);
+    assert(_Py_IsImmutable(data->obj));
+    Py_IncRef(data->obj);
+
+    return data->obj;
+}
+
 static int
 _get_xidata(PyThreadState *tstate,
             PyObject *obj, xidata_fallback_t fallback, _PyXIData_t *xidata)
@@ -477,6 +486,15 @@ _get_xidata(PyThreadState *tstate,
     if (xidata->data != NULL || xidata->obj != NULL) {
         _PyErr_SetString(tstate, PyExc_ValueError, "xidata not cleared");
         return -1;
+    }
+
+    // Artifact[Implementation]: The branch that allows direct sharing for immutable object across sub-interpreters
+    if (_Py_IsImmutable(obj)) {
+        _Py_IncRef(obj);
+        xidata->obj = obj;
+        xidata->data = (void*) 0xdeadbeef;
+        xidata->new_object = (xid_newobjfunc) immutable_new_object;
+        return 0;
     }
 
     // Call the "getdata" func for the object.

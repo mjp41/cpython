@@ -778,6 +778,20 @@ static PyMemberDef range_members[] = {
     {0}
 };
 
+static int
+range_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    rangeobject *r = (rangeobject *)self;
+
+    Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
+    Py_VISIT(r->start);
+    Py_VISIT(r->stop);
+    Py_VISIT(r->step);
+    Py_VISIT(r->length);
+
+    return 0;
+}
+
 PyTypeObject PyRange_Type = {
         PyVarObject_HEAD_INIT(&PyType_Type, 0)
         "range",                /* Name of this type */
@@ -817,6 +831,7 @@ PyTypeObject PyRange_Type = {
         0,                      /* tp_init */
         0,                      /* tp_alloc */
         range_new,              /* tp_new */
+        .tp_reachable = range_reachable,
         .tp_vectorcall = range_vectorcall
 };
 

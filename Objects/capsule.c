@@ -361,6 +361,7 @@ PyTypeObject PyCapsule_Type = {
     .tp_doc = PyCapsule_Type__doc__,
     .tp_traverse = capsule_traverse,
     .tp_clear = capsule_clear,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 

@@ -44,6 +44,7 @@ PyList_SET_ITEM(PyObject *op, Py_ssize_t index, PyObject *value) {
     PyListObject *list = _PyList_CAST(op);
     assert(0 <= index);
     assert(index < list->allocated);
+    // TODO(Immutable): Add assert to check if the list is immutable
     list->ob_item[index] = value;
 }
 #define PyList_SET_ITEM(op, index, value) \

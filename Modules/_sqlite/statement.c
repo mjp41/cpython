@@ -184,6 +184,7 @@ lstrip_sql(const char *sql)
 static PyType_Slot stmt_slots[] = {
     {Py_tp_dealloc, stmt_dealloc},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {0, NULL},
 };
 

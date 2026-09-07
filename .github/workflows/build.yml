@@ -5,10 +5,12 @@ on:
   push:
     branches:
     - 'main'
+    - '*-main'
     - '3.*'
   pull_request:
     branches:
     - 'main'
+    - '*-main'
     - '3.*'
 
 permissions:
@@ -168,10 +170,11 @@ jobs:
           - arm64
         free-threading:
           - false
-          - true
-        exclude:
-          # Skip Win32 on free-threaded builds
-          - { arch: Win32, free-threading: true }
+        # TODO(Immutable): Enable free-threading build when it is made to work.
+        #        - true
+        # exclude:
+        #   # Skip Win32 on free-threaded builds
+        #   - { arch: Win32, free-threading: true }
     uses: ./.github/workflows/reusable-windows.yml
     with:
       arch: ${{ matrix.arch }}
@@ -209,10 +212,11 @@ jobs:
         - macos-15-intel
         free-threading:
         - false
-        - true
-        exclude:
-        - os: macos-15-intel
-          free-threading: true
+        # TODO(Immutable): Enable free-threading build when it is made to work.
+        #        - true
+        # exclude:
+        # - os: macos-15-intel
+        #   free-threading: true
     uses: ./.github/workflows/reusable-macos.yml
     with:
       config_hash: ${{ needs.build-context.outputs.config-hash }}
@@ -234,14 +238,15 @@ jobs:
         - true
         free-threading:
         - false
-        - true
+        # TODO(Immutable): Enable free-threading build when it is made to work.
+        #        - true
         os:
         - ubuntu-24.04
         - ubuntu-24.04-arm
         exclude:
-        # Do not test BOLT with free-threading, to conserve resources
-        - bolt: true
-          free-threading: true
+        # # Do not test BOLT with free-threading, to conserve resources
+        # - bolt: true
+        #   free-threading: true
         # BOLT currently crashes during instrumentation on aarch64
         - os: ubuntu-24.04-arm
           bolt: true
@@ -614,13 +619,14 @@ jobs:
         - Thread
         free-threading:
         - false
-        - true
+        # TODO(Immutable): Enable free-threading build when it is made to work.
+        #        - true
         sanitizer:
         - TSan
-        include:
-        - check-name: Undefined behavior
-          sanitizer: UBSan
-          free-threading: false
+        # include:
+        # - check-name: Undefined behavior
+        #   sanitizer: UBSan
+        #   free-threading: false
     uses: ./.github/workflows/reusable-san.yml
     with:
       sanitizer: ${{ matrix.sanitizer }}

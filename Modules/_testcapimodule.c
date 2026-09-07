@@ -3215,6 +3215,7 @@ static PyType_Slot ManagedDict_slots[] = {
     {Py_tp_new, (void *)PyType_GenericNew},
     {Py_tp_getset, (void *)ManagedDict_getset},
     {Py_tp_traverse, (void *)ManagedDict_traverse},
+    {Py_tp_reachable, (void *)ManagedDict_traverse},
     {Py_tp_clear, (void *)ManagedDict_clear},
     {0}
 };

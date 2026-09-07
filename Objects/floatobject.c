@@ -11,7 +11,7 @@
 #include "pycore_initconfig.h"    // _PyStatus_OK()
 #include "pycore_long.h"          // _PyLong_GetOne()
 #include "pycore_modsupport.h"    // _PyArg_NoKwnames()
-#include "pycore_object.h"        // _PyObject_Init(), _PyDebugAllocatorStats()
+#include "pycore_object.h"        // _PyObject_Init(), _PyDebugAllocatorStats(), _PyObject_ReachableVisit()
 #include "pycore_pymath.h"        // _PY_SHORT_FLOAT_REPR
 #include "pycore_pystate.h"       // _PyInterpreterState_GET()
 #include "pycore_stackref.h"      // PyStackRef_AsPyObjectBorrow()
@@ -1898,6 +1898,7 @@ PyTypeObject PyFloat_Type = {
     float_new,                                  /* tp_new */
     .tp_vectorcall = float_vectorcall,
     .tp_version_tag = _Py_TYPE_VERSION_FLOAT,
+    .tp_reachable = _PyObject_ReachableVisitType,
 };
 
 static void

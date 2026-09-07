@@ -88,7 +88,9 @@ _weakref_getweakrefs(PyObject *module, PyObject *object)
     PyWeakReference *current = *GET_WEAKREFS_LISTPTR(object);
     while (current != NULL) {
         PyObject *curobj = (PyObject *) current;
-        if (_Py_TryIncref(curobj)) {
+        int incref_res = _Py_IsImmutable(curobj) ?
+            _Py_TryIncref_Immutable(curobj) : _Py_TryIncref(curobj);
+        if (incref_res) {
             if (PyList_Append(result, curobj)) {
                 UNLOCK_WEAKREFS(object);
                 Py_DECREF(curobj);

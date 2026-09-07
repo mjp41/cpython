@@ -1223,6 +1223,10 @@ static PyObject *
 OrderedDict_clear_impl(PyODictObject *self)
 /*[clinic end generated code: output=a1a76d1322f556c5 input=08b12322e74c535c]*/
 {
+    if(!Py_CHECKWRITE(self)) {
+        PyErr_WriteToImmutable(self);
+        return NULL;
+    }
     _PyDict_Clear_LockHeld((PyObject *)self);
     _odict_clear_nodes(self);
     Py_RETURN_NONE;
@@ -1475,6 +1479,11 @@ odict_traverse(PyObject *op, visitproc visit, void *arg)
 static int
 odict_tp_clear(PyObject *op)
 {
+    if(!Py_CHECKWRITE(op)){
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     PyODictObject *od = _PyODictObject_CAST(op);
     Py_CLEAR(od->od_inst_dict);
     // cannot use lock held variant as critical section is not held here
@@ -1605,6 +1614,7 @@ PyTypeObject PyODict_Type = {
     PyType_GenericAlloc,                        /* tp_alloc */
     0,                                          /* tp_new */
     0,                                          /* tp_free */
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 
@@ -1920,6 +1930,7 @@ PyTypeObject PyODictIter_Type = {
     odictiter_iternext,                       /* tp_iternext */
     odictiter_methods,                        /* tp_methods */
     0,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 static PyObject *

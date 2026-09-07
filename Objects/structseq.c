@@ -124,6 +124,21 @@ structseq_traverse(PyObject *op, visitproc visit, void *arg)
     return 0;
 }
 
+static int
+structseq_reachable(PyObject *op, visitproc visit, void *arg)
+{
+    /* Always visit the type, unlike traverse which only visits for heap types */
+    Py_VISIT(_PyObject_CAST(Py_TYPE(op)));
+
+    PyStructSequence *obj = (PyStructSequence *)op;
+    Py_ssize_t i, size;
+    size = REAL_SIZE(obj);
+    for (i = 0; i < size; ++i) {
+        Py_VISIT(obj->ob_item[i]);
+    }
+    return 0;
+}
+
 static void
 structseq_dealloc(PyObject *op)
 {
@@ -583,6 +598,7 @@ initialize_static_fields(PyTypeObject *type, PyStructSequence_Desc *desc,
     type->tp_new = structseq_new;
     type->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | tp_flags;
     type->tp_traverse = structseq_traverse;
+    type->tp_reachable = structseq_reachable;
     type->tp_members = tp_members;
 }
 
@@ -740,7 +756,7 @@ _PyStructSequence_NewType(PyStructSequence_Desc *desc, unsigned long tp_flags)
 {
     PyMemberDef *members;
     PyTypeObject *type;
-    PyType_Slot slots[8];
+    PyType_Slot slots[9];
     PyType_Spec spec;
     Py_ssize_t n_members, n_unnamed_members;
 
@@ -759,7 +775,8 @@ _PyStructSequence_NewType(PyStructSequence_Desc *desc, unsigned long tp_flags)
     slots[4] = (PyType_Slot){Py_tp_new, structseq_new};
     slots[5] = (PyType_Slot){Py_tp_members, members};
     slots[6] = (PyType_Slot){Py_tp_traverse, structseq_traverse};
-    slots[7] = (PyType_Slot){0, 0};
+    slots[7] = (PyType_Slot){Py_tp_reachable, structseq_reachable};
+    slots[8] = (PyType_Slot){0, 0};
 
     /* Initialize Spec */
     /* The name in this PyType_Spec is statically allocated so it is */

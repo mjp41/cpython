@@ -875,6 +875,7 @@ static PyType_Slot iobase_slots[] = {
     {Py_tp_dealloc, iobase_dealloc},
     {Py_tp_doc, (void *)iobase_doc},
     {Py_tp_traverse, iobase_traverse},
+    {Py_tp_reachable, iobase_traverse},
     {Py_tp_clear, iobase_clear},
     {Py_tp_iter, iobase_iter},
     {Py_tp_iternext, iobase_iternext},

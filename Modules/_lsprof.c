@@ -1045,6 +1045,7 @@ static PyType_Slot _lsprof_profiler_type_spec_slots[] = {
     {Py_tp_dealloc, profiler_dealloc},
     {Py_tp_init, profiler_init},
     {Py_tp_traverse, profiler_traverse},
+    {Py_tp_reachable, profiler_traverse},
     {0, 0}
 };
 

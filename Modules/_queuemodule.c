@@ -548,6 +548,7 @@ static PyType_Slot simplequeue_slots[] = {
     {Py_tp_dealloc, simplequeue_dealloc},
     {Py_tp_doc, (void *)simplequeue_new__doc__},
     {Py_tp_traverse, simplequeue_traverse},
+    {Py_tp_reachable, simplequeue_traverse},
     {Py_tp_clear, simplequeue_clear},
     {Py_tp_members, simplequeue_members},
     {Py_tp_methods, simplequeue_methods},

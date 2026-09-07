@@ -154,6 +154,7 @@ PYTHONPATH=$(COREPYTHONPATH)
 #_zoneinfo _zoneinfo.c
 #array arraymodule.c
 #binascii binascii.c
+#_immutable _immutablemodule.c
 #cmath cmathmodule.c
 #math mathmodule.c
 #mmap mmapmodule.c

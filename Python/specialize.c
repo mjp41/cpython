@@ -808,7 +808,7 @@ static int
 specialize_module_load_attr(
     PyObject *owner, _Py_CODEUNIT *instr, PyObject *name)
 {
-    PyModuleObject *m = (PyModuleObject *)owner;
+    PyModuleObject *m = _PyInterpreterState_GetModuleState(owner);
     assert((Py_TYPE(owner)->tp_flags & Py_TPFLAGS_MANAGED_DICT) == 0);
     PyDictObject *dict = (PyDictObject *)m->md_dict;
     if (dict == NULL) {

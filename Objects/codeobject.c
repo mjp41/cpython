@@ -1365,6 +1365,15 @@ lineiter_dealloc(PyObject *self)
     Py_TYPE(li)->tp_free(li);
 }
 
+static int
+lineiter_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    lineiterator *li = (lineiterator*)self;
+    Py_VISIT(Py_TYPE(self));
+    Py_VISIT(li->li_code);
+    return 0;
+}
+
 static PyObject *
 _source_offset_converter(void *arg) {
     int *value = (int*)arg;
@@ -1436,6 +1445,7 @@ PyTypeObject _PyLineIterator = {
     0,                                  /* tp_alloc */
     0,                                  /* tp_new */
     PyObject_Free,                      /* tp_free */
+    .tp_reachable = lineiter_reachable,
 };
 
 static lineiterator *
@@ -1467,6 +1477,15 @@ positionsiter_dealloc(PyObject *self)
     positionsiterator *pi = (positionsiterator*)self;
     Py_DECREF(pi->pi_code);
     Py_TYPE(pi)->tp_free(pi);
+}
+
+static int
+positionsiter_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    positionsiterator *pi = (positionsiterator*)self;
+    Py_VISIT(Py_TYPE(self));
+    Py_VISIT(pi->pi_code);
+    return 0;
 }
 
 static PyObject*
@@ -1529,6 +1548,7 @@ PyTypeObject _PyPositionsIterator = {
     0,                                  /* tp_alloc */
     0,                                  /* tp_new */
     PyObject_Free,                      /* tp_free */
+    .tp_reachable = positionsiter_reachable,
 };
 
 static PyObject*
@@ -2465,6 +2485,29 @@ code_traverse(PyObject *self, visitproc visit, void *arg)
 }
 #endif
 
+static int
+code_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    PyCodeObject *co = _PyCodeObject_CAST(self);
+    Py_VISIT(Py_TYPE(self));
+    Py_VISIT(co->co_consts);
+    Py_VISIT(co->co_names);
+    Py_VISIT(co->co_exceptiontable);
+    Py_VISIT(co->co_localsplusnames);
+    Py_VISIT(co->co_localspluskinds);
+    Py_VISIT(co->co_filename);
+    Py_VISIT(co->co_name);
+    Py_VISIT(co->co_qualname);
+    Py_VISIT(co->co_linetable);
+    if (co->_co_cached != NULL) {
+        Py_VISIT(co->_co_cached->_co_code);
+        Py_VISIT(co->_co_cached->_co_varnames);
+        Py_VISIT(co->_co_cached->_co_cellvars);
+        Py_VISIT(co->_co_cached->_co_freevars);
+    }
+    return 0;
+}
+
 static PyObject *
 code_repr(PyObject *self)
 {
@@ -2922,6 +2965,7 @@ PyTypeObject PyCode_Type = {
     0,                                  /* tp_init */
     0,                                  /* tp_alloc */
     code_new,                           /* tp_new */
+    .tp_reachable = code_reachable,
 };
 
 

@@ -64,6 +64,13 @@ templateiter_traverse(PyObject *op, visitproc visit, void *arg)
     return 0;
 }
 
+static int
+templateiter_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
+    return templateiter_traverse(self, visit, arg);
+}
+
 PyTypeObject _PyTemplateIter_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "string.templatelib.TemplateIter",
@@ -76,6 +83,7 @@ PyTypeObject _PyTemplateIter_Type = {
     .tp_clear = templateiter_clear,
     .tp_free = PyObject_GC_Del,
     .tp_traverse = templateiter_traverse,
+    .tp_reachable = templateiter_reachable,
     .tp_iter = PyObject_SelfIter,
     .tp_iternext = templateiter_next,
 };
@@ -205,6 +213,13 @@ template_traverse(PyObject *op, visitproc visit, void *arg)
     Py_VISIT(self->strings);
     Py_VISIT(self->interpolations);
     return 0;
+}
+
+static int
+template_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
+    return template_traverse(self, visit, arg);
 }
 
 static PyObject *
@@ -394,6 +409,7 @@ PyTypeObject _PyTemplate_Type = {
     .tp_getset = template_getset,
     .tp_iter = template_iter,
     .tp_traverse = template_traverse,
+    .tp_reachable = template_reachable,
 };
 
 PyObject *

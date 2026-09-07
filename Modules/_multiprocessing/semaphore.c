@@ -768,6 +768,7 @@ static PyType_Slot _PyMp_SemLockType_slots[] = {
     {Py_tp_alloc, PyType_GenericAlloc},
     {Py_tp_new, _multiprocessing_SemLock},
     {Py_tp_traverse, _PyObject_VisitType},
+    {Py_tp_reachable, _PyObject_VisitType},
     {Py_tp_free, PyObject_GC_Del},
     {Py_tp_doc, (void *)PyDoc_STR("Semaphore/Mutex type")},
     {0, 0},

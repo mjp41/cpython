@@ -123,6 +123,13 @@ PyTuple_SetItem(PyObject *op, Py_ssize_t i, PyObject *newitem)
         PyErr_BadInternalCall();
         return -1;
     }
+
+    if (!Py_CHECKWRITE(op)){
+        Py_XDECREF(newitem);
+        PyErr_WriteToImmutable(op);
+        return -1;
+    }
+
     if (i < 0 || i >= Py_SIZE(op)) {
         Py_XDECREF(newitem);
         PyErr_SetString(PyExc_IndexError,
@@ -904,6 +911,7 @@ PyTypeObject PyTuple_Type = {
     PyObject_GC_Del,                            /* tp_free */
     .tp_vectorcall = tuple_vectorcall,
     .tp_version_tag = _Py_TYPE_VERSION_TUPLE,
+    .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
 
 /* The following function breaks the notion that tuples are immutable:

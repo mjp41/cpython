@@ -1145,6 +1145,7 @@ static PyType_Slot bytesio_slots[] = {
     {Py_tp_dealloc, bytesio_dealloc},
     {Py_tp_doc, (void *)_io_BytesIO___init____doc__},
     {Py_tp_traverse, bytesio_traverse},
+    {Py_tp_reachable, bytesio_traverse},
     {Py_tp_clear, bytesio_clear},
     {Py_tp_iter, PyObject_SelfIter},
     {Py_tp_iternext, bytesio_iternext},
@@ -1239,6 +1240,7 @@ bytesiobuf_dealloc(PyObject *op)
 static PyType_Slot bytesiobuf_slots[] = {
     {Py_tp_dealloc, bytesiobuf_dealloc},
     {Py_tp_traverse, bytesiobuf_traverse},
+    {Py_tp_reachable, bytesiobuf_traverse},
 
     // Buffer protocol
     {Py_bf_getbuffer, bytesiobuf_getbuffer},

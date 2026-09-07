@@ -302,6 +302,8 @@ GETITEM(PyObject *v, Py_ssize_t i) {
 #define UNBOUNDFREE_ERROR_MSG \
     "cannot access free variable '%s' where it is not associated with a value" \
     " in enclosing scope"
+#define NOT_WRITEABLE_ERROR_MSG \
+    "cannot write to local variable '%s'"
 #define NAME_ERROR_MSG "name '%.200s' is not defined"
 
 // If a trace function sets a new f_lineno and

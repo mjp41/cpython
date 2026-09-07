@@ -243,6 +243,7 @@ static int
 ZstdDict_traverse(PyObject *ob, visitproc visit, void *arg)
 {
     ZstdDict *self = ZstdDict_CAST(ob);
+    Py_VISIT(Py_TYPE(self));
     Py_VISIT(self->c_dicts);
     return 0;
 }
@@ -264,6 +265,7 @@ static PyType_Slot zstddict_slots[] = {
     {Py_tp_doc, (void *)_zstd_ZstdDict_new__doc__},
     {Py_sq_length, ZstdDict_length},
     {Py_tp_traverse, ZstdDict_traverse},
+    {Py_tp_reachable, ZstdDict_traverse},
     {Py_tp_clear, ZstdDict_clear},
     {0, 0}
 };

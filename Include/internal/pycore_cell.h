@@ -16,21 +16,30 @@ extern "C" {
 // Sets the cell contents to `value` and return previous contents. Steals a
 // reference to `value`.
 static inline PyObject *
-PyCell_SwapTakeRef(PyCellObject *cell, PyObject *value)
+PyCell_SwapTakeRef(PyCellObject *cell, PyObject *value, int* result)
 {
-    PyObject *old_value;
+    PyObject *old_value = NULL;
+    *result = 0;
     Py_BEGIN_CRITICAL_SECTION(cell);
-    old_value = cell->ob_ref;
-    FT_ATOMIC_STORE_PTR_RELEASE(cell->ob_ref, value);
+    if(Py_CHECKWRITE(cell)){
+        old_value = cell->ob_ref;
+        FT_ATOMIC_STORE_PTR_RELEASE(cell->ob_ref, value);
+    }
+    else {
+        *result = -1;
+        Py_XDECREF(value);
+    }
     Py_END_CRITICAL_SECTION();
     return old_value;
 }
 
-static inline void
+static inline int
 PyCell_SetTakeRef(PyCellObject *cell, PyObject *value)
 {
-    PyObject *old_value = PyCell_SwapTakeRef(cell, value);
+    int result = 0;
+    PyObject *old_value = PyCell_SwapTakeRef(cell, value, &result);
     Py_XDECREF(old_value);
+    return result;
 }
 
 // Gets the cell contents. Returns a new reference.

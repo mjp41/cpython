@@ -2018,6 +2018,7 @@ static PyType_Slot unpackiter_type_slots[] = {
     {Py_tp_dealloc, unpackiter_dealloc},
     {Py_tp_getattro, PyObject_GenericGetAttr},
     {Py_tp_traverse, unpackiter_traverse},
+    {Py_tp_reachable, unpackiter_traverse},
     {Py_tp_iter, PyObject_SelfIter},
     {Py_tp_iternext, unpackiter_iternext},
     {Py_tp_methods, unpackiter_methods},
@@ -2399,6 +2400,7 @@ static PyType_Slot PyStructType_slots[] = {
     {Py_tp_repr, s_repr},
     {Py_tp_doc, (void*)s__doc__},
     {Py_tp_traverse, s_traverse},
+    {Py_tp_reachable, s_traverse},
     {Py_tp_clear, s_clear},
     {Py_tp_methods, s_methods},
     {Py_tp_members, s_members},
@@ -2701,6 +2703,9 @@ _structmodule_exec(PyObject *m)
         return -1;
     }
     if (PyModule_AddType(m, (PyTypeObject *)state->PyStructType) < 0) {
+        return -1;
+    }
+    if (_PyImmutability_SetFreezable((PyObject*)state->PyStructType, _Py_FREEZABLE_YES) < 0){
         return -1;
     }
 

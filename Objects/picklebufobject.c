@@ -100,6 +100,16 @@ picklebuf_traverse(PyObject *op, visitproc visit, void *arg)
 }
 
 static int
+picklebuf_reachable(PyObject *self, visitproc visit, void *arg)
+{
+    Py_VISIT(_PyObject_CAST(Py_TYPE(self)));
+    // TODO: weakreflist.  I don't think we should follow this, but we
+    // might need to handle separate threads trying to remove weak references
+    // from this object?
+    return picklebuf_traverse(self, visit, arg);
+}
+
+static int
 picklebuf_clear(PyObject *op)
 {
     PyPickleBufferObject *self = (PyPickleBufferObject*)op;
@@ -217,6 +227,7 @@ PyTypeObject PyPickleBuffer_Type = {
     .tp_new = picklebuf_new,
     .tp_dealloc = picklebuf_dealloc,
     .tp_traverse = picklebuf_traverse,
+    .tp_reachable = picklebuf_reachable,
     .tp_clear = picklebuf_clear,
     .tp_weaklistoffset = offsetof(PyPickleBufferObject, weakreflist),
     .tp_as_buffer = &picklebuf_as_buffer,

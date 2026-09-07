@@ -3,6 +3,29 @@ filename	funcname	name	reason
 
 # These are all variables that we will be making non-global.
 
+###############################
+## Pyrona
+
+## ---------------
+## Safe
+
+Python/immutability.c	-	PostOrderMarker	-
+Python/immutability.c	-	EnsureVisitedMarker	-
+Objects/weakrefobject.c	-	_PyWeakref_Lock	-
+
+## ---------------
+## Lazy
+
+
+## ---------------
+## Tests
+
+Modules/_test_reachable.c	-	HasTraverseNoReachable_Type	-
+Modules/_test_reachable.c	-	NoTraverseNoReachable_Type	-
+Modules/_test_reachable.c	-	HasReachable_Type	-
+Modules/_test_reachable.c	-	ShallowImmutable_Type	-
+
+
 ##################################
 ## global objects to fix in core code
 
@@ -67,6 +90,7 @@ Objects/memoryobject.c	-	PyMemoryView_Type	-
 Objects/memoryobject.c	-	_PyManagedBuffer_Type	-
 Objects/methodobject.c	-	PyCFunction_Type	-
 Objects/methodobject.c	-	PyCMethod_Type	-
+Objects/moduleobject.c	-	_PyImmModule_Type	-
 Objects/moduleobject.c	-	PyModuleDef_Type	-
 Objects/moduleobject.c	-	PyModule_Type	-
 Objects/namespaceobject.c	-	_PyNamespace_Type	-
