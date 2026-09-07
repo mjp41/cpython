@@ -719,13 +719,6 @@ union_scc(PyObject* a, PyObject* b, struct FreezeState *state)
     return true;
 }
 
-static PyObject* get_next(PyObject* obj, struct FreezeState *freeze_state)
-{
-    (void)freeze_state;
-    PyObject* next = scc_next(obj);
-    return next;
-}
-
 static int has_visited(struct FreezeState *state, PyObject* obj)
 {
 #ifdef GIL_DISABLED
@@ -753,7 +746,7 @@ static PyObject* scc_root(PyObject* obj)
     if (parent != NULL)
         return parent;
 
-    assert(get_next(obj, NULL) == NULL);
+    assert(scc_next(obj) == NULL);
     return obj;
 }
 #endif
