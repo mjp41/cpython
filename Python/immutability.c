@@ -327,6 +327,14 @@ struct FreezeState {
     // interpreter local immutable state
     struct FreezeState *enclosing;
     bool restart;
+    // Error cleanup state for the item currently being traversed. If traversal
+    // fails after add_visited(), discard DFS entries above error_dfs_limit and
+    // undo add_visited() for error_visited_item before rolling back older SCCs.
+    Py_ssize_t error_dfs_limit;
+    PyObject *error_visited_item;
+#ifdef Py_DEBUG
+    bool traversing;
+#endif
 #ifdef Py_DEBUG
     // For debugging, track the stack trace of the freeze operation.
     PyObject* freeze_location;
@@ -441,48 +449,84 @@ is_root(struct FreezeState *state, PyObject *obj)
     return _Py_hashtable_get(state->roots, obj) != NULL;
 }
 
+static void deallocate_FreezeState(struct FreezeState *state);
+
 static int init_freeze_state(struct FreezeState *state)
 {
+    state->dfs = NULL;
+    state->pending = NULL;
+    state->visited = NULL;
+    state->roots = NULL;
+    state->completed_sccs = NULL;
+    state->enclosing = NULL;
+    state->restart = false;
+    state->error_dfs_limit = -1;
+    state->error_visited_item = NULL;
+#ifdef Py_DEBUG
+    state->traversing = false;
+    state->freeze_location = NULL;
+#endif
 #ifndef GIL_DISABLED
     state->dfs = PyList_New(0);
+    if (state->dfs == NULL) {
+        goto error;
+    }
     state->pending = PyList_New(0);
+    if (state->pending == NULL) {
+        goto error;
+    }
 #endif
     state->visited = _Py_hashtable_new(
         _Py_hashtable_hash_ptr,
         _Py_hashtable_compare_direct);
-    state->completed_sccs = NULL;
+    if (state->visited == NULL) {
+        PyErr_NoMemory();
+        goto error;
+    }
     state->roots = _Py_hashtable_new(
         _Py_hashtable_hash_ptr,
         _Py_hashtable_compare_direct);
+    if (state->roots == NULL) {
+        PyErr_NoMemory();
+        goto error;
+    }
 
-    state->enclosing = NULL;
-    state->restart = false;
-#ifdef Py_DEBUG
-    state->freeze_location = NULL;
-#endif
-
-    // TODO detect failure?
     return 0;
+
+error:
+    deallocate_FreezeState(state);
+    return -1;
 }
 
 static void deallocate_FreezeState(struct FreezeState *state)
 {
-    _Py_hashtable_destroy(state->visited);
-    _Py_hashtable_destroy(state->roots);
+    if (state->visited != NULL) {
+        _Py_hashtable_destroy(state->visited);
+        state->visited = NULL;
+    }
+    if (state->roots != NULL) {
+        _Py_hashtable_destroy(state->roots);
+        state->roots = NULL;
+    }
 
 #ifndef GIL_DISABLED
     // We can't call the destructor directly as we didn't newref the objects
     // on push.  This is a slow path if there are still objects in the stack,
     // so there is no need to optimize it.
-    while(PyList_Size(state->pending) > 0){
-        pop(state->pending);
+    if (state->pending != NULL) {
+        while(PyList_Size(state->pending) > 0){
+            pop(state->pending);
+        }
+        Py_DECREF(state->pending);
+        state->pending = NULL;
     }
-    while(PyList_Size(state->dfs) > 0){
-        pop(state->dfs);
+    if (state->dfs != NULL) {
+        while(PyList_Size(state->dfs) > 0){
+            pop(state->dfs);
+        }
+        Py_DECREF(state->dfs);
+        state->dfs = NULL;
     }
-
-    Py_DECREF(state->dfs);
-    Py_DECREF(state->pending);
 #endif
 }
 
@@ -675,13 +719,6 @@ union_scc(PyObject* a, PyObject* b, struct FreezeState *state)
     return true;
 }
 
-static PyObject* get_next(PyObject* obj, struct FreezeState *freeze_state)
-{
-    (void)freeze_state;
-    PyObject* next = scc_next(obj);
-    return next;
-}
-
 static int has_visited(struct FreezeState *state, PyObject* obj)
 {
 #ifdef GIL_DISABLED
@@ -709,7 +746,7 @@ static PyObject* scc_root(PyObject* obj)
     if (parent != NULL)
         return parent;
 
-    assert(get_next(obj, NULL) == NULL);
+    assert(scc_next(obj) == NULL);
     return obj;
 }
 #endif
@@ -755,20 +792,6 @@ static void scc_set_refcounts_to_one(PyObject* obj)
         n = scc_next(c);
         c->ob_refcnt = 1;
     } while (n != obj);
-}
-
-
-static void scc_reset_root_refcount(PyObject* obj)
-{
-    assert(scc_root(obj) == obj);
-    size_t scc_rc = _Py_REFCNT(obj) * 2;
-    PyObject* n = obj;
-    do {
-        PyObject* c = n;
-        n = scc_next(c);
-        scc_rc -= _Py_REFCNT(c);
-    } while (n != obj);
-    obj->ob_refcnt = scc_rc;
 }
 
 // This will restore the reference counts for the interior edges of the SCC.
@@ -857,26 +880,19 @@ static void scc_return_to_gc(PyObject* obj, bool decref_required)
     } while (n != obj);
 }
 
-static void unfreeze(PyObject* obj)
+static void undo_weakref_freeze_reference(PyObject *obj)
 {
-    // Repr should not be called with an exception set. This can therefore
-    // only print the memory address of the object
-    debug("Unfreezing SCC starting at %p\n", obj);
-    if (scc_next(obj) == NULL)
-    {
-        // Clear Immutable flags
-        _Py_CLEAR_IMMUTABLE(obj);
-        // Return to the GC.
-        return_to_gc(obj);
+    if (!PyWeakref_Check(obj)) {
         return;
     }
-    debug("Unfreezing %p\n", obj);
-    // Note: We don't need the details of the SCC for a simple unfreeze.
-    struct SCCDetails scc_details;
-    scc_reset_root_refcount(obj);
-    scc_add_internal_refcounts(obj, &scc_details);
-    scc_make_mutable(obj);
-    scc_return_to_gc(obj, true);
+    PyObject *wr = NULL;
+    PyWeakref_GetRef(obj, &wr);
+    if (wr != NULL) {
+        // Drop the temporary reference and the strong reference retained
+        // when traverse_freeze() followed the weak reference.
+        Py_DECREF(wr);
+        Py_DECREF(wr);
+    }
 }
 
 // Copy-pasted from weakrefobject.c
@@ -1235,8 +1251,13 @@ static int add_visited(PyObject* obj, struct FreezeState *state)
         set_direct_rc(obj);
     }
 #endif
-    if (_Py_hashtable_set(state->visited, obj, obj) == -1)
+    if (_Py_hashtable_set(state->visited, obj, obj) == -1) {
+#ifndef GIL_DISABLED
+        // This clears the effects of set_direct_rc.
+        _Py_CLEAR_IMMUTABLE(obj);
+#endif
         return -1;
+    }
     return 0;
 
 }
@@ -1301,8 +1322,44 @@ static void add_internal_reference(PyObject* obj, struct FreezeState *state)
     assert(_Py_REFCNT(obj) > 0);
 }
 
+// Dispatch for a postorder marker.  complete_scc() does the actual
+// refcount conversion when the marker belongs to the current representative.
+static void
+finish_scc_at_postorder(PyObject *item, struct FreezeState *state)
+{
+    PyObject* current_scc = peek(state->pending);
+    if (item == current_scc)
+    {
+        debug("Completed an SCC\n");
+        pop(state->pending);
+        debug_obj("Representative: %s (%p)\n", item);
+
+        complete_scc(item, state);
+    }
+}
+
+// Handle an edge to an object that is already pending: merge the active SCC
+// path as needed and subtract that internal edge from the target refcount.
+static void
+process_pending_internal_edge(PyObject *item, struct FreezeState *state)
+{
+    PyObject *current_scc = peek(state->pending);
+    if (current_scc == NULL) {
+        Py_FatalError("freeze: pending object without pending SCC");
+    }
+    while (union_scc(current_scc, item, state)) {
+        debug_obj("Representative: %s (%p)\n", current_scc);
+        pop(state->pending);
+        current_scc = peek(state->pending);
+        if (current_scc == NULL) {
+            Py_FatalError("freeze: SCC union emptied pending stack");
+        }
+    }
+    add_internal_reference(item, state);
+}
+
 /*
-  Visitor for rollback_completed_scc walk 2.
+  Visitor for undo_completed_scc walk 2.
   Re-adds internal reference counts that were subtracted by
   add_internal_reference during the freeze traversal.
   The arg is a _Py_hashtable_t* of ring members.
@@ -1329,7 +1386,7 @@ static int rollback_refcount_visit(PyObject* obj, void* ring_ht)
     Walk 2: Re-add internal reference counts via tp_reachable
     Walk 3: Clear immutability flags + return objects to GC
 */
-static void rollback_completed_scc(PyObject* obj)
+static void undo_completed_scc(PyObject* obj)
 {
     debug("Rolling back SCC starting at %p\n", obj);
 
@@ -1353,6 +1410,9 @@ static void rollback_completed_scc(PyObject* obj)
         _Py_hashtable_set(ring, c, c);
         if (c != obj) {
             obj->ob_refcnt -= _Py_REFCNT(c);
+            // Non-root members still carry their DFS discovery edge.
+            // Walk 2 re-adds all internal edges, including that one.
+            c->ob_refcnt--;
         }
         count++;
     } while (n != obj);
@@ -1386,6 +1446,7 @@ static void rollback_completed_scc(PyObject* obj)
     do {
         PyObject* c = n;
         n = scc_next(c);
+        undo_weakref_freeze_reference(c);
         _Py_CLEAR_IMMUTABLE(c);
         return_to_gc(c);  // clears scc_next and scc_parent, re-tracks in GC
     } while (n != obj);
@@ -1490,6 +1551,7 @@ error:
         "Cannot freeze instance of type %s",
         (obj->ob_type->tp_name));
     PyErr_SetObject(PyExc_TypeError, error_msg);
+    Py_DECREF(error_msg);
     return -1;
 }
 
@@ -2029,37 +2091,20 @@ static void make_weakrefs_safe(struct FreezeState* freeze_state)
 
 }
 
-/* This undoes a freeze belonging to the given state */
-static void undo_freeze(struct FreezeState* state) {
-    // Artifact[Implementation]: The function that rolls back immutability on failure
-    debug("Unfreezing all frozen objects belonging to %p\n", state);
-
-    // Clear dfs stack
-    while(PyList_Size(state->dfs) > 0){
-        pop(state->dfs);
-    }
-
-    // Clear pending stack
-    while (PyList_Size(state->pending) > 0) {
-        PyObject* item = pop(state->pending);
-        assert(item != NULL);
-        if (item == PostOrderMarker || item == EnsureVisitedMarker) {
-            continue;
-        }
-        unfreeze(item);
-    }
-
-    // Unfreeze completed SCCs via intrusive linked list.
+static void
+undo_completed_freeze_work(struct FreezeState* state)
+{
     PyObject *scc = state->completed_sccs;
     while (scc != NULL) {
         // Read next link before rollback clears _gc_prev.
         PyObject *next = scc_parent(scc);
         if (scc_next(scc) == NULL) {
             // Single-member SCC: just clear flags and return to GC.
+            undo_weakref_freeze_reference(scc);
             _Py_CLEAR_IMMUTABLE(scc);
             return_to_gc(scc);
         } else {
-            rollback_completed_scc(scc);
+            undo_completed_scc(scc);
         }
         scc = next;
     }
@@ -2068,6 +2113,92 @@ static void undo_freeze(struct FreezeState* state) {
     // Clear immutability flags on non-GC visited objects.
     _Py_hashtable_foreach(state->visited,
                           clear_immutable_visitor, NULL);
+    _Py_hashtable_clear(state->visited);
+}
+
+static void
+discard_unfinished_traversal(struct FreezeState *state)
+{
+    Py_ssize_t size = state->error_dfs_limit;
+    if (size < 0) {
+        return;
+    }
+    while (PyList_Size(state->dfs) > size) {
+        pop(state->dfs);
+    }
+    state->error_dfs_limit = -1;
+}
+
+static void
+undo_add_visited(struct FreezeState *state)
+{
+    PyObject *item = state->error_visited_item;
+    if (item == NULL) {
+        return;
+    }
+    state->error_visited_item = NULL;
+#ifndef GIL_DISABLED
+    if (_PyObject_IS_GC(item)) {
+        assert(scc_is_pending(item));
+        if (peek(state->pending) == item) {
+            (void)pop(state->pending);
+        }
+        _Py_CLEAR_IMMUTABLE(item);
+        return_to_gc(item);
+        return;
+    }
+#endif
+    _Py_CLEAR_IMMUTABLE(item);
+}
+
+static void
+finish_pending_sccs_for_undo(struct FreezeState *state)
+{
+#ifdef Py_DEBUG
+    assert(!state->traversing);
+#endif
+
+    // Every object still on pending completed its own traversal.  The only
+    // object that can be pending with incomplete traversal is the current
+    // error-path item, and the error handler removes it before calling here.
+    // Thus the DFS still holds every not-yet-processed edge needed to finish
+    // SCC bookkeeping, while unvisited objects can be ignored.
+    while (PyList_Size(state->dfs) != 0) {
+        PyObject* item = pop(state->dfs);
+
+        if (item == PostOrderMarker) {
+            item = pop(state->dfs);
+
+            finish_scc_at_postorder(item, state);
+            continue;
+        }
+
+        if (item == EnsureVisitedMarker) {
+            (void)pop(state->dfs);
+            continue;
+        }
+
+        if (has_visited(state, item)) {
+            if (is_pending(item, state)) {
+                process_pending_internal_edge(item, state);
+            }
+            continue;
+        }
+    }
+
+    if (PyList_Size(state->pending) != 0) {
+        Py_FatalError("freeze rollback: pending SCCs left after draining DFS");
+    }
+}
+
+/* This undoes the work of an in-progress freeze operation. */
+static void
+undo_partial_freeze(struct FreezeState* state)
+{
+    // Artifact[Implementation]: The function that rolls back immutability on failure
+    debug("Unfreezing all frozen objects belonging to %p\n", state);
+    finish_pending_sccs_for_undo(state);
+    undo_completed_freeze_work(state);
 }
 
 /* This undoes enclosing freezes and marks them to be restarted */
@@ -2080,7 +2211,7 @@ static void restart_enclosing_freezes(struct _Py_immutability_state* imm_state) 
     freeze_state = freeze_state->enclosing;
     // Mark all enclosing freezes for restart
     while (freeze_state) {
-        undo_freeze(freeze_state);
+        undo_partial_freeze(freeze_state);
         freeze_state->restart = true;
         freeze_state = freeze_state->enclosing;
     }
@@ -2154,6 +2285,12 @@ static int traverse_freeze(PyObject* obj, struct FreezeState* freeze_state)
 {
     //  WARNING
     //  CHANGES HERE NEED TO BE REFLECTED IN freeze_visit
+    int result = -1;
+
+#ifdef Py_DEBUG
+    assert(!freeze_state->traversing);
+    freeze_state->traversing = true;
+#endif
 
 #ifdef MERMAID_TRACING
     freeze_state->start = obj;
@@ -2186,15 +2323,22 @@ static int traverse_freeze(PyObject* obj, struct FreezeState* freeze_state)
         }
         if (res == 1) {
             if (freeze_visit(wr, freeze_state)) {
+                // freeze_visit() passes wr to push(), which consumes the
+                // reference even when appending to the DFS stack fails.
                 goto error;
             }
         }
     }
 
-    return 0;
+    result = 0;
+    goto finally;
 
 error:
-    return -1;
+finally:
+#ifdef Py_DEBUG
+    freeze_state->traversing = false;
+#endif
+    return result;
 }
 
 // Mark importlib's mutable state as not freezable.
@@ -2269,12 +2413,16 @@ freeze_impl(PyObject *const *objs, Py_ssize_t nobjs)
 
     // Initialize the freeze state
     struct FreezeState freeze_state;
-    SUCCEEDS(init_freeze_state(&freeze_state));
+    if (init_freeze_state(&freeze_state) < 0) {
+        result = -1;
+        goto finally;
+    }
 
     // Get Immutable state
     imm_state = get_immutable_state();
     if(imm_state == NULL){
-        goto error;
+        result = -1;
+        goto finally;
     }
     freeze_state.enclosing = imm_state->freeze_stack;
     imm_state->freeze_stack = &freeze_state;
@@ -2354,16 +2502,7 @@ restart:
             item = pop(freeze_state.dfs);
 
             // Have finished traversing graph reachable from item
-            PyObject* current_scc = peek(freeze_state.pending);
-            if (item == current_scc)
-            {
-                debug("Completed an SCC\n");
-                pop(freeze_state.pending);
-                debug_obj("Representative: %s (%p)\n", item);
-
-                // Completed an SCC do the calculation here.
-                complete_scc(item, &freeze_state);
-            }
+            finish_scc_at_postorder(item, &freeze_state);
             continue;
         }
 
@@ -2394,13 +2533,7 @@ restart:
             debug_obj("Already visited: %s (%p)\n", item);
             // Check if it is pending.
             if (is_pending(item, &freeze_state)) {
-                while (union_scc(peek(freeze_state.pending), item, &freeze_state)) {
-                    debug_obj("Representative: %s (%p)\n", peek(freeze_state.pending));
-                    pop(freeze_state.pending);
-                }
-                // This is an SCC internal edge, we will need to remove
-                // it from the internal RC count.
-                add_internal_reference(item, &freeze_state);
+                process_pending_internal_edge(item, &freeze_state);
             }
             continue;
         }
@@ -2424,8 +2557,10 @@ restart:
 
         // Add to visited before putting in internal datastructures, so don't have
         // to account of internal RC manipulations.
-        add_visited(item, &freeze_state);
+        SUCCEEDS(add_visited(item, &freeze_state));
 
+        freeze_state.error_dfs_limit = PyList_Size(freeze_state.dfs);
+        freeze_state.error_visited_item = item;
         if (_PyObject_IS_GC(item)) {
             // Add postorder step to dfs.
             SUCCEEDS(push(freeze_state.dfs, item));
@@ -2437,6 +2572,8 @@ restart:
 
         // Traverse the fields of the current object to add to the dfs.
         SUCCEEDS(traverse_freeze(item, &freeze_state));
+        freeze_state.error_dfs_limit = -1;
+        freeze_state.error_visited_item = NULL;
     }
 
     make_weakrefs_safe(&freeze_state);
@@ -2446,7 +2583,12 @@ restart:
 
 error:
     debug("Error during freeze\n");
-    undo_freeze(&freeze_state);
+#ifdef Py_DEBUG
+    freeze_state.traversing = false;
+#endif
+    discard_unfinished_traversal(&freeze_state);
+    undo_add_visited(&freeze_state);
+    undo_partial_freeze(&freeze_state);
     result = -1;
 
 finally:
