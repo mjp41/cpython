@@ -215,6 +215,8 @@ static movable_status get_movable_status(PyObject *obj) {
 
     // Cowns are not movable, but the reference is explicitly allowed.
     if (Cown_Check(obj)) {
+        // Cowns are frozen on creation, so we just accept the reference.
+        assert(_Py_IsImmutable(obj));
         return Py_MOVABLE_COWN;
     }
 
@@ -1773,7 +1775,12 @@ static void _region_delete_contents(TracingRegionObject *self) {
 
 static int
 TracingRegion_traverse(TracingRegionObject *self, visitproc visit, void *arg) {
-    Py_VISIT(self->dict);
+    // If the region is closed, we know that everything inside the region is reachable.
+    // There is no advantage of opening the region to double check. This would also
+    // mess with the GC list of this region.
+    if (self->open) {
+        Py_VISIT(self->dict);
+    }
     return 0;
 }
 
