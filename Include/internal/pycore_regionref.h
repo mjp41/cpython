@@ -71,6 +71,7 @@ extern void _PyRegionRef_MetaSetCown(_PyRegionRefMetadata *meta, PyObject *cown)
  * be `_PyCown_ReleasedIpid()` to mean nobody owns the region. */
 extern void _PyRegionRef_MetaSetIpid(_PyRegionRefMetadata *meta,
                                      _PyCown_ipid_t ipid);
+extern void _PyRegionRef_MetaSetReleased(_PyRegionRefMetadata *meta);
 extern void _PyRegionRef_MetaRegionOpened(_PyRegionRefMetadata *meta);
 extern void _PyRegionRef_MetaResolveWip(_PyRegionRefMetadata *meta);
 

@@ -209,7 +209,7 @@ class TestRegionOpening(unittest.TestCase):
 
         self.assertEqual(
             str(cm.exception),
-            "the cown couldn't be released, due to the bridge having incoming references")
+            "the region couldn't be detached, due to incoming references to the bridge")
 
         # The release should succeed once all refs have been killed
         del r1

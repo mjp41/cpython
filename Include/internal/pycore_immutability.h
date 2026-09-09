@@ -14,6 +14,10 @@ PyAPI_DATA(PyTypeObject) _PyTracingRegion_Type;
 PyAPI_FUNC(int) _PyTracingRegion_Close(PyObject* region);
 PyAPI_FUNC(int) _PyTracingRegion_IsClosed(PyObject* region);
 PyAPI_FUNC(void) _PyTracingRegion_Open(PyObject* region);
+PyAPI_FUNC(int) _PyTracingRegion_Detach(PyObject* region);
+PyAPI_FUNC(int) _PyTracingRegion_DetachIgnoreRegionRefs(PyObject* region);
+PyAPI_FUNC(int) _PyTracingRegion_Attach(PyObject* region, uint64_t ipid, uint64_t tid);
+PyAPI_FUNC(int) _PyTracingRegion_AttachIgnoreRegionRefs(PyObject* region);
 
 /* Returns the region's metadata node, allocating it if this is the first
  * region reference the current close has found. Borrowed, and only valid while

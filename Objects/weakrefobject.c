@@ -310,6 +310,14 @@ _PyRegionRef_MetaSetIpid(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
 }
 
 void
+_PyRegionRef_MetaSetReleased(_PyRegionRefMetadata *meta)
+{
+    LOCK_REGION_REF_META();
+    meta_set_closed_ipid_lock_held(meta, _PyCown_ReleasedIpid());
+    UNLOCK_REGION_REF_META();
+}
+
+void
 _PyRegionRef_MetaRegionOpened(_PyRegionRefMetadata *meta)
 {
     LOCK_REGION_REF_META();
