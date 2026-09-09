@@ -107,6 +107,8 @@ static int cown_set_value_unchecked(_PyCownObject* self, PyObject* value) {
     // The region is moving out of the cown, so its region references answer to
     // the cown's owner from now on.
     if (self->value != value && Region_Check(self->value)) {
+        // FIXME(regions): If the cown is released this sets the released owner,
+        // not what we want
         _PyTracingRegion_SetMetaOwner(self->value, cown_get_owner(self));
     }
 
@@ -307,6 +309,13 @@ static int PyCown_clear(_PyCownObject *self) {
 /* Tears the cown down. Only the interpreter owning the cown may run this, see
  * `cown_handoff_dealloc`. */
 static void cown_dealloc_owned(_PyCownObject *self) {
+    if (_PyCown_Owner(self) == RELEASED_IPID) {
+        _PyCown_ipid_t this_ip = _PyCown_ThisInterpreterId();
+        // This should never fail, since we have the last remaining instance
+        int res = cown_lock(self, -1, this_ip, true);
+        assert(res >= 0);
+    }
+
     // Clearing hands the region off, so no region reference points here any more.
     PyCown_clear(self);
     PyObject_GC_Del(self);
