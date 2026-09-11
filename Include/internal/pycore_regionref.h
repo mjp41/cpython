@@ -31,8 +31,11 @@ typedef enum {
     /* Terminal. The region is held by `value.cown`, on which the owner is
      * looked up dynamically. */
     _Py_REGION_REF_COWN,
+    /* Terminal, owned by one interpreter, but hasn't been opened.
+       this can be restamped */
+    _Py_REGION_REF_CLOSED_IPID,
     /* Terminal, owned by one interpreter. */
-    _Py_REGION_REF_IPID,
+    _Py_REGION_REF_OPEN_IPID,
 } _PyRegionRefKind;
 
 typedef struct _PyRegionRefMetadata {
@@ -68,6 +71,7 @@ extern void _PyRegionRef_MetaSetCown(_PyRegionRefMetadata *meta, PyObject *cown)
  * be `_PyCown_ReleasedIpid()` to mean nobody owns the region. */
 extern void _PyRegionRef_MetaSetIpid(_PyRegionRefMetadata *meta,
                                      _PyCown_ipid_t ipid);
+extern void _PyRegionRef_MetaSetReleased(_PyRegionRefMetadata *meta);
 extern void _PyRegionRef_MetaRegionOpened(_PyRegionRefMetadata *meta);
 extern void _PyRegionRef_MetaResolveWip(_PyRegionRefMetadata *meta);
 

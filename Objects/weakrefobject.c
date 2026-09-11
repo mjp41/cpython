@@ -189,7 +189,7 @@ meta_decref_lock_held(_PyRegionRefMetadata *meta)
 static _PyRegionRefMetadata *
 meta_new_local_lock_held(void)
 {
-    _PyRegionRefMetadata *meta = meta_new_lock_held(_Py_REGION_REF_IPID);
+    _PyRegionRefMetadata *meta = meta_new_lock_held(_Py_REGION_REF_OPEN_IPID);
     if (meta != NULL) {
         meta->value.ipid = _PyCown_ThisInterpreterId();
     }
@@ -230,10 +230,18 @@ meta_set_cown_lock_held(_PyRegionRefMetadata *meta, PyObject *cown)
 }
 
 static void
-meta_set_ipid_lock_held(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
+meta_set_open_ipid_lock_held(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
 {
     meta_clear_parent_lock_held(meta);
-    meta->kind = _Py_REGION_REF_IPID;
+    meta->kind = _Py_REGION_REF_OPEN_IPID;
+    meta->value.ipid = ipid;
+}
+
+static void
+meta_set_closed_ipid_lock_held(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
+{
+    meta_clear_parent_lock_held(meta);
+    meta->kind = _Py_REGION_REF_CLOSED_IPID;
     meta->value.ipid = ipid;
 }
 
@@ -295,11 +303,17 @@ _PyRegionRef_MetaSetCown(_PyRegionRefMetadata *meta, PyObject *cown)
 void
 _PyRegionRef_MetaSetIpid(_PyRegionRefMetadata *meta, _PyCown_ipid_t ipid)
 {
-    // FIXME(regions): `ipid` should always be the current interpreter. It isn't
-    // for a released cown, or when `PyCown_clear` runs on an interpreter that
-    // doesn't own the cown; once that is refactored this can assert it.
     LOCK_REGION_REF_META();
-    meta_set_ipid_lock_held(meta, ipid);
+    assert(ipid == _PyCown_ThisInterpreterId());
+    meta_set_closed_ipid_lock_held(meta, ipid);
+    UNLOCK_REGION_REF_META();
+}
+
+void
+_PyRegionRef_MetaSetReleased(_PyRegionRefMetadata *meta)
+{
+    LOCK_REGION_REF_META();
+    meta_set_closed_ipid_lock_held(meta, _PyCown_ReleasedIpid());
     UNLOCK_REGION_REF_META();
 }
 
@@ -307,8 +321,10 @@ void
 _PyRegionRef_MetaRegionOpened(_PyRegionRefMetadata *meta)
 {
     LOCK_REGION_REF_META();
+    // FIXME(regions): The following assert fails since some metas have a parent meta IDK why
+    // assert(meta->kind == _Py_REGION_REF_CLOSED_IPID || meta->kind == _Py_REGION_REF_COWN);
     meta->region = NULL;
-    meta_set_ipid_lock_held(meta, _PyCown_ThisInterpreterId());
+    meta_set_open_ipid_lock_held(meta, _PyCown_ThisInterpreterId());
     UNLOCK_REGION_REF_META();
 }
 
@@ -317,7 +333,7 @@ _PyRegionRef_MetaResolveWip(_PyRegionRefMetadata *meta)
 {
     LOCK_REGION_REF_META();
     if (meta->kind == _Py_REGION_REF_WIP) {
-        meta_set_ipid_lock_held(meta, _PyCown_ThisInterpreterId());
+        meta_set_closed_ipid_lock_held(meta, _PyCown_ThisInterpreterId());
     }
     UNLOCK_REGION_REF_META();
 }
@@ -457,7 +473,21 @@ regionref_check_access(PyWeakReference *self, regionref_open_list_t *regions,
         case _Py_REGION_REF_WIP:
             verdict = REGIONREF_DENIED_WIP;
             break;
-        case _Py_REGION_REF_IPID:
+        case _Py_REGION_REF_CLOSED_IPID:
+            owner = meta->value.ipid;
+            if (owner != this_ip) {
+                verdict = REGIONREF_DENIED_COWN;
+            }
+            else {
+                // FIXME(regions): For this to work, we also need to track the TID
+                // inside meta. This can also be used for `_Py_REGION_REF_OPEN_IPID`
+                //
+                // locking_thread = _PyCown_LockingThread(meta->value.cown);
+                // wrong_thread = locking_thread != _PyCown_UnsetThreadId()
+                //                && locking_thread != _PyCown_ThisThreadId();
+            }
+            break;
+        case _Py_REGION_REF_OPEN_IPID:
             owner = meta->value.ipid;
             if (owner != this_ip) {
                 verdict = REGIONREF_DENIED_IPID;

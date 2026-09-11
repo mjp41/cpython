@@ -107,6 +107,8 @@ static int cown_set_value_unchecked(_PyCownObject* self, PyObject* value) {
     // The region is moving out of the cown, so its region references answer to
     // the cown's owner from now on.
     if (self->value != value && Region_Check(self->value)) {
+        // FIXME(regions): If the cown is released this sets the released owner,
+        // not what we want
         _PyTracingRegion_SetMetaOwner(self->value, cown_get_owner(self));
     }
 
@@ -213,8 +215,9 @@ static int cown_lock(_PyCownObject* self, PyTime_t timeout, _PyCown_ipid_t locki
         has_gil ? _PyCown_ThisThreadId() : UNSET_THREAD_ID);
 
     if (self->value && Region_Check(self->value)) {
-        assert(!PyObject_GC_IsTracked(self->value));
-        PyObject_GC_Track(self->value);
+       if (_PyTracingRegion_AttachIgnoreRegionRefs(self->value)) {
+            return COWN_ACQUIRE_ERROR;
+       }
     }
 
     return COWN_ACQUIRE_SUCCESS;
@@ -307,6 +310,13 @@ static int PyCown_clear(_PyCownObject *self) {
 /* Tears the cown down. Only the interpreter owning the cown may run this, see
  * `cown_handoff_dealloc`. */
 static void cown_dealloc_owned(_PyCownObject *self) {
+    if (_PyCown_Owner(_PyObject_CAST(self)) == RELEASED_IPID) {
+        _PyCown_ipid_t this_ip = _PyCown_ThisInterpreterId();
+        // This should never fail, since we have the last remaining instance
+        int res = cown_lock(self, -1, this_ip, true);
+        assert(res >= 0);
+    }
+
     // Clearing hands the region off, so no region reference points here any more.
     PyCown_clear(self);
     PyObject_GC_Del(self);
@@ -490,34 +500,6 @@ static int cown_check_owner_before_release(_PyCownObject *self, _PyCown_ipid_t u
     return 0;
 }
 
-/* This attempts to close the region
- *
- * It returns non-zero if the closing failed
- */
-static int cown_close_region(_PyCownObject *self) {
-    assert(Region_Check(self->value));
-
-    // Close the region
-    int closing_res = _PyTracingRegion_Close(self->value);
-    if (closing_res < 0) {
-        return -1;
-    }
-
-    // Make sure that the cown owns the only external reference to the bridge object.
-    if (Py_REFCNT(self->value) > 1) {
-        PyErr_Format(
-            PyExc_RuntimeError,
-            "the cown couldn't be released, due to the bridge having incoming references");
-        return -1;
-    }
-
-    // The region is closed and this is the only owner of the bridge. We untrack
-    // from the current GC list.
-    PyObject_GC_UnTrack(self->value);
-
-    return 0;
-}
-
 static int cown_release(_PyCownObject *self, _PyCown_ipid_t unlocking_ip) {
     if (cown_check_owner_before_release(self, unlocking_ip) < 0) {
         return -1;
@@ -530,7 +512,7 @@ static int cown_release(_PyCownObject *self, _PyCown_ipid_t unlocking_ip) {
     assert(Region_Check(self->value));
 
     // The contained region needs to be closed, to allow the cown to release
-    if (cown_close_region(self)) {
+    if (_PyTracingRegion_DetachIgnoreRegionRefs(self->value)) {
         return -1;
     }
 

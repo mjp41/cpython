@@ -17,7 +17,7 @@
  * graph to. The graph is not written when the variable is unset or empty. */
 #define REGION_GRAPH_ENV_VAR "PYTHON_REGION_GRAPH"
 
-#define REGION_TRACING
+// #define REGION_TRACING
 
 #ifdef REGION_TRACING
 #define dbg(msg, ...) \
@@ -215,6 +215,8 @@ static movable_status get_movable_status(PyObject *obj) {
 
     // Cowns are not movable, but the reference is explicitly allowed.
     if (Cown_Check(obj)) {
+        // Cowns are frozen on creation, so we just accept the reference.
+        assert(_Py_IsImmutable(obj));
         return Py_MOVABLE_COWN;
     }
 
@@ -1773,7 +1775,12 @@ static void _region_delete_contents(TracingRegionObject *self) {
 
 static int
 TracingRegion_traverse(TracingRegionObject *self, visitproc visit, void *arg) {
-    Py_VISIT(self->dict);
+    // If the region is closed, we know that everything inside the region is reachable.
+    // There is no advantage of opening the region to double check. This would also
+    // mess with the GC list of this region.
+    if (self->open) {
+        Py_VISIT(self->dict);
+    }
     return 0;
 }
 
@@ -1971,3 +1978,71 @@ PyTypeObject _PyTracingRegion_Type = {
     .tp_finalize = TracingRegion_finalize,
     .tp_reachable = _PyObject_ReachableVisitTypeAndTraverse,
 };
+
+/// This attempts to detach the region from the current interpreter and thread.
+///
+/// Raises an exception and returns -1 if it couldn't be detached.
+int _PyTracingRegion_DetachIgnoreRegionRefs(PyObject* region) {
+    assert(Region_Check(region));
+
+    // Close the region
+    int closing_res = _PyTracingRegion_Close(region);
+    if (closing_res < 0) {
+        return -1;
+    }
+
+    // Make sure that the cown owns the only external reference to the bridge object.
+    if (Py_REFCNT(region) > 1) {
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "the region couldn't be detached, due to incoming references to the bridge");
+        return -1;
+    }
+
+    // The region is closed and this is the only owner of the bridge. We untrack
+    // from the current GC list.
+    PyObject_GC_UnTrack(region);
+
+    return 0;
+}
+
+/// This attempts to detach the region from the current interpreter and thread.
+///
+/// Raises an exception and returns -1 if it couldn't be detached.
+int _PyTracingRegion_Detach(PyObject* region) {
+    TracingRegionObject *self = (TracingRegionObject*)region;
+
+    if (_PyTracingRegion_DetachIgnoreRegionRefs(region)) {
+        return -1;
+    }
+
+    // This is safe, assuming the region references respect the thread ID,
+    // as that one prevents other threads and IPs from opening the chain under foot.
+    if (self->meta != NULL) {
+        _PyRegionRef_MetaSetReleased(self->meta);
+    }
+
+    return 0;
+}
+
+int _PyTracingRegion_AttachIgnoreRegionRefs(PyObject* region) {
+    assert(Region_Check(region));
+    assert(!PyObject_GC_IsTracked(region));
+    PyObject_GC_Track(region);
+    return 0;
+}
+
+int _PyTracingRegion_Attach(PyObject* region, uint64_t ipid, uint64_t tid) {
+    TracingRegionObject *self = (TracingRegionObject*)region;
+
+    if (_PyTracingRegion_AttachIgnoreRegionRefs(region)) {
+        return -1;
+    }
+
+    if (self->meta != NULL) {
+        _PyRegionRef_MetaSetIpid(self->meta, ipid);
+    }
+    (void)tid;
+
+    return 0;
+}
